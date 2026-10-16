@@ -20,6 +20,7 @@ import {
   updateSettings,
 } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
+import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
 export const VERSION = "0.1.0";
 
@@ -36,6 +37,8 @@ export interface ServerOptions {
   configDir?: string;
   /** Creates the Anthropic client; tests pass a fake. */
   aiClient?: AiClientFactory;
+  /** Where workspaces (artifacts, runs, cache) live. Defaults to $PHAROS_HOME or ~/Pharos. */
+  dataDir?: string;
 }
 
 export interface RunningServer {
@@ -67,6 +70,20 @@ const MIME: Record<string, string> = {
   ".wasm": "application/wasm",
 };
 
+/** Content types for artifact downloads, by format. */
+const FORMAT_MIME: Record<string, string> = {
+  tiff: "image/tiff",
+  "ome-tiff": "image/tiff",
+  csv: "text/csv; charset=utf-8",
+  json: "application/json",
+  mp4: "video/mp4",
+};
+
+/** Default data folder: $PHAROS_HOME, or ~/Pharos. */
+export function defaultDataDir(): string {
+  return process.env.PHAROS_HOME ?? join(homedir(), "Pharos");
+}
+
 const TIFF_EXT = new Set([".tif", ".tiff"]);
 const MAX_JSON_BODY = 1 << 20;
 const MAX_FILE_BODY = 4 * 1024 ** 3;
@@ -78,11 +95,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const settingsDir = opts.configDir ?? configDir();
   const makeClient = opts.aiClient ?? defaultClientFactory;
   const chats = new ChatStore();
+  const workspaces = new WorkspaceStore(opts.dataDir ?? defaultDataDir());
   let port = 0;
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
-      const status = err instanceof HttpError || err instanceof AiError ? err.status : 500;
+      const status = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError ? err.status : 500;
       if (status === 500) console.error(err);
       if (!res.headersSent) sendJson(res, status, { error: err instanceof Error ? err.message : String(err) });
       else res.destroy();
@@ -177,9 +195,46 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         }
         return sendJson(res, 200, await chatTurn(client, chats, settings.model, body));
       }
+      case "GET /api/workspaces":
+        return sendJson(res, 200, await workspaces.list());
+      case "POST /api/workspaces": {
+        const { name } = await readJson<{ name?: unknown }>(req);
+        if (typeof name !== "string") throw new HttpError(400, "name must be a string");
+        return sendJson(res, 200, await workspaces.create(name.trim()));
+      }
       default:
-        throw new HttpError(404, `no route ${route}`);
+        return workspaceApi(req, res, url, route);
     }
+  }
+
+  /** Routes under /api/workspaces/:name/artifacts. */
+  async function workspaceApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
+    const m = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/artifacts(?:\/([^/]+)(\/content)?)?$/);
+    if (!m) throw new HttpError(404, `no route ${route}`);
+    const name = decodeURIComponent(m[1]);
+    const [id, content] = [m[2], !!m[3]];
+    if (req.method === "GET" && !id) return sendJson(res, 200, await workspaces.artifacts(name));
+    if (req.method === "POST" && !id) {
+      const body = await readJson<{ path?: unknown; name?: unknown }>(req);
+      const path = requirePath(typeof body.path === "string" ? body.path : null);
+      return sendJson(res, 200, await workspaces.importPath(name, path, typeof body.name === "string" ? body.name : undefined));
+    }
+    if (req.method === "PUT" && id === "upload" && !content) {
+      const filename = url.searchParams.get("name") ?? "";
+      const declared = Number(req.headers["content-length"] ?? 0);
+      if (declared > MAX_FILE_BODY) throw new HttpError(413, "file too large to upload; add it by path instead");
+      return sendJson(res, 200, await workspaces.importStream(name, filename, req));
+    }
+    if (req.method === "GET" && id && !content) return sendJson(res, 200, await workspaces.get(name, id));
+    if (req.method === "GET" && id && content) {
+      const a = await workspaces.get(name, id);
+      const s = await stat(a.uri);
+      if (!s.isFile()) throw new HttpError(400, `${a.name ?? a.id} is a folder (${a.format}); open it with a viewer that reads folders`);
+      res.writeHead(200, { "Content-Type": FORMAT_MIME[a.format] ?? "application/octet-stream", "Content-Length": s.size });
+      createReadStream(a.uri).pipe(res);
+      return;
+    }
+    throw new HttpError(404, `no route ${route}`);
   }
 
   async function serveStatic(res: ServerResponse, pathname: string) {

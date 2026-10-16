@@ -8,6 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
+    "@pharos/contracts": "*",
     "@pharos/core": "*"
   }
 }

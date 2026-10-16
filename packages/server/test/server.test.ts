@@ -52,7 +52,7 @@ beforeAll(async () => {
   await mkdir(ui);
   await writeFile(join(ui, "index.html"), "<!doctype html><title>Pharos</title>");
   await writeFile(join(tmp, "secret.txt"), "do not serve");
-  server = await startServer({ port: 0, uiDir: ui, wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), aiClient: fakeAi });
+  server = await startServer({ port: 0, uiDir: ui, wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), aiClient: fakeAi, dataDir: join(tmp, "data") });
 });
 
 afterAll(async () => {
@@ -255,5 +255,43 @@ describe("ai", () => {
 
   it("rejects empty requests", async () => {
     expect((await json("/api/ai/chat", "POST", { message: "  " })).status).toBe(400);
+  });
+});
+
+describe("workspaces", () => {
+  const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+
+  it("creates, lists and imports artifacts by path and by upload", async () => {
+    expect(await (await api("/api/workspaces")).json()).toEqual([]);
+    const created = await (await api("/api/workspaces", json({ name: "demo" }))).json();
+    expect(created).toMatchObject({ name: "demo", artifacts: 0 });
+    expect(await stat(join(tmp, "data", "workspaces", "demo", "runs"))).toBeTruthy();
+
+    const tif = join(tmp, "cells.tif");
+    await writeFile(tif, writeTiff(syntheticImage("uint8", 8, 8)));
+    const a = await (await api("/api/workspaces/demo/artifacts", json({ path: tif }))).json();
+    expect(a).toMatchObject({ kind: "volume", format: "tiff", name: "cells.tif", id: expect.stringMatching(/^[0-9a-f]{64}$/) });
+
+    const csv = "label,area\n1,12\n";
+    const up = await api("/api/workspaces/demo/artifacts/upload?name=table.csv", { method: "PUT", body: csv });
+    const t = await up.json();
+    expect(t).toMatchObject({ kind: "table", format: "csv" });
+
+    const list = await (await api("/api/workspaces/demo/artifacts")).json();
+    expect(list.map((x: { id: string }) => x.id).sort()).toEqual([a.id, t.id].sort());
+    const content = await api(`/api/workspaces/demo/artifacts/${t.id}/content`);
+    expect(content.headers.get("content-type")).toMatch(/text\/csv/);
+    expect(await content.text()).toBe(csv);
+    const img = await readTiff(await (await api(`/api/workspaces/demo/artifacts/${a.id}/content`)).arrayBuffer());
+    expect(img.shape).toMatchObject({ width: 8, height: 8 });
+  });
+
+  it("rejects bad names, unknown file types and missing workspaces", async () => {
+    expect((await api("/api/workspaces", json({ name: "../escape" }))).status).toBe(400);
+    expect((await api("/api/workspaces/demo/artifacts/upload?name=notes.docx", { method: "PUT", body: "x" })).status).toBe(415);
+    expect((await api("/api/workspaces/demo/artifacts/upload?name=..%2Fx.csv", { method: "PUT", body: "x" })).status).toBe(400);
+    expect((await api("/api/workspaces/nope/artifacts")).status).toBe(404);
+    expect((await api(`/api/workspaces/demo/artifacts/${"0".repeat(64)}`)).status).toBe(404);
+    expect((await api("/api/workspaces/demo/artifacts/not-an-id")).status).toBe(400);
   });
 });

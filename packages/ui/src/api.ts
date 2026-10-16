@@ -3,6 +3,7 @@
  * (the launch URL carries the token in its #fragment). Without a server the
  * app runs in browser-only mode.
  */
+import type { Artifact, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -124,7 +125,39 @@ export class LocalServer {
     return (await this.json("/api/ai/chat", "POST", req)) as ChatReply;
   }
 
+  // ---------------------------------------------------------- workspaces and artifacts
+
+  async workspaces(): Promise<WorkspaceInfo[]> {
+    return (await this.call("/api/workspaces")).json();
+  }
+
+  /** Creates the workspace, or returns it if it exists. */
+  async createWorkspace(name: string): Promise<WorkspaceInfo> {
+    return (await this.json("/api/workspaces", "POST", { name })) as WorkspaceInfo;
+  }
+
+  async artifacts(workspace: string): Promise<Artifact[]> {
+    return (await this.call(`${artifactsPath(workspace)}`)).json();
+  }
+
+  /** Copies a file or folder on this computer into the workspace. */
+  async importPath(workspace: string, path: string): Promise<Artifact> {
+    return (await this.json(artifactsPath(workspace), "POST", { path })) as Artifact;
+  }
+
+  /** Uploads a dropped or picked file into the workspace. */
+  async upload(workspace: string, file: File): Promise<Artifact> {
+    const r = await this.call(`${artifactsPath(workspace)}/upload?name=${encodeURIComponent(file.name)}`, { method: "PUT", body: file });
+    return r.json();
+  }
+
+  async content(workspace: string, id: string): Promise<ArrayBuffer> {
+    return (await this.call(`${artifactsPath(workspace)}/${id}/content`)).arrayBuffer();
+  }
+
   private async json(path: string, method: string, body: unknown): Promise<unknown> {
     return (await this.call(path, { method, body: JSON.stringify(body), headers: { "content-type": "application/json" } })).json();
   }
 }
+
+const artifactsPath = (workspace: string) => `/api/workspaces/${encodeURIComponent(workspace)}/artifacts`;

@@ -17,6 +17,8 @@ import { Autosave } from "./session.js";
 import { TOOLS, type Tool, onToolChange, resetRanges, setTool, thumbnailElement } from "./viewer.js";
 import { WindowManager } from "./windows.js";
 import { type Doc, Workspace } from "./workspace.js";
+import { viewerFor } from "./viewers.js";
+import { workspacePanel } from "./workspace-panel.js";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -148,6 +150,7 @@ function act(a: Omit<AppAction, "section">): AppAction {
 
 const appActions: AppAction[] = [
   act({ id: "open", title: "Open…", menu: ["File"], icon: "open", shortcut: "Mod+O", keywords: ["load", "file", "tiff", "browse"], enabled: () => true, run: () => openDialog() }),
+  act({ id: "workspace", title: "Workspace…", menu: ["File"], icon: "panel", keywords: ["data", "artifacts", "project", "folder", "library", "import", "add"], description: "Your data on disk: add files and open them", enabled: () => true, run: () => openWorkspace() }),
   act({ id: "open-local", title: "Open from this computer…", menu: ["File"], icon: "upload", keywords: ["upload", "browse"], enabled: () => true, run: () => openFromComputer() }),
   act({ id: "sample", title: "Open sample image", menu: ["File"], icon: "image", keywords: ["demo", "example", "2d"], enabled: () => true, run: () => openSample(false) }),
   act({ id: "sample-3d", title: "Open 3D sample", menu: ["File"], icon: "cube", keywords: ["demo", "example", "volume", "stack", "z"], enabled: () => true, run: () => openSample(true) }),
@@ -259,6 +262,7 @@ function buildToolbar() {
   $("toolbar").innerHTML = `
     <div class="tb-left"><span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PHAROS</span></span></div>
     <nav class="tb-center" aria-label="Workspace">
+      ${text("workspace", "panel", "Workspace")}
       ${text("add-menu", "add", "Add image", { menu: true })}
       ${text("layout-menu", "layout", "Layout", { menu: true })}
       ${text("group-menu", "link", "Group", { menu: true })}
@@ -958,6 +962,25 @@ function copyStep(target: Doc, payload: StepPayload) {
   const cmd = getCommand(payload.command);
   ws.activate(target.id);
   void run(`Adding ${cmd.title.replace(/…$/, "")} to ${target.name}`, () => target.timeline.apply(payload.command, payload.params));
+}
+
+// ------------------------------------------------------------ workspace: data on disk, opened by its viewer
+
+async function openWorkspace() {
+  const s = server;
+  if (!s) return alertDialog("Workspace", "Workspaces keep your data on disk, so they need the local Pharos server. Start it with `npx pharos-lab`.");
+  try {
+    await workspacePanel(s, {
+      notify,
+      open: (a, workspace) =>
+        viewerFor(a).open(a, {
+          content: (x) => run(`Reading ${x.name ?? "data"}`, () => s.content(workspace, x.id)).then((b) => b ?? Promise.reject(new Error("could not read the data"))),
+          openImage: (bytes, name) => openBytes(bytes, name, null),
+        }),
+    });
+  } catch (e) {
+    void alertDialog("Workspace", e instanceof Error ? e.message : String(e));
+  }
 }
 
 // ------------------------------------------------------------ batch

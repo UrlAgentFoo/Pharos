@@ -15,7 +15,7 @@
     "build:wasm": "node scripts/build-wasm.mjs",
     "build": "npm run build -w @pharos/contracts && npm run build -w @pharos/core && npm run build -w @pharos/ui && npm run build -w pharos-lab",
     "start": "node packages/server/bin/pharos.js",
-    "typecheck": "tsc -p packages/contracts --noEmit && tsc -p packages/core && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
+    "typecheck": "tsc -p packages/contracts && tsc -p packages/core && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
     "test": "vitest run",
     "test:rust": "cargo test --manifest-path kernels/Cargo.toml"
   },

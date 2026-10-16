@@ -116,8 +116,18 @@ export function paramsDialog(cmd: Command, initial: Params, opts: { validate: (p
   );
 }
 
-/** Server-side file browser. Resolves to the chosen file (or folder) path, or null. */
-export function browseDialog(server: LocalServer, opts: { title: string; pickFolder: boolean; start?: string }): Promise<string | null> {
+const isTiff = (e: DirEntry) => !e.isDir && /\.tiff?$/i.test(e.name);
+
+/**
+ * Server-side file browser. Resolves to the chosen file (or folder) path, or null.
+ * `accept` picks which entries can be chosen (TIFF files by default); an
+ * accepted folder, such as an OME-Zarr store, is chosen rather than opened.
+ */
+export function browseDialog(
+  server: LocalServer,
+  opts: { title: string; pickFolder: boolean; start?: string; accept?: (e: DirEntry) => boolean; empty?: string },
+): Promise<string | null> {
+  const accept = opts.accept ?? isTiff;
   return showDialog<string | null>(
     `<h2>${escapeHtml(opts.title)}</h2>
      <div class="browser"><div class="crumbs"><button data-up title="Parent folder">↑</button><input class="path" spellcheck="false" /></div><ul class="entries"></ul></div>
@@ -133,8 +143,9 @@ export function browseDialog(server: LocalServer, opts: { title: string; pickFol
           current = r.path;
           parent = r.parent;
           pathEl.value = r.path;
-          const shown = r.entries.filter((e) => e.isDir || /\.tiff?$/i.test(e.name));
-          list.innerHTML = shown.length ? "" : `<li class="none">${opts.pickFolder ? "No subfolders or TIFFs" : "No folders or TIFF files here"}</li>`;
+          const shown = r.entries.filter((e) => e.isDir || accept(e));
+          const empty = opts.empty ?? (opts.pickFolder ? "No subfolders or TIFFs" : "No folders or TIFF files here");
+          list.innerHTML = shown.length ? "" : `<li class="none">${escapeHtml(empty)}</li>`;
           for (const e of shown) list.append(entryItem(e));
         } catch (err) {
           list.innerHTML = `<li class="none">${escapeHtml(err instanceof Error ? err.message : String(err))}</li>`;
@@ -143,9 +154,10 @@ export function browseDialog(server: LocalServer, opts: { title: string; pickFol
       const entryItem = (e: DirEntry) => {
         const li = document.createElement("li");
         const b = document.createElement("button");
-        b.className = e.isDir ? "dir" : "file";
-        b.innerHTML = `<span>${icon(e.isDir ? "open" : "image", 16)} ${escapeHtml(e.name)}</span>${e.isDir ? "" : `<small>${formatSize(e.size)}</small>`}`;
-        b.addEventListener("click", () => (e.isDir ? go(e.path) : opts.pickFolder ? undefined : done(e.path)));
+        const browse = e.isDir && !accept(e);
+        b.className = browse ? "dir" : "file";
+        b.innerHTML = `<span>${icon(browse ? "open" : "image", 16)} ${escapeHtml(e.name)}</span>${e.isDir ? "" : `<small>${formatSize(e.size)}</small>`}`;
+        b.addEventListener("click", () => (browse ? go(e.path) : opts.pickFolder ? undefined : done(e.path)));
         li.append(b);
         return li;
       };

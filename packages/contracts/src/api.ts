@@ -81,6 +81,11 @@ export interface ApiRoutes {
   "POST /api/workspaces": { req: { name: string }; res: WorkspaceInfo };
   "GET /api/workspaces/:name/artifacts": { req: void; res: Artifact[] };
   "POST /api/workspaces/:name/artifacts": { req: { path: string; name?: string }; res: Artifact };
+  /** Raw file bytes as the body; `?name=<file name>` gives the name and, from its extension, the kind. */
+  "PUT /api/workspaces/:name/artifacts/upload": { req: ArrayBuffer; res: Artifact };
+  "GET /api/workspaces/:name/artifacts/:id": { req: void; res: Artifact };
+  /** The artifact's bytes (files only; folders such as OME-Zarr answer 400). */
+  "GET /api/workspaces/:name/artifacts/:id/content": { req: void; res: ArrayBuffer };
 
   "POST /api/inspect": { req: { artifact: string }; res: DataSummary };
   "POST /api/match": { req: { artifacts: string[]; text?: string }; res: BookMatch[] };

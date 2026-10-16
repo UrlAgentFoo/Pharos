@@ -8,7 +8,10 @@ const isolation = {
 
 export default defineConfig({
   resolve: {
-    alias: [{ find: /^@pharos\/core$/, replacement: fileURLToPath(new URL("../core/src/index.ts", import.meta.url)) }],
+    alias: [
+      { find: /^@pharos\/core$/, replacement: fileURLToPath(new URL("../core/src/index.ts", import.meta.url)) },
+      { find: /^@pharos\/contracts$/, replacement: fileURLToPath(new URL("../contracts/src/index.ts", import.meta.url)) },
+    ],
   },
   server: { headers: isolation },
   preview: { headers: isolation },

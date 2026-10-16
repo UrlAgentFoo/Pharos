@@ -3134,3 +3134,51 @@ dialog.side::backdrop {
     grid-template-columns: 150px minmax(0, 1fr);
   }
 }
+
+/* ---- workspace panel and artifact viewers */
+.ws-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ws-head select {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-drop.over {
+  border-color: var(--ink);
+}
+
+.ws-drop .entries button small {
+  white-space: nowrap;
+}
+
+.artifact-table {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.artifact-table table {
+  border-collapse: collapse;
+  font: 12px/1.5 var(--mono);
+}
+
+.artifact-table th,
+.artifact-table td {
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.artifact-table th {
+  position: sticky;
+  top: 0;
+  background: var(--sheet);
+}

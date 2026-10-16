@@ -1,9 +1,9 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { VERSION, startServer } from "./server.js";
+import { VERSION, defaultDataDir, startServer } from "./server.js";
 
 const HELP = `Pharos ${VERSION}: scientific tools, one local app
 
@@ -11,6 +11,7 @@ Usage: pharos [options]
 
 Options:
   -p, --port <n>   port to listen on (default 7860; 0 = any free port)
+  -d, --data <dir> where workspaces live (default $PHAROS_HOME or ~/Pharos)
       --no-open    don't open a browser window
   -v, --version    print the version
   -h, --help       show this help
@@ -39,6 +40,7 @@ export async function main(argv = process.argv.slice(2)) {
     args: argv,
     options: {
       port: { type: "string", short: "p", default: "7860" },
+      data: { type: "string", short: "d" },
       open: { type: "boolean", default: true },
       "no-open": { type: "boolean", default: false },
       version: { type: "boolean", short: "v" },
@@ -50,7 +52,11 @@ export async function main(argv = process.argv.slice(2)) {
 
   const port = Number(values.port);
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`invalid port: ${values.port}`);
-  const opts = { uiDir: findUiDir(), wasmPath: fileURLToPath(import.meta.resolve("@pharos/core/wasm/pharos_kernels.wasm")) };
+  const opts = {
+    uiDir: findUiDir(),
+    wasmPath: fileURLToPath(import.meta.resolve("@pharos/core/wasm/pharos_kernels.wasm")),
+    dataDir: values.data ? resolve(values.data) : defaultDataDir(),
+  };
 
   let server;
   try {
@@ -63,6 +69,7 @@ export async function main(argv = process.argv.slice(2)) {
 
   console.log(`Pharos ${VERSION} running at ${server.url}`);
   console.log(`Open: ${server.launchUrl}`);
+  console.log(`Data: ${opts.dataDir}`);
   console.log("Press Ctrl+C to stop.");
   if (values.open && !values["no-open"]) openBrowser(server.launchUrl);
 
