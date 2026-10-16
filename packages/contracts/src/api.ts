@@ -87,9 +87,11 @@ export interface ApiRoutes {
   "GET /api/library/issues": { req: void; res: LibraryIssue[] };
 
   "POST /api/books/:id/resolve": { req: { version?: string }; res: Resolution };
-  "POST /api/books/:id/get-ready": { req: { version?: string }; res: { jobs: Job[] } };
+  /** Starts downloading the ships a book needs that aren't here yet; progress arrives as `pull` events. */
+  "POST /api/books/:id/get-ready": { req: { version?: string }; res: { pulling: { id: string; version: string; image: string }[] } };
   "POST /api/books/:id/test": { req: { version?: string }; res: TestResult };
   "POST /api/ships/:id/test": { req: { version?: string }; res: TestResult };
+  /** Answers 409 while an installed book uses the ship, unless `?force=1`. */
   "DELETE /api/ships/:id/:version": { req: void; res: { freedBytes: number } };
 
   "GET /api/storage": { req: void; res: StorageReport };
@@ -115,6 +117,11 @@ export interface ApiRoutes {
   "POST /api/plans/:id/save-as-book": { req: { id: string; title: string; summary: string }; res: CatalogueEntry };
 
   "GET /api/jobs": { req: void; res: Job[] };
+  /** Runs one ship operation (`tool` is `<ship>.<operation>`) on workspace artifacts. */
+  "POST /api/jobs": {
+    req: { workspace: string; tool: string; version?: string; inputs: Record<string, string>; params?: Params; force?: boolean };
+    res: Job;
+  };
   "GET /api/jobs/:id": { req: void; res: Job & { log: string } };
   "POST /api/jobs/:id/cancel": { req: void; res: Job };
   "POST /api/jobs/:id/rerun": { req: void; res: Job };

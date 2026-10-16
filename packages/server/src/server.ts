@@ -5,7 +5,7 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import type { AddressInfo } from "node:net";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
-import { EMPTY_INVENTORY, Library, resolveBook } from "@pharos/books";
+import { Library, type TrustLookup, resolveBook } from "@pharos/books";
 import { type Kernels, findCommand, loadKernels, parseParams, readTiff, runSteps, writeTiff } from "@pharos/core";
 import {
   AiError,
@@ -21,6 +21,7 @@ import {
   updateSettings,
 } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
+import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
 export const VERSION = "0.1.0";
@@ -103,12 +104,16 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const chats = new ChatStore();
   const dataDir = opts.dataDir ?? defaultDataDir();
   const workspaces = new WorkspaceStore(dataDir);
-  const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)));
+  const trust = await TrustStore.load(dataDir);
+  const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)), trust.get);
+  const orch = new Orchestration(dataDir, workspaces, () => library.get(), trust);
+  void orch.refreshStatus();
   let port = 0;
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
-      const status = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError ? err.status : 500;
+      const known = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError || err instanceof OrchestrationError;
+      const status = known ? err.status : 500;
       if (status === 500) console.error(err);
       if (!res.headersSent) sendJson(res, status, { error: err instanceof Error ? err.message : String(err) });
       else res.destroy();
@@ -216,8 +221,32 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, (await library.get()).shipEntries());
       case "GET /api/library/issues":
         return sendJson(res, 200, (await library.get()).issues());
+      case "GET /api/status":
+        return sendJson(res, 200, await orch.refreshStatus());
+      case "GET /api/events":
+        return events(req, res);
+      case "GET /api/jobs":
+        return sendJson(res, 200, orch.jobs());
+      case "POST /api/jobs": {
+        const body = await readJson<{ workspace?: unknown; tool?: unknown; version?: unknown; inputs?: unknown; params?: unknown; force?: unknown }>(req);
+        if (typeof body.workspace !== "string" || typeof body.tool !== "string") throw new HttpError(400, "workspace and tool are required");
+        const job = await orch.run({
+          workspace: body.workspace,
+          tool: body.tool,
+          version: typeof body.version === "string" ? body.version : undefined,
+          inputs: (body.inputs ?? {}) as Record<string, string>,
+          params: (body.params ?? {}) as Record<string, number | string | boolean>,
+          force: body.force === true,
+        });
+        return sendJson(res, 200, job);
+      }
+      case "GET /api/storage":
+        return sendJson(res, 200, await orch.storage());
+      case "DELETE /api/cache":
+        return sendJson(res, 200, await orch.clearCache());
       default:
-        if (url.pathname.startsWith("/api/library/") || url.pathname.startsWith("/api/books/")) return libraryApi(req, res, url, route);
+        if (url.pathname.startsWith("/api/jobs/")) return jobApi(req, res, url, route);
+        if (/^\/api\/(library|books|ships)\//.test(url.pathname)) return libraryApi(req, res, url, route);
         return workspaceApi(req, res, url, route);
     }
   }
@@ -244,10 +273,46 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const { version } = await readJson<{ version?: string }>(req);
       const book = lib.book(decodeURIComponent(m[1]), version);
       if (!book?.manifest) throw new HttpError(404, `no book "${decodeURIComponent(m[1])}" in the library`);
-      // the orchestrator (Docker) will supply the image inventory and GPU; until then nothing counts as downloaded
-      return sendJson(res, 200, resolveBook(book.manifest, lib, EMPTY_INVENTORY, { gpu: false }));
+      const inventory = await orch.inventory(Object.entries(book.manifest.ships).flatMap(([id, range]) => lib.ship(id, range) ?? []));
+      return sendJson(res, 200, resolveBook(book.manifest, lib, inventory, { gpu: orch.gpu() }));
+    }
+    m = url.pathname.match(/^\/api\/books\/([^/]+)\/get-ready$/);
+    if (m && req.method === "POST") {
+      const { version } = await readJson<{ version?: string }>(req);
+      return sendJson(res, 200, await orch.getReady(decodeURIComponent(m[1]), version));
+    }
+    m = url.pathname.match(/^\/api\/ships\/([^/]+)\/test$/);
+    if (m && req.method === "POST") {
+      const { version } = await readJson<{ version?: string }>(req);
+      return sendJson(res, 200, await orch.testShip(decodeURIComponent(m[1]), version));
+    }
+    m = url.pathname.match(/^\/api\/ships\/([^/]+)\/([^/]+)$/);
+    if (m && req.method === "DELETE") {
+      return sendJson(res, 200, await orch.removeShip(decodeURIComponent(m[1]), decodeURIComponent(m[2]), url.searchParams.get("force") === "1"));
     }
     throw new HttpError(404, `no route ${route}`);
+  }
+
+  async function jobApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
+    const m = url.pathname.match(/^\/api\/jobs\/([^/]+)(?:\/(cancel|rerun))?$/);
+    if (!m) throw new HttpError(404, `no route ${route}`);
+    if (req.method === "GET" && !m[2]) return sendJson(res, 200, orch.job(m[1]));
+    if (req.method === "POST" && m[2] === "cancel") return sendJson(res, 200, orch.cancel(m[1]));
+    if (req.method === "POST" && m[2] === "rerun") return sendJson(res, 200, orch.rerun(m[1]));
+    throw new HttpError(404, `no route ${route}`);
+  }
+
+  /** Server-sent events: one JSON ServerEvent per message, for as long as the page is open. */
+  function events(req: IncomingMessage, res: ServerResponse) {
+    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-store", Connection: "keep-alive" });
+    res.write(": connected\n\n");
+    const send = (e: unknown) => res.write(`data: ${JSON.stringify(e)}\n\n`);
+    const heartbeat = setInterval(() => res.write(": ping\n\n"), 20_000);
+    orch.events.on("event", send);
+    req.on("close", () => {
+      clearInterval(heartbeat);
+      orch.events.off("event", send);
+    });
   }
 
   /** Routes under /api/workspaces/:name/artifacts. */
@@ -324,7 +389,10 @@ class LibraryHolder {
   private watched = true;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  constructor(private readonly dirs: string[]) {
+  constructor(
+    private readonly dirs: string[],
+    private readonly trust: TrustLookup,
+  ) {
     for (const dir of dirs) {
       for (const sub of ["ships", "books"]) {
         try {
@@ -341,7 +409,7 @@ class LibraryHolder {
 
   get(): Promise<Library> {
     if (!this.watched) this.loading = undefined;
-    this.loading ??= Library.load(this.dirs);
+    this.loading ??= Library.load(this.dirs, this.trust);
     return this.loading;
   }
 

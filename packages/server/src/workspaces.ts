@@ -149,7 +149,27 @@ export class WorkspaceStore {
     return this.ingest(name, filename, (dest) => pipeline(body, createWriteStream(dest)));
   }
 
-  private async ingest(name: string, filename: string, fill: (dest: string) => Promise<void>, displayName?: string): Promise<Artifact> {
+  /**
+   * Moves a run's output into the workspace. Its kind and format come from
+   * the operation that made it, not from its name.
+   */
+  async adopt(name: string, path: string, type: { kind: ArtifactKind; format: Format }, producedBy: string): Promise<Artifact> {
+    return this.ingest(name, basename(path), (dest) => rename(path, dest), undefined, { type, producedBy });
+  }
+
+  /** The workspace's runs/ and cache/ folders. */
+  async dirs(name: string): Promise<{ runs: string; cache: string }> {
+    const dir = await this.existing(name);
+    return { runs: join(dir, "runs"), cache: join(dir, "cache") };
+  }
+
+  private async ingest(
+    name: string,
+    filename: string,
+    fill: (dest: string) => Promise<void>,
+    displayName?: string,
+    from?: { type: { kind: ArtifactKind; format: Format }; producedBy: string },
+  ): Promise<Artifact> {
     const dir = await this.existing(name);
     const tmp = join(dir, "artifacts", `.incoming-${randomBytes(6).toString("hex")}`);
     const data = join(tmp, filename);
@@ -157,7 +177,7 @@ export class WorkspaceStore {
       await mkdir(tmp, { recursive: true });
       await fill(data);
       const isDir = (await stat(data)).isDirectory();
-      const type = sniff(filename, isDir, isDir ? await readdir(data) : []);
+      const type = from?.type ?? sniff(filename, isDir, isDir ? await readdir(data) : []);
       if (!type) throw new WorkspaceError(415, `Pharos doesn't know what kind of data "${filename}" is yet`);
       const { hash, size } = await hashPath(data);
       const final = join(dir, "artifacts", hash);
@@ -170,6 +190,7 @@ export class WorkspaceStore {
         uri: join(final, filename),
         name: displayName ?? filename,
         meta: {},
+        ...(from ? { producedBy: from.producedBy } : {}),
         contentHash: `sha256:${hash}`,
         sizeBytes: size,
         createdAt: new Date().toISOString(),
