@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { AUTHOR_HELP, runAuthorCommand } from "./author.js";
 import { VERSION, defaultDataDir, startServer } from "./server.js";
 
 const HELP = `Pharos ${VERSION}: scientific tools, one local app
@@ -12,12 +13,17 @@ Usage: pharos [options]
 Options:
   -p, --port <n>   port to listen on (default 7860; 0 = any free port)
   -d, --data <dir> where workspaces live (default $PHAROS_HOME or ~/Pharos)
+  -l, --library <dir>
+                   a folder with ships/ and books/ to load (repeatable); the
+                   data folder's own ships/ and books/ are always loaded
       --no-open    don't open a browser window
   -v, --version    print the version
   -h, --help       show this help
 
 The server only listens on 127.0.0.1 and requires the secret token in the
-launch URL, so other users and websites cannot reach your files.`;
+launch URL, so other users and websites cannot reach your files.
+
+${AUTHOR_HELP}`;
 
 function findUiDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -36,11 +42,17 @@ function openBrowser(url: string) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  const code = await runAuthorCommand(argv);
+  if (code !== null) {
+    process.exitCode = code;
+    return;
+  }
   const { values } = parseArgs({
     args: argv,
     options: {
       port: { type: "string", short: "p", default: "7860" },
       data: { type: "string", short: "d" },
+      library: { type: "string", short: "l", multiple: true },
       open: { type: "boolean", default: true },
       "no-open": { type: "boolean", default: false },
       version: { type: "boolean", short: "v" },
@@ -56,6 +68,7 @@ export async function main(argv = process.argv.slice(2)) {
     uiDir: findUiDir(),
     wasmPath: fileURLToPath(import.meta.resolve("@pharos/core/wasm/pharos_kernels.wasm")),
     dataDir: values.data ? resolve(values.data) : defaultDataDir(),
+    libraryDirs: (values.library ?? []).map((d) => resolve(d)),
   };
 
   let server;

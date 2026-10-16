@@ -47,6 +47,7 @@ runs and is cached, and the catalogue shows its counts.
 
 ```
 packages/contracts   types + JSON Schemas: artifact, ship.yaml, book.yaml, plan, job, API routes, events
+packages/books       loads ships/ and books/, type-checks pipelines, derives accepted formats, resolves books
 packages/core        headless core: image model, TIFF I/O, operations, command registry, timeline
 packages/ui          browser UI (Vite + plain TypeScript)
 packages/server      local server and `pharos` launcher (published as pharos-lab)
@@ -59,10 +60,12 @@ books/<id>/          book.yaml, GUIDE.md (assistant instructions), example/
 
 ```sh
 npm install
-npm run build        # contracts → core → ui → server
+npm run build        # contracts → books → core → ui → server
 npm run typecheck
 npm test             # vitest, run against sources (no build needed)
-npm start            # local server on 127.0.0.1; prints the launch URL with its token
+npm start            # local server on 127.0.0.1 with this repo's ships/ and books/; prints the launch URL
+node packages/server/bin/pharos.js check            # validate and type-check ships/ and books/ (file:line errors)
+node packages/server/bin/pharos.js ship new <id>    # also: book new <id> --ship <ship>
 npm run build -w @pharos/contracts   # also rewrites packages/contracts/schemas/*.json
 ```
 
@@ -75,6 +78,9 @@ npm run build -w @pharos/contracts   # also rewrites packages/contracts/schemas/
   the TypeScript type and the JSON Schema. Pattern-keyed maps use `KeyedMap`
   so unknown keys are rejected.
 - Tests live in `packages/<name>/test/*.test.ts`.
+- A ship's folder is `ships/<id>` (or `ships/<id>@<version>` to keep versions
+  side by side). A converter is any operation named `convert` with one input
+  and one output of the same kind; books automatically accept what it reads.
 - Comments explain why, briefly; match the density of the file you're in.
 - Ship ids are lowercase-hyphenated (`bio-utils`); input, output, parameter
   and step names are lowercase_snake (`movie`, `masks`).

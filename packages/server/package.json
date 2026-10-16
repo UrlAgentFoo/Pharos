@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",
+    "@pharos/books": "*",
     "@pharos/contracts": "*",
     "@pharos/core": "*"
   }

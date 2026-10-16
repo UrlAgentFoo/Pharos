@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { createReadStream } from "node:fs";
+import { type FSWatcher, createReadStream, watch } from "node:fs";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type Server, type ServerResponse, createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
+import { EMPTY_INVENTORY, Library, resolveBook } from "@pharos/books";
 import { type Kernels, findCommand, loadKernels, parseParams, readTiff, runSteps, writeTiff } from "@pharos/core";
 import {
   AiError,
@@ -39,6 +40,11 @@ export interface ServerOptions {
   aiClient?: AiClientFactory;
   /** Where workspaces (artifacts, runs, cache) live. Defaults to $PHAROS_HOME or ~/Pharos. */
   dataDir?: string;
+  /**
+   * Folders holding `ships/` and `books/`, searched in order before the data
+   * folder's own. Earlier folders win when two hold the same version.
+   */
+  libraryDirs?: string[];
 }
 
 export interface RunningServer {
@@ -95,7 +101,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const settingsDir = opts.configDir ?? configDir();
   const makeClient = opts.aiClient ?? defaultClientFactory;
   const chats = new ChatStore();
-  const workspaces = new WorkspaceStore(opts.dataDir ?? defaultDataDir());
+  const dataDir = opts.dataDir ?? defaultDataDir();
+  const workspaces = new WorkspaceStore(dataDir);
+  const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)));
   let port = 0;
 
   const server: Server = createServer((req, res) => {
@@ -202,9 +210,44 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (typeof name !== "string") throw new HttpError(400, "name must be a string");
         return sendJson(res, 200, await workspaces.create(name.trim()));
       }
+      case "GET /api/library/books":
+        return sendJson(res, 200, (await library.get()).bookEntries());
+      case "GET /api/library/ships":
+        return sendJson(res, 200, (await library.get()).shipEntries());
+      case "GET /api/library/issues":
+        return sendJson(res, 200, (await library.get()).issues());
       default:
+        if (url.pathname.startsWith("/api/library/") || url.pathname.startsWith("/api/books/")) return libraryApi(req, res, url, route);
         return workspaceApi(req, res, url, route);
     }
+  }
+
+  /** Routes for one ship or book. */
+  async function libraryApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
+    const lib = await library.get();
+    let m = url.pathname.match(/^\/api\/library\/(books|ships)\/([^/]+)$/);
+    if (m && req.method === "GET") {
+      const id = decodeURIComponent(m[2]);
+      const version = url.searchParams.get("version") ?? undefined;
+      if (m[1] === "books") {
+        const book = lib.book(id, version);
+        if (!book?.manifest) throw new HttpError(404, `no book "${id}"${version ? ` ${version}` : ""} in the library`);
+        const entry = lib.bookEntries().find((e) => e.id === id && e.version === book.manifest!.version)!;
+        return sendJson(res, 200, { manifest: book.manifest, guide: book.guide ?? "", entry, accepts: book.accepts ?? [] });
+      }
+      const ship = lib.ship(id, version);
+      if (!ship) throw new HttpError(404, `no ship "${id}"${version ? ` ${version}` : ""} in the library`);
+      return sendJson(res, 200, { manifest: ship, entry: lib.shipEntries().find((e) => e.id === id && e.version === ship.version)! });
+    }
+    m = url.pathname.match(/^\/api\/books\/([^/]+)\/resolve$/);
+    if (m && req.method === "POST") {
+      const { version } = await readJson<{ version?: string }>(req);
+      const book = lib.book(decodeURIComponent(m[1]), version);
+      if (!book?.manifest) throw new HttpError(404, `no book "${decodeURIComponent(m[1])}" in the library`);
+      // the orchestrator (Docker) will supply the image inventory and GPU; until then nothing counts as downloaded
+      return sendJson(res, 200, resolveBook(book.manifest, lib, EMPTY_INVENTORY, { gpu: false }));
+    }
+    throw new HttpError(404, `no route ${route}`);
   }
 
   /** Routes under /api/workspaces/:name/artifacts. */
@@ -261,10 +304,56 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     token,
     close: () =>
       new Promise((ok) => {
+        library.close();
         server.closeAllConnections();
         server.close(() => ok());
       }),
   };
+}
+
+// ---------------------------------------------------------------- library
+
+/**
+ * Keeps the loaded library, reloading it after a ship or book changes on
+ * disk. Where a folder can't be watched (or doesn't exist yet) it reloads
+ * on every request instead, which is cheap for a local library.
+ */
+class LibraryHolder {
+  private loading: Promise<Library> | undefined;
+  private readonly watchers: FSWatcher[] = [];
+  private watched = true;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private readonly dirs: string[]) {
+    for (const dir of dirs) {
+      for (const sub of ["ships", "books"]) {
+        try {
+          const w = watch(join(dir, sub), { recursive: true }, () => this.changed());
+          w.on("error", () => (this.watched = false));
+          this.watchers.push(w);
+        } catch {
+          // a folder that doesn't exist yet (or can't be watched) may appear later: just reload each time
+          this.watched = false;
+        }
+      }
+    }
+  }
+
+  get(): Promise<Library> {
+    if (!this.watched) this.loading = undefined;
+    this.loading ??= Library.load(this.dirs);
+    return this.loading;
+  }
+
+  private changed() {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => (this.loading = undefined), 100);
+  }
+
+  close() {
+    clearTimeout(this.timer);
+    for (const w of this.watchers) w.close();
+  }
 }
 
 // ---------------------------------------------------------------- batch

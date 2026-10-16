@@ -30,6 +30,14 @@ export interface Resolution {
   problems: PlanProblem[];
 }
 
+/** A ship or book manifest with problems; errors keep it out of the library. */
+export interface LibraryIssue {
+  type: "ship" | "book";
+  id: string;
+  dir: string;
+  problems: (PlanProblem & { file?: string; line?: number })[];
+}
+
 export interface StorageReport {
   ships: { id: string; version: string; image: string; sizeBytes: number; usedBy: string[] }[];
   cache: { usedBytes: number; limitBytes: number };
@@ -62,11 +70,21 @@ export interface ApiRoutes {
   "GET /api/status": { req: void; res: SystemStatus };
 
   "GET /api/library/books": { req: void; res: CatalogueEntry[] };
-  "GET /api/library/books/:id": { req: void; res: { manifest: BookManifest; guide: string; entry: CatalogueEntry } };
+  /** `?version=` picks a version; the newest otherwise. `accepts` lists the formats each input takes, directly or after conversion. */
+  "GET /api/library/books/:id": {
+    req: void;
+    res: {
+      manifest: BookManifest;
+      guide: string;
+      entry: CatalogueEntry;
+      accepts: { input: string; kind: string; direct: string[]; converted: { format: string; via: string }[] }[];
+    };
+  };
   "POST /api/library/books": { req: { source: string }; res: CatalogueEntry };
   "GET /api/library/ships": { req: void; res: CatalogueEntry[] };
   "GET /api/library/ships/:id": { req: void; res: { manifest: ShipManifest; entry: CatalogueEntry } };
   "GET /api/catalogue/stats": { req: void; res: CatalogueStats };
+  "GET /api/library/issues": { req: void; res: LibraryIssue[] };
 
   "POST /api/books/:id/resolve": { req: { version?: string }; res: Resolution };
   "POST /api/books/:id/get-ready": { req: { version?: string }; res: { jobs: Job[] } };

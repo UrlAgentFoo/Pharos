@@ -1,0 +1,26 @@
+{
+  "name": "@pharos/books",
+  "version": "0.1.0",
+  "description": "Loads, checks and resolves Pharos ship and book manifests.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@pharos/contracts": "*",
+    "semver": "7.8.5",
+    "yaml": "2.9.1"
+  }
+}
