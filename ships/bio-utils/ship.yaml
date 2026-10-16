@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: bio-utils
+version: 0.1.0
+image: pharos/bio-utils:0.1.0    # built from this folder's Dockerfile
+summary: Converts microscopy files to OME-Zarr, reads their metadata, and measures labelled objects.
+license: MIT
+tags: [microscopy, conversion, measurement]
+requires: { memory_gb: 4, network: none }
+operations:
+  convert:
+    summary: Converts TIFF, OME-TIFF, Zeiss CZI, Nikon ND2 and Leica LIF images to OME-Zarr, with axes in t, c, z, y, x order.
+    command: python /opt/pharos/pharos_bio.py convert --in {in.image} --out /out/image.zarr
+    inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, czi, nd2, lif] }]
+    outputs: [{ name: zarr, kind: volume, format: ome-zarr, path: /out/image.zarr }]
+    cache: { deterministic: true }
+  inspect:
+    summary: Reads an image's axes, shape, data type, channels, time points and voxel size, without converting it.
+    command: python /opt/pharos/pharos_bio.py inspect --in {in.image} --out /out/summary.json
+    inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, czi, nd2, lif, ome-zarr] }]
+    outputs: [{ name: summary, kind: table, format: json, path: /out/summary.json }]
+    cache: { deterministic: true }
+  measure:
+    summary: Measures every labelled object (per time point) - its size in voxels and physical units, centroid and mean intensity per channel.
+    command: python /opt/pharos/pharos_bio.py measure --labels {in.labels} --image {in.image} --out /out/table.csv
+    inputs:
+      - { name: labels, kind: labels, formats: [ome-zarr] }
+      - { name: image, kind: volume, formats: [ome-zarr] }
+    outputs: [{ name: table, kind: table, format: csv, path: /out/table.csv }]
+    cache: { deterministic: true }

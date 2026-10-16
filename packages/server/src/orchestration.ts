@@ -4,11 +4,10 @@
  * trust records Test ship leaves behind.
  */
 import { EventEmitter } from "node:events";
-import { readFile, readdir, writeFile } from "node:fs/promises";
+import { readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parse } from "yaml";
-import type { Library } from "@pharos/books";
-import type { ImageInventory } from "@pharos/books";
+import type { ImageInventory, Library } from "@pharos/books";
 import type { Artifact, Job, Params, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, TrustLevel } from "@pharos/contracts";
 import { withDefaults } from "@pharos/core";
 import { type DockerClient, JobQueue, type JobRequest, RunCache, type WorkspaceAccess, connect, detectStatus } from "@pharos/orchestrator";
@@ -59,13 +58,27 @@ export class Orchestration {
   private docker: DockerClient | null = null;
   private queue: JobQueue | null = null;
   private status: SystemStatus | null = null;
+  /** `<id>@<version>` → ship folder, for ships that are built from their Dockerfile. */
+  private buildContexts = new Map<string, string>();
+
+  private readonly library: () => Promise<Library>;
+  private lastLibrary: Library | undefined;
 
   constructor(
     private readonly dataDir: string,
     private readonly workspaces: WorkspaceStore,
-    private readonly library: () => Promise<Library>,
+    library: () => Promise<Library>,
     readonly trust: TrustStore,
-  ) {}
+  ) {
+    this.library = async () => {
+      const lib = await library();
+      if (lib !== this.lastLibrary) {
+        await this.noteBuildContexts(lib);
+        this.lastLibrary = lib;
+      }
+      return lib;
+    };
+  }
 
   emit(event: ServerEvent) {
     this.events.emit("event", event);
@@ -78,10 +91,18 @@ export class Orchestration {
     const changed = JSON.stringify({ ...status, disk: null }) !== JSON.stringify({ ...this.status, disk: null });
     this.status = status;
     if (status.docker.available && this.docker && !this.queue) {
-      this.queue = new JobQueue({ docker: this.docker, workspaces: this.access(), weightsDir: join(this.dataDir, "weights"), gpu: status.gpu.available });
+      this.queue = new JobQueue({
+        docker: this.docker,
+        workspaces: this.access(),
+        weightsDir: join(this.dataDir, "weights"),
+        gpu: status.gpu.available,
+        buildContext: (ship) => this.buildContexts.get(`${ship.id}@${ship.version}`),
+      });
       this.queue.on("job", (job) => this.emit({ type: "job", job }));
       this.queue.on("log", (jobId, line) => this.emit({ type: "job-log", jobId, line }));
-      this.queue.on("pull", (p) => this.emit({ type: "pull", ship: p.ship, version: p.version, receivedBytes: p.receivedBytes, ...(p.totalBytes ? { totalBytes: p.totalBytes } : {}), done: p.done, ...(p.error ? { error: p.error } : {}) }));
+      this.queue.on("pull", (p) =>
+        this.emit({ type: "pull", ship: p.ship, version: p.version, receivedBytes: p.receivedBytes, ...(p.totalBytes ? { totalBytes: p.totalBytes } : {}), done: p.done, ...(p.error ? { error: p.error } : {}), ...(p.message ? { message: p.message } : {}) }),
+      );
     }
     if (changed) this.emit({ type: "status", status });
     return status;
@@ -99,6 +120,16 @@ export class Orchestration {
           throw e;
         }),
     };
+  }
+
+  /** Notes which library ships carry a Dockerfile; called whenever the library loads. */
+  async noteBuildContexts(lib: Library) {
+    const next = new Map<string, string>();
+    for (const s of lib.ships) {
+      if (!s.manifest) continue;
+      if (await stat(join(s.dir, "Dockerfile")).then((x) => x.isFile(), () => false)) next.set(`${s.manifest.id}@${s.manifest.version}`, s.dir);
+    }
+    this.buildContexts = next;
   }
 
   private async ready(): Promise<{ docker: DockerClient; queue: JobQueue; status: SystemStatus }> {
@@ -153,6 +184,7 @@ export class Orchestration {
   /** Queues one job of a plan; parameters must already be checked. */
   async submit(req: JobRequest): Promise<Job> {
     const { queue } = await this.ready();
+    await this.library(); // keeps the list of ships built from a Dockerfile current
     try {
       return queue.submit(req);
     } catch (e) {

@@ -15,7 +15,7 @@ import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artifact, Job, Params, RunRecord, ShipManifest } from "@pharos/contracts";
 import { RunCache, cacheKey } from "./cache.js";
-import type { DockerClient } from "./docker.js";
+import { type DockerClient, buildImage } from "./docker.js";
 import { RunError, runOperation } from "./runner.js";
 
 /** How the queue reads and writes a workspace; the server's workspace store provides it. */
@@ -47,6 +47,8 @@ export interface QueueOptions {
   /** The machine can give containers an NVIDIA GPU. */
   gpu: boolean;
   cpuSlots?: number;
+  /** A ship's folder when it holds a Dockerfile: its image is built there rather than pulled. */
+  buildContext?(ship: ShipManifest): string | undefined;
 }
 
 export interface PullEvent {
@@ -57,6 +59,8 @@ export interface PullEvent {
   totalBytes?: number;
   done: boolean;
   error?: string;
+  /** For builds: the latest line of build output. */
+  message?: string;
 }
 
 interface Entry {
@@ -188,14 +192,17 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
     this.emit("log", e.job.id, line);
   }
 
-  /** Downloads an image once, however many jobs wait for it. */
+  /** Downloads (or builds) an image once, however many jobs wait for it. */
   pull(ship: ShipManifest): Promise<void> {
     const image = ship.image;
     const running = this.pulls.get(image);
     if (running) return running;
     const event = (patch: Partial<PullEvent>) => void this.emit("pull", { image, ship: ship.id, version: ship.version, receivedBytes: 0, done: false, ...patch });
-    const p: Promise<void> = this.o.docker
-      .pull(image, (receivedBytes, totalBytes) => event({ receivedBytes, totalBytes }))
+    const context = this.o.buildContext?.(ship);
+    const fetch = context
+      ? buildImage(context, image, (line) => event({ message: line.slice(0, 200) }))
+      : this.o.docker.pull(image, (receivedBytes, totalBytes) => event({ receivedBytes, totalBytes }));
+    const p: Promise<void> = fetch
       .then(
         () => event({ done: true }),
         (err: unknown) => {
@@ -238,7 +245,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
       }
 
       if (!image) {
-        this.update(e, { state: "downloading", message: `Downloading ${req.ship.id} ${req.ship.version}` });
+        this.update(e, { state: "downloading", message: `${this.o.buildContext?.(req.ship) ? "Building" : "Downloading"} ${req.ship.id} ${req.ship.version}` });
         await this.pull(req.ship);
         if (signal.aborted) throw new RunError("cancelled");
         image = await this.o.docker.inspectImage(req.ship.image);

@@ -97,7 +97,7 @@ async function inspectTiff(path: string): Promise<Partial<DataSummary>> {
     [t, c, z] = [Number(ij.frames ?? 1), Number(ij.channels ?? 1), Number(ij.slices ?? 1)];
     if (t * c * z === 1 && ij.images) z = Number(ij.images);
     const xr = rationalToNumber(await first.fileDirectory.loadValue("XResolution"));
-    const unit = ij.unit === "micron" || ij.unit === "\\u00B5m" ? "µm" : (ij.unit ?? "pixel");
+    const unit = ["micron", "um", "\\u00B5m"].includes(ij.unit ?? "") ? "µm" : (ij.unit ?? "pixel");
     if (xr) voxel = { x: 1 / xr, y: 1 / xr, ...(ij.spacing ? { z: Number(ij.spacing) } : {}), unit };
     if (ij.finterval) frame = { value: Number(ij.finterval), unit: ij.tunit ?? "s" };
   } else {

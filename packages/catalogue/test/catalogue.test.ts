@@ -130,6 +130,12 @@ describe("inspect", () => {
     expect(s).toMatchObject({ name: "movie.tif", axes: "tczyx", shape: [4, 2, 3, 8, 16], dtype: "uint16", channels: 2, timepoints: 4, voxelSize: { x: 0.5, y: 0.5, z: 2, unit: "µm" } });
   });
 
+  it("reads the voxel size of ImageJ TIFFs written with unit=um", async () => {
+    const path = join(root, "um.tif");
+    await writeFile(path, writeTiff(createImage({ dtype: "uint8", width: 4, height: 4, slices: 2, calibration: { pixelWidth: 0.5, pixelHeight: 0.5, pixelDepth: 2, unit: "um" } })));
+    expect((await inspect({ uri: path, kind: "volume", format: "tiff" })).voxelSize).toMatchObject({ x: 0.5, unit: "µm" });
+  });
+
   it("squeezes axes of length one", async () => {
     const path = join(root, "stack.tif");
     await writeFile(path, writeTiff(createImage({ dtype: "uint8", width: 4, height: 4, slices: 5 })));

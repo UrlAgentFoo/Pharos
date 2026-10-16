@@ -3,7 +3,7 @@
  * calls Pharos needs (images, containers, logs). Talking to the API
  * directly gives byte-level download progress and needs no dependency.
  */
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { type IncomingMessage, request } from "node:http";
 import { homedir } from "node:os";
@@ -41,6 +41,30 @@ export interface ContainerSpec {
     Tmpfs?: Record<string, string>;
     DeviceRequests?: { Driver: string; Count: number; Capabilities: string[][] }[];
   };
+}
+
+/**
+ * Builds an image from a folder with a Dockerfile, using the docker command
+ * line (BuildKit), and reports each line of its output. Ship folders hold
+ * the Dockerfile of images that aren't published to a registry.
+ */
+export function buildImage(context: string, tag: string, onLine: (line: string) => void = () => {}, signal?: AbortSignal): Promise<void> {
+  return new Promise((ok, fail) => {
+    const child = spawn("docker", ["build", "--progress=plain", "--tag", tag, context], { stdio: ["ignore", "pipe", "pipe"], signal });
+    const tail: string[] = [];
+    const read = (chunk: Buffer) => {
+      for (const line of chunk.toString("utf8").split(/\r?\n/)) {
+        if (!line.trim()) continue;
+        tail.push(line);
+        if (tail.length > 20) tail.shift();
+        onLine(line);
+      }
+    };
+    child.stdout.on("data", read);
+    child.stderr.on("data", read);
+    child.on("error", (e) => fail(new DockerError(500, e.name === "AbortError" ? "cancelled" : `couldn't run docker build: ${e.message}`)));
+    child.on("close", (code) => (code === 0 ? ok() : fail(new DockerError(500, `building ${tag} failed: ${tail.slice(-3).join(" | ")}`))));
+  });
 }
 
 /** Where the Docker socket is: $DOCKER_HOST, the current docker context, or the usual places. */

@@ -35,7 +35,7 @@ export class JobsPanel {
   private readonly jobs = new Map<string, Job>();
   private readonly logs = new Map<string, string[]>();
   private readonly openLogs = new Set<string>();
-  private readonly pulls = new Map<string, { receivedBytes: number; totalBytes?: number }>();
+  private readonly pulls = new Map<string, { receivedBytes: number; totalBytes?: number; message?: string }>();
   private renderQueued = false;
 
   constructor(private readonly hooks: JobsHooks) {
@@ -148,7 +148,11 @@ export class JobsPanel {
     const active = ACTIVE.includes(j.state);
     const pull = j.state === "downloading" ? this.pulls.get(`${j.ship}@${j.version}`) : undefined;
     const progress = pull?.totalBytes ? pull.receivedBytes / pull.totalBytes : j.state === "running" ? (j.progress ?? 0) : j.state === "done" ? 1 : undefined;
-    const message = pull ? `Downloading ${j.ship}: ${formatSize(pull.receivedBytes)}${pull.totalBytes ? ` of ${formatSize(pull.totalBytes)}` : ""}` : (j.error ?? j.message ?? "");
+    const message = pull?.message
+      ? `Building ${j.ship}: ${pull.message}`
+      : pull
+        ? `Downloading ${j.ship}: ${formatSize(pull.receivedBytes)}${pull.totalBytes ? ` of ${formatSize(pull.totalBytes)}` : ""}`
+        : (j.error ?? j.message ?? "");
     const outputs = j.state === "done" ? Object.entries(j.outputs ?? {}) : [];
     const log = this.openLogs.has(j.id) ? `<pre class="code jobs-log">${escapeHtml((this.logs.get(j.id) ?? []).join("\n") || "(no output yet)")}</pre>` : "";
     return `<li class="job state-${j.state}" data-job="${escapeHtml(j.id)}">

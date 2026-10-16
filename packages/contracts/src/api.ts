@@ -157,7 +157,8 @@ export interface ApiError {
 export type ServerEvent =
   | { type: "job"; job: Job }
   | { type: "job-log"; jobId: string; line: string }
-  | { type: "pull"; ship: string; version: string; receivedBytes: number; totalBytes?: number; done: boolean; error?: string }
+  /** Download progress, or for ships built from their Dockerfile, the latest build line in `message`. */
+  | { type: "pull"; ship: string; version: string; receivedBytes: number; totalBytes?: number; done: boolean; error?: string; message?: string }
   | { type: "plan"; plan: Plan }
   | { type: "status"; status: SystemStatus }
   | { type: "library"; change: "books" | "ships" }
