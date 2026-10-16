@@ -69,6 +69,29 @@ registerViewer({
   },
 });
 
+// ------------------------------------------------------------ videos
+
+registerViewer({
+  id: "video",
+  label: "Play",
+  accepts: (a) => a.kind === "video" && a.format === "mp4",
+  async open(a, host) {
+    const url = URL.createObjectURL(new Blob([await host.content(a)], { type: "video/mp4" }));
+    try {
+      await showDialog(
+        `<p class="eyebrow">Video</p><h2>${escapeHtml(a.name ?? a.id)}</h2>
+         <video class="artifact-video" src="${url}" controls autoplay loop muted playsinline></video>
+         <p class="muted small">${formatSize(a.sizeBytes ?? 0)}</p>
+         <footer><button class="primary" data-cancel>Close</button></footer>`,
+        () => {},
+        undefined,
+      );
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  },
+});
+
 // ------------------------------------------------------------ everything else
 
 const KIND_LABEL: Record<Artifact["kind"], string> = {

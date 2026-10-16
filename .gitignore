@@ -4,3 +4,5 @@ dist/
 kernels/target/
 packages/server/ui/
 .DS_Store
+.env
+.env.*

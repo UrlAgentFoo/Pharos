@@ -35,7 +35,7 @@ API, for authors and automation.
 | `packages/catalogue` (`@pharos/catalogue`) | Data inspector, full-text catalogue of ships and books, book matching, and the MCP server. |
 | `packages/ui` (`@pharos/ui`) | The browser UI: Vite + TypeScript. |
 | `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: workspaces, library, plans, jobs, the assistant and authoring commands. |
-| `ships/`, `books/` | The ships and books in this repo (`ships/hello` is a tiny test ship). |
+| `ships/`, `books/` | The ships (`bio-utils`, `cellpose`, `ultrack`, `render`, and `hello` for tests) and books (Segment and measure, Track cells in a time-lapse) in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
 | `kernels/` | Rust pixel kernels compiled to WebAssembly. Parked: the built module is checked in at `packages/core/wasm/`, and nothing new should depend on it. |
 
 ## Development

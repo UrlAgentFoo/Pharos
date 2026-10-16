@@ -3589,3 +3589,11 @@ dialog.side::backdrop {
   align-items: center;
   gap: 6px;
 }
+
+.artifact-video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: 3px;
+}

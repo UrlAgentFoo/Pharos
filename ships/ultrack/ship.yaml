@@ -1,0 +1,23 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: ultrack
+version: 0.1.0
+image: pharos/ultrack:0.1.0    # built from this folder's Dockerfile, on royerlab/ultrack:0.6.1-cpu
+summary: Tracks cells over time (Ultrack) - links per-frame segmentations into lineages, choosing among segmentation hypotheses.
+citation: https://doi.org/10.1038/s41592-025-02778-0
+license: BSD-3-Clause
+homepage: https://github.com/royerlab/ultrack
+tags: [microscopy, tracking, lineage]
+requires: { gpu: { vendor: nvidia, optional: true }, memory_gb: 8, network: none }
+operations:
+  track:
+    summary: Links labelled cells across time points into tracks, giving a track table and labels that keep one id per cell over time.
+    command: python /opt/pharos/pharos_ultrack.py --labels {in.labels} --out /out --min-size {min_size} --max-size {max_size} --max-distance {max_distance}
+    inputs: [{ name: labels, kind: labels, formats: [ome-zarr] }]
+    parameters:
+      - { name: min_size, type: integer, default: 50, min: 1, description: "Smallest cell to keep, in voxels." }
+      - { name: max_size, type: integer, default: 1000000, min: 1, description: "Largest cell to keep, in voxels." }
+      - { name: max_distance, type: number, default: 15, min: 0, description: "Largest distance a cell moves between frames, in physical units (e.g. µm)." }
+    outputs:
+      - { name: tracks, kind: tracks, format: csv, path: /out/tracks.csv }
+      - { name: labels, kind: labels, format: ome-zarr, path: /out/labels.zarr }
+    cache: { deterministic: true }
