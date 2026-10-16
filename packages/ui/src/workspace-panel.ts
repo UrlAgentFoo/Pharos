@@ -46,12 +46,28 @@ function setCurrent(name: string) {
 }
 
 /** What the panel closed for; `refresh` reopens it (another workspace chosen, files dropped). */
-type PanelResult = { open: Artifact } | { run: Artifact } | { add: "path" | "upload" } | { create: true } | { refresh: true } | null;
+type PanelResult =
+  | { open: Artifact }
+  | { run: Artifact }
+  | { find: Artifact[] }
+  | { ask: Artifact[] }
+  | { add: "path" | "upload" }
+  | { create: true }
+  | { refresh: true }
+  | null;
 
 /** Shows the panel until the user closes it, handling adds and opens in between. */
 export async function workspacePanel(
   server: LocalServer,
-  opts: { open: (a: Artifact, workspace: string) => Promise<void>; run: (a: Artifact, workspace: string) => Promise<void>; notify: (text: string) => void },
+  opts: {
+    open: (a: Artifact, workspace: string) => Promise<void>;
+    run: (a: Artifact, workspace: string) => Promise<void>;
+    /** Shows the books that accept the chosen data. */
+    find: (data: Artifact[], workspace: string) => Promise<void>;
+    /** Asks the assistant to plan for the chosen data. */
+    ask: (data: Artifact[], workspace: string) => Promise<void>;
+    notify: (text: string) => void;
+  },
 ) {
   let name = currentWorkspace();
   await server.createWorkspace(name);
@@ -65,6 +81,8 @@ export async function workspacePanel(
     if ("refresh" in result) continue;
     if ("open" in result) return opts.open(result.open, name);
     if ("run" in result) return opts.run(result.run, name);
+    if ("find" in result) return opts.find(result.find, name);
+    if ("ask" in result) return opts.ask(result.ask, name);
     if ("create" in result) {
       const next = await promptDialog("New workspace", "Name", "");
       if (next) {
@@ -99,7 +117,7 @@ function showPanel(
   const rows = artifacts.length
     ? artifacts
         .map(
-          (a, i) => `<li class="ws-row"><button class="file" data-i="${i}" title="${escapeHtml(viewerFor(a).label)}">
+          (a, i) => `<li class="ws-row"><input type="checkbox" data-pick="${i}" aria-label="Choose ${escapeHtml(a.name ?? "data")}"/><button class="file" data-i="${i}" title="${escapeHtml(viewerFor(a).label)}">
             <span>${icon(KIND_ICON[a.kind], 16)} ${escapeHtml(a.name ?? a.id.slice(0, 12))}</span>
             <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button>
             <button class="chip" data-run="${i}" title="Run a ship on this">Run…</button></li>`,
@@ -110,6 +128,9 @@ function showPanel(
     `<p class="eyebrow">Workspace</p>
      <div class="ws-head"><select data-ws aria-label="Workspace">${options}</select><button class="chip" data-new>${icon("plus", 14)} New</button></div>
      <div class="browser ws-drop"><ul class="entries">${rows}</ul></div>
+     <div class="ws-pick"><span class="muted small" data-picked>Tick data to find books for it, or to ask the assistant.</span>
+       <button class="chip" data-find disabled>${icon("search", 13)} Find books</button>
+       <button class="chip" data-ask disabled>${icon("sparkle", 13)} Ask the assistant…</button></div>
      <p class="muted small">Stored on this computer. Data you add is copied in, so the original files are never changed.</p>
      <footer><button data-path>${icon("open", 15)} Add from this computer…</button><button data-upload>${icon("upload", 15)} Upload…</button><button class="primary" data-cancel>Close</button></footer>`,
     (done, el) => {
@@ -122,6 +143,17 @@ function showPanel(
       el.querySelector("[data-upload]")!.addEventListener("click", () => done({ add: "upload" }));
       el.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.addEventListener("click", () => done({ open: artifacts[Number(b.dataset.i)] })));
       el.querySelectorAll<HTMLButtonElement>("[data-run]").forEach((b) => b.addEventListener("click", () => done({ run: artifacts[Number(b.dataset.run)] })));
+      const picked = () => [...el.querySelectorAll<HTMLInputElement>("[data-pick]:checked")].map((c) => artifacts[Number(c.dataset.pick)]);
+      el.querySelectorAll<HTMLInputElement>("[data-pick]").forEach((c) =>
+        c.addEventListener("change", () => {
+          const n = picked().length;
+          el.querySelector<HTMLButtonElement>("[data-find]")!.disabled = !n;
+          el.querySelector<HTMLButtonElement>("[data-ask]")!.disabled = !n;
+          el.querySelector("[data-picked]")!.textContent = n ? `${n} chosen` : "Tick data to find books for it, or to ask the assistant.";
+        }),
+      );
+      el.querySelector("[data-find]")!.addEventListener("click", () => done({ find: picked() }));
+      el.querySelector("[data-ask]")!.addEventListener("click", () => done({ ask: picked() }));
       const drop = el.querySelector<HTMLElement>(".ws-drop")!;
       drop.addEventListener("dragover", (e) => {
         e.preventDefault();

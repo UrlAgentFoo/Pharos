@@ -28,9 +28,14 @@ API, for authors and automation.
 
 | Package | What it is |
 | --- | --- |
-| `packages/core` (`@pharos/core`) | Headless core: data model, TIFF I/O, operations, the command registry and the timeline. Runs in browsers and Node. |
+| `packages/contracts` (`@pharos/contracts`) | Shared types and JSON Schemas: artifacts, `ship.yaml`, `book.yaml`, plans, jobs, the server API and its events. |
+| `packages/books` (`@pharos/books`) | Loads and checks ships and books, type-checks pipelines, resolves books and builds plans. |
+| `packages/orchestrator` (`@pharos/orchestrator`) | Runs ship operations in Docker: downloads, jobs, progress, caching and run records. |
+| `packages/core` (`@pharos/core`) | Headless core: image model, TIFF I/O, operations, the command registry, tools and the timeline. Runs in browsers and Node. |
+| `packages/catalogue` (`@pharos/catalogue`) | Data inspector, full-text catalogue of ships and books, book matching, and the MCP server. |
 | `packages/ui` (`@pharos/ui`) | The browser UI: Vite + TypeScript. |
-| `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: file access, batch runs and the assistant. |
+| `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: workspaces, library, plans, jobs, the assistant and authoring commands. |
+| `ships/`, `books/` | The ships and books in this repo (`ships/hello` is a tiny test ship). |
 | `kernels/` | Rust pixel kernels compiled to WebAssembly. Parked: the built module is checked in at `packages/core/wasm/`, and nothing new should depend on it. |
 
 ## Development
@@ -39,11 +44,18 @@ Requires Node 22.13 or later.
 
 ```sh
 npm install
-npm run build        # core → ui → server
-npm start            # serves on 127.0.0.1 and opens the browser
+npm run build        # contracts → books → orchestrator → core → catalogue → ui → server
+npm start            # serves on 127.0.0.1 with this repo's ships and books, and opens the browser
 npm test
 npm run typecheck
 ```
+
+Running ships needs Docker (Docker Desktop on macOS and Windows); GPU steps
+need Linux with an NVIDIA GPU and the NVIDIA Container Toolkit. Data lives in
+`~/Pharos` (set `PHAROS_HOME` or `--data` to change it).
+
+To use the catalogue from Claude Code, Claude Desktop or another MCP client,
+add a stdio server that runs `pharos mcp --library <this repo>`.
 
 The server only listens on `127.0.0.1` and requires the secret token in the
 launch URL. Rebuilding the kernels needs Rust with the

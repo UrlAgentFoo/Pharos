@@ -23,6 +23,7 @@ import {
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
+import { installFrom } from "./install.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
@@ -221,6 +222,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       }
       case "GET /api/library/books":
         return sendJson(res, 200, (await library.get()).bookEntries());
+      case "POST /api/library/books": {
+        const { source } = await readJson<{ source?: unknown }>(req);
+        if (typeof source !== "string") throw new HttpError(400, "source is required: a folder or a git URL");
+        const installed = await installFrom(source.trim(), dataDir, await library.get());
+        orch.emit({ type: "library", change: "books" });
+        return sendJson(res, 200, { installed });
+      }
       case "GET /api/library/ships":
         return sendJson(res, 200, (await library.get()).shipEntries());
       case "GET /api/library/issues":

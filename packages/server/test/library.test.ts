@@ -79,6 +79,19 @@ describe("inspect, match and search", () => {
   });
 });
 
+describe("install", () => {
+  it("installs a book folder into the data folder's library, once", async () => {
+    const src = join(tmp, "incoming");
+    await newBook(src, "extra-book", "my-tool");
+    const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+    const r = await api("/api/library/books", json({ source: join(src, "books", "extra-book") }));
+    expect(await r.json()).toEqual({ installed: ["book:extra-book@0.1.0"] });
+    expect((await (await api("/api/library/books")).json()).map((b: { id: string }) => b.id)).toContain("extra-book");
+    expect((await api("/api/library/books", json({ source: join(src, "books", "extra-book") }))).status).toBe(409);
+    expect((await api("/api/library/books", json({ source: "relative/path" }))).status).toBe(400);
+  });
+});
+
 describe("pharos check", () => {
   it("prints problems with file and line and fails on errors", async () => {
     const out: string[] = [];

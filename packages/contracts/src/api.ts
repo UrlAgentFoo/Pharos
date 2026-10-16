@@ -86,7 +86,8 @@ export interface ApiRoutes {
       accepts: { input: string; kind: string; direct: string[]; converted: { format: string; via: string }[] }[];
     };
   };
-  "POST /api/library/books": { req: { source: string }; res: CatalogueEntry };
+  /** Installs a book folder, or a library (ships/ + books/) from a folder or git URL, into the data folder. */
+  "POST /api/library/books": { req: { source: string }; res: { installed: string[] } };
   "GET /api/library/ships": { req: void; res: CatalogueEntry[] };
   "GET /api/library/ships/:id": { req: void; res: { manifest: ShipManifest; entry: CatalogueEntry } };
   "GET /api/catalogue/stats": { req: void; res: CatalogueStats };

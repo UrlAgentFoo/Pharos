@@ -3382,3 +3382,210 @@ dialog.side::backdrop {
   align-items: center;
   gap: 4px;
 }
+
+/* ---- library and plans */
+#dialog.wide {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.book-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+}
+
+.book-card.blocked {
+  opacity: 0.6;
+}
+
+.book-card p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.book-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.book-meta small,
+.book-match small {
+  color: var(--muted);
+}
+
+.book-match.tier-direct small {
+  color: #3d8b5a;
+}
+
+.book-match.tier-excluded small {
+  color: var(--danger);
+}
+
+.tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
+.book-card .job-actions {
+  margin-top: auto;
+}
+
+.chip.primary-chip {
+  border-color: var(--ink);
+}
+
+.warn-chip {
+  color: var(--warn-text);
+}
+
+.lib-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ws-pick [data-picked] {
+  flex: 1;
+}
+
+.ws-row input[type="checkbox"] {
+  flex: none;
+}
+
+.guide-text {
+  max-height: 60vh;
+  white-space: pre-wrap;
+}
+
+.issue-list,
+.issue-list ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.issue-list ul {
+  margin: 4px 0 12px 12px;
+}
+
+.issue-list .error {
+  color: var(--danger);
+}
+
+.chat.plan-panel {
+  width: min(420px, calc(100vw - 32px));
+}
+
+.plan-mark {
+  background: var(--ink);
+}
+
+.plan-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.plan-body h3 {
+  margin: 14px 0 6px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.plan-title {
+  margin: 4px 0 6px;
+}
+
+.plan-why {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ai);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.plan-steps,
+.plan-ships,
+.plan-problems {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.plan-ships,
+.plan-problems {
+  list-style: none;
+  padding-left: 0;
+}
+
+.plan-step {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 3px 0;
+}
+
+.plan-step .job-bar {
+  grid-column: 1 / -1;
+}
+
+.plan-step.state-done .job-state {
+  color: #3d8b5a;
+}
+
+.plan-step.state-failed .job-state {
+  color: var(--danger);
+}
+
+.plan-problems .error {
+  color: var(--danger);
+}
+
+.plan-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* icons sit beside their labels in chips and plan buttons */
+.chip,
+.plan-foot button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.plan-ships li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}

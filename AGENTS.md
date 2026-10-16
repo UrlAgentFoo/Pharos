@@ -34,7 +34,7 @@ operations) on this machine. Read `README.md` first.
 | --- | --- |
 | A · Core + UI | `packages/core`, `packages/ui` |
 | B · Orchestrator | `packages/orchestrator`, the server's job routes |
-| C · Formats + assistant | `packages/books`, `packages/catalogue` (index + MCP), `packages/assistant` |
+| C · Formats + assistant | `packages/books`, `packages/catalogue` (index + MCP), the server's planner (`packages/server/src/planner.ts`) |
 | D · Ships + books | `ships/`, `books/`, demo data |
 | Lead | `packages/contracts`, `AGENTS.md`, merges at each gate |
 
@@ -47,8 +47,10 @@ runs and is cached, and the catalogue shows its counts.
 
 ```
 packages/contracts   types + JSON Schemas: artifact, ship.yaml, book.yaml, plan, job, API routes, events
-packages/books       loads ships/ and books/, type-checks pipelines, derives accepted formats, resolves books
-packages/core        headless core: image model, TIFF I/O, operations, command registry, timeline
+packages/books       loads ships/ and books/, type-checks pipelines, derives accepted formats, resolves books, builds plans
+packages/orchestrator Docker: pulls, locked-down runs, job queue, progress, cache, run records
+packages/core        headless core: image model, TIFF I/O, operations, command registry, tools, timeline
+packages/catalogue   data inspector, SQLite full-text index, book matching, MCP server (`pharos mcp`)
 packages/ui          browser UI (Vite + plain TypeScript)
 packages/server      local server and `pharos` launcher (published as pharos-lab)
 kernels/             parked Rust/WASM kernels; the built module is checked in, don't add dependants
@@ -60,12 +62,13 @@ books/<id>/          book.yaml, GUIDE.md (assistant instructions), example/
 
 ```sh
 npm install
-npm run build        # contracts → books → core → ui → server
+npm run build        # contracts → books → orchestrator → core → catalogue → ui → server
 npm run typecheck
 npm test             # vitest, run against sources (no build needed)
 npm start            # local server on 127.0.0.1 with this repo's ships/ and books/; prints the launch URL
 node packages/server/bin/pharos.js check            # validate and type-check ships/ and books/ (file:line errors)
 node packages/server/bin/pharos.js ship new <id>    # also: book new <id> --ship <ship>
+node packages/server/bin/pharos.js mcp --library .  # the catalogue as an MCP server on stdio
 npm run build -w @pharos/contracts   # also rewrites packages/contracts/schemas/*.json
 ```
 

@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Without a server the
  * app runs in browser-only mode.
  */
-import type { Artifact, CatalogueEntry, Job, Params, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { Artifact, AssistantPlan, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -207,6 +207,72 @@ export class LocalServer {
 
   async testShip(id: string, version?: string): Promise<TestResult> {
     return (await this.json(`/api/ships/${encodeURIComponent(id)}/test`, "POST", { version })) as TestResult;
+  }
+
+  // ---------------------------------------------------------- books, catalogue and plans
+
+  async books(): Promise<CatalogueEntry[]> {
+    return (await this.call("/api/library/books")).json();
+  }
+
+  async book(id: string, version?: string): Promise<{ manifest: BookManifest; guide: string; entry: CatalogueEntry; accepts: { input: string; kind: string; direct: string[]; converted: { format: string; via: string }[] }[] }> {
+    return (await this.call(`/api/library/books/${encodeURIComponent(id)}${version ? `?version=${encodeURIComponent(version)}` : ""}`)).json();
+  }
+
+  async issues(): Promise<LibraryIssue[]> {
+    return (await this.call("/api/library/issues")).json();
+  }
+
+  async installBook(source: string): Promise<{ installed: string[] }> {
+    return (await this.json("/api/library/books", "POST", { source })) as { installed: string[] };
+  }
+
+  async searchCatalogue(text: string, type?: "ship" | "book"): Promise<CatalogueEntry[]> {
+    return (await this.call(`/api/catalogue/search?text=${encodeURIComponent(text)}${type ? `&type=${type}` : ""}`)).json();
+  }
+
+  async catalogueStats(): Promise<CatalogueStats> {
+    return (await this.call("/api/catalogue/stats")).json();
+  }
+
+  async resolveBook(id: string): Promise<Resolution> {
+    return (await this.json(`/api/books/${encodeURIComponent(id)}/resolve`, "POST", {})) as Resolution;
+  }
+
+  async testBook(id: string): Promise<TestResult> {
+    return (await this.json(`/api/books/${encodeURIComponent(id)}/test`, "POST", {})) as TestResult;
+  }
+
+  async match(workspace: string, artifacts: string[], text?: string): Promise<{ summaries: DataSummary[]; matches: BookMatch[] }> {
+    return (await this.json("/api/match", "POST", { workspace, artifacts, text })) as { summaries: DataSummary[]; matches: BookMatch[] };
+  }
+
+  async createPlan(workspace: string, book: string, inputs: Record<string, string>, parameters?: Params): Promise<Plan> {
+    return (await this.json("/api/plans", "POST", { workspace, from: "book", book, inputs, parameters })) as Plan;
+  }
+
+  async assistantPlan(workspace: string, text: string, artifacts: string[]): Promise<AssistantPlan> {
+    return (await this.json("/api/assistant/plan", "POST", { workspace, text, artifacts })) as AssistantPlan;
+  }
+
+  async plan(id: string): Promise<Plan> {
+    return (await this.call(`/api/plans/${encodeURIComponent(id)}`)).json();
+  }
+
+  async updatePlan(id: string, patch: Partial<Pick<Plan, "inputs" | "parameters" | "steps">>): Promise<Plan> {
+    return (await this.json(`/api/plans/${encodeURIComponent(id)}`, "PUT", patch)) as Plan;
+  }
+
+  async approvePlan(id: string): Promise<{ plan: Plan; jobs: Job[] }> {
+    return (await this.json(`/api/plans/${encodeURIComponent(id)}/approve`, "POST", {})) as { plan: Plan; jobs: Job[] };
+  }
+
+  async cancelPlan(id: string): Promise<Plan> {
+    return (await this.json(`/api/plans/${encodeURIComponent(id)}/cancel`, "POST", {})) as Plan;
+  }
+
+  async saveAsBook(id: string, meta: { id: string; title: string; summary: string }): Promise<CatalogueEntry> {
+    return (await this.json(`/api/plans/${encodeURIComponent(id)}/save-as-book`, "POST", meta)) as CatalogueEntry;
   }
 
   /**

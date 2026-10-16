@@ -18,7 +18,9 @@ import { TOOLS, type Tool, onToolChange, resetRanges, setTool, thumbnailElement 
 import { WindowManager } from "./windows.js";
 import { type Doc, Workspace } from "./workspace.js";
 import { viewerFor } from "./viewers.js";
-import { workspacePanel } from "./workspace-panel.js";
+import { currentWorkspace, workspacePanel } from "./workspace-panel.js";
+import { libraryPanel } from "./library-panel.js";
+import { PlanPanel } from "./plan-panel.js";
 import { JobsPanel } from "./jobs-panel.js";
 import { runDialog } from "./run-dialog.js";
 import { statusChip, storageDialog } from "./storage.js";
@@ -155,6 +157,7 @@ function act(a: Omit<AppAction, "section">): AppAction {
 const appActions: AppAction[] = [
   act({ id: "open", title: "Open…", menu: ["File"], icon: "open", shortcut: "Mod+O", keywords: ["load", "file", "tiff", "browse"], enabled: () => true, run: () => openDialog() }),
   act({ id: "workspace", title: "Workspace…", menu: ["File"], icon: "panel", keywords: ["data", "artifacts", "project", "folder", "library", "import", "add"], description: "Your data on disk: add files and open them", enabled: () => true, run: () => openWorkspace() }),
+  act({ id: "library", title: "Library…", menu: ["File"], icon: "plug", keywords: ["books", "recipes", "pipelines", "install", "catalogue", "ships", "tools"], description: "Books you can run, and installing more", enabled: () => !!server, run: () => openLibrary() }),
   act({ id: "jobs", title: "Jobs", menu: ["View"], icon: "batch", keywords: ["running", "progress", "queue", "cancel", "ships", "containers", "logs"], description: "Ship operations: progress, logs, cancel", enabled: () => !!server, run: () => jobsPanel.toggle() }),
   act({ id: "storage", title: "Ships and storage…", menu: ["View"], icon: "save", keywords: ["docker", "gpu", "disk", "download", "remove", "cache", "status", "test"], description: "Docker, GPU, downloaded ships and the cache", enabled: () => !!server, run: () => openStorage() }),
   act({ id: "open-local", title: "Open from this computer…", menu: ["File"], icon: "upload", keywords: ["upload", "browse"], enabled: () => true, run: () => openFromComputer() }),
@@ -269,6 +272,7 @@ function buildToolbar() {
     <div class="tb-left"><span class="brand"><span class="brand-mark" aria-hidden="true"></span><span>PHAROS</span></span></div>
     <nav class="tb-center" aria-label="Workspace">
       ${text("workspace", "panel", "Workspace")}
+      ${text("library", "plug", "Library")}
       ${text("add-menu", "add", "Add image", { menu: true })}
       ${text("layout-menu", "layout", "Layout", { menu: true })}
       ${text("group-menu", "link", "Group", { menu: true })}
@@ -997,15 +1001,61 @@ async function openWorkspace() {
         await s.runJob({ workspace, ...req });
         jobsPanel.show();
       },
+      find: (data, workspace) => openLibrary({ workspace, artifacts: data }),
+      ask: (data, workspace) => askAssistant(s, workspace, data),
     });
   } catch (e) {
     void alertDialog("Workspace", e instanceof Error ? e.message : String(e));
   }
 }
 
+// ------------------------------------------------------------ books: library, plans, the assistant's proposals
+
+const planPanel = new PlanPanel(() => server, {
+  openOutput: (workspace, id) => openOutput(workspace, id),
+  notify,
+  started: () => jobsPanel.show(),
+});
+
+async function openLibrary(data?: { workspace: string; artifacts: Artifact[] }) {
+  const s = server;
+  if (!s) return alertDialog("Library", "The library needs the local Pharos server. Start it with `npx pharos-lab`.");
+  try {
+    await libraryPanel(
+      s,
+      {
+        notify,
+        gpu: () => !!lastStatus?.gpu.available,
+        usePlan: async (book, inputs) => {
+          const plan = await s.createPlan(data?.workspace ?? currentWorkspace(), book.id, inputs);
+          await planPanel.show(plan);
+        },
+      },
+      data,
+    );
+  } catch (e) {
+    void alertDialog("Library", e instanceof Error ? e.message : String(e));
+  }
+}
+
+async function askAssistant(s: LocalServer, workspace: string, data: Artifact[]) {
+  const problem = aiUnavailable();
+  if (problem) return alertDialog("Assistant", problem);
+  const names = data.map((a) => a.name ?? a.id.slice(0, 8)).join(", ");
+  const text = await promptDialog("Ask the assistant", `What do you want to do with ${names}?`, "");
+  if (!text) return;
+  const r = await run("The assistant is choosing a book", () => s.assistantPlan(workspace, text, data.map((a) => a.id)));
+  if (!r) return;
+  if (r.plan) await planPanel.show(r.plan);
+  else void alertDialog("Assistant", `${r.message}${r.matches.some((m) => m.tier !== "excluded") ? "" : "\n\nNo installed book can run on this data."}`);
+}
+
 // ------------------------------------------------------------ ships: system status, jobs, storage
 
+let lastStatus: SystemStatus | null = null;
+
 function showStatus(status: SystemStatus | null) {
+  lastStatus = status ?? lastStatus;
   const el = document.querySelector<HTMLElement>(".sys-status");
   if (!el) return;
   const chip = statusChip(status);
@@ -1024,17 +1074,21 @@ async function openStorage() {
   }
 }
 
+/** Opens a job's or plan's output in its viewer. */
+function openOutput(workspace: string, id: string) {
+  const s = server;
+  if (!s) return;
+  void s
+    .artifact(workspace, id)
+    .then((a) => openArtifact(s, a, workspace))
+    .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+}
+
 const jobsPanel = new JobsPanel({
   cancel: (id) => server!.cancelJob(id),
   rerun: (id) => server!.rerunJob(id),
   log: async (id) => (await server!.job(id)).log,
-  openOutput: (workspace, id) => {
-    const s = server!;
-    void s
-      .artifact(workspace, id)
-      .then((a) => openArtifact(s, a, workspace))
-      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
-  },
+  openOutput,
   onActive: (count) => {
     const badge = document.querySelector<HTMLElement>(".jobs-btn .badge");
     if (!badge) return;
@@ -1050,6 +1104,7 @@ async function connectShips(s: LocalServer) {
   showStatus(null);
   s.events((e) => {
     jobsPanel.handle(e);
+    planPanel.handle(e);
     if (e.type === "status") showStatus(e.status);
   });
   const [status, jobs] = await Promise.all([s.status().catch(() => null), s.jobs().catch(() => [])]);
