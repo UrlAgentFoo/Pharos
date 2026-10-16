@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AUTHOR_HELP, runAuthorCommand } from "./author.js";
+import { MCP_HELP, runMcp } from "./mcp-cli.js";
 import { VERSION, defaultDataDir, startServer } from "./server.js";
 
 const HELP = `Pharos ${VERSION}: scientific tools, one local app
@@ -23,7 +24,8 @@ Options:
 The server only listens on 127.0.0.1 and requires the secret token in the
 launch URL, so other users and websites cannot reach your files.
 
-${AUTHOR_HELP}`;
+${AUTHOR_HELP}
+${MCP_HELP}`;
 
 function findUiDir(): string {
   const here = dirname(fileURLToPath(import.meta.url));
@@ -42,6 +44,7 @@ function openBrowser(url: string) {
 }
 
 export async function main(argv = process.argv.slice(2)) {
+  if (argv[0] === "mcp") return runMcp(argv.slice(1));
   const code = await runAuthorCommand(argv);
   if (code !== null) {
     process.exitCode = code;

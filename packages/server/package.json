@@ -13,7 +13,7 @@
     "ui"
   ],
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22.13"
   },
   "scripts": {
     "build": "tsc -p . && node ../../scripts/copy-ui.mjs"
@@ -21,6 +21,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.134.0",
     "@pharos/books": "*",
+    "@pharos/catalogue": "*",
     "@pharos/contracts": "*",
     "@pharos/core": "*"
   }

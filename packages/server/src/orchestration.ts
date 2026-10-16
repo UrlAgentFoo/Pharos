@@ -33,6 +33,8 @@ type TrustRecord = { trust: TrustLevel; at: string; error?: string };
 /** `<data>/trust.json`: which ship and book versions passed their tests on this machine. */
 export class TrustStore {
   private records: Record<string, TrustRecord> = {};
+  /** Bumped on every change, so caches built from trust levels know to rebuild. */
+  version = 0;
   private constructor(private readonly file: string) {}
 
   static async load(dataDir: string): Promise<TrustStore> {
@@ -45,6 +47,7 @@ export class TrustStore {
 
   async set(type: "ship" | "book", id: string, version: string, record: Omit<TrustRecord, "at">) {
     this.records[`${type}:${id}@${version}`] = { ...record, at: new Date().toISOString() };
+    this.version++;
     await writeFile(this.file, JSON.stringify(this.records, null, 2) + "\n");
   }
 }

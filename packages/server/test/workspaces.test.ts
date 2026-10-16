@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { WorkspaceStore, sniff } from "../src/workspaces.js";
+import { sniff } from "@pharos/catalogue";
+import { WorkspaceStore } from "../src/workspaces.js";
 
 let tmp: string;
 let store: WorkspaceStore;

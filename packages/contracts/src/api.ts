@@ -84,6 +84,8 @@ export interface ApiRoutes {
   "GET /api/library/ships": { req: void; res: CatalogueEntry[] };
   "GET /api/library/ships/:id": { req: void; res: { manifest: ShipManifest; entry: CatalogueEntry } };
   "GET /api/catalogue/stats": { req: void; res: CatalogueStats };
+  /** `?text=&type=ship|book&tag=&limit=`: full-text search, verified first. */
+  "GET /api/catalogue/search": { req: void; res: CatalogueEntry[] };
   "GET /api/library/issues": { req: void; res: LibraryIssue[] };
 
   "POST /api/books/:id/resolve": { req: { version?: string }; res: Resolution };
@@ -107,8 +109,10 @@ export interface ApiRoutes {
   /** The artifact's bytes (files only; folders such as OME-Zarr answer 400). */
   "GET /api/workspaces/:name/artifacts/:id/content": { req: void; res: ArrayBuffer };
 
-  "POST /api/inspect": { req: { artifact: string }; res: DataSummary };
-  "POST /api/match": { req: { artifacts: string[]; text?: string }; res: BookMatch[] };
+  /** Reads an artifact's metadata once and keeps it in `meta.summary`. */
+  "POST /api/inspect": { req: { workspace: string; artifact: string }; res: DataSummary };
+  /** Shortlists books for workspace data: direct matches, then after conversion, then excluded with reasons. */
+  "POST /api/match": { req: { workspace: string; artifacts: string[]; text?: string }; res: { summaries: DataSummary[]; matches: BookMatch[] } };
 
   "POST /api/plans": { req: PlanRequest; res: Plan };
   "GET /api/plans/:id": { req: void; res: Plan };

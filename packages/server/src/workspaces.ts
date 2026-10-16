@@ -12,6 +12,7 @@ import { createReadStream, createWriteStream } from "node:fs";
 import { constants, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { basename, join, relative, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
+import { sniff } from "@pharos/catalogue";
 import type { Artifact, ArtifactKind, Format, WorkspaceInfo } from "@pharos/contracts";
 
 export class WorkspaceError extends Error {
@@ -26,33 +27,6 @@ export class WorkspaceError extends Error {
 const NAME = /^[\w][\w .-]{0,63}$/;
 const ID = /^[0-9a-f]{64}$/;
 const SUBFOLDERS = ["artifacts", "runs", "cache"] as const;
-
-/** Guesses an artifact's kind and format from its name (and whether it is a folder). */
-export function sniff(name: string, isDir: boolean, entries: string[] = []): { kind: ArtifactKind; format: Format } | null {
-  const n = name.toLowerCase();
-  if (isDir) {
-    if (n.endsWith(".zarr")) return { kind: "volume", format: "ome-zarr" };
-    if (entries.includes("system") && entries.includes("constant")) return { kind: "sim-case", format: "openfoam-case" };
-    return null;
-  }
-  if (/\.ome\.tiff?$/.test(n)) return { kind: "volume", format: "ome-tiff" };
-  const ext = n.slice(n.lastIndexOf(".") + 1);
-  const byExt: Record<string, { kind: ArtifactKind; format: Format }> = {
-    tif: { kind: "volume", format: "tiff" },
-    tiff: { kind: "volume", format: "tiff" },
-    czi: { kind: "volume", format: "czi" },
-    nd2: { kind: "volume", format: "nd2" },
-    lif: { kind: "volume", format: "lif" },
-    csv: { kind: "table", format: "csv" },
-    parquet: { kind: "table", format: "parquet" },
-    ply: { kind: "mesh", format: "ply" },
-    vtk: { kind: "mesh", format: "vtk" },
-    vtu: { kind: "mesh", format: "vtk" },
-    vtp: { kind: "mesh", format: "vtk" },
-    mp4: { kind: "video", format: "mp4" },
-  };
-  return byExt[ext] ?? null;
-}
 
 /** sha256 of a file, or of a folder's sorted relative paths and file contents. */
 async function hashPath(path: string): Promise<{ hash: string; size: number }> {
@@ -127,6 +101,14 @@ export class WorkspaceStore {
     return this.read(await this.existing(name), id).catch(() => {
       throw new WorkspaceError(404, `no artifact ${id} in "${name}"`);
     });
+  }
+
+  /** Merges into an artifact's metadata (e.g. the inspector's summary) and saves it. */
+  async setMeta(name: string, id: string, meta: Record<string, unknown>): Promise<Artifact> {
+    const a = await this.get(name, id);
+    const next = { ...a, meta: { ...a.meta, ...meta } };
+    await writeFile(join(await this.existing(name), "artifacts", id, "artifact.json"), JSON.stringify(next, null, 2) + "\n");
+    return next;
   }
 
   private async read(dir: string, id: string): Promise<Artifact> {

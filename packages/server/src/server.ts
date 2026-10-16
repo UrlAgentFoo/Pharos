@@ -21,6 +21,7 @@ import {
   updateSettings,
 } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
+import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
@@ -107,6 +108,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const trust = await TrustStore.load(dataDir);
   const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)), trust.get);
   const orch = new Orchestration(dataDir, workspaces, () => library.get(), trust);
+  const catalogue = new CatalogueHolder(() => library.get(), trust, () => orch.gpu());
   void orch.refreshStatus();
   let port = 0;
 
@@ -221,6 +223,28 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, (await library.get()).shipEntries());
       case "GET /api/library/issues":
         return sendJson(res, 200, (await library.get()).issues());
+      case "GET /api/catalogue/stats":
+        return sendJson(res, 200, (await catalogue.get()).index.stats());
+      case "GET /api/catalogue/search": {
+        const p = url.searchParams;
+        const type = p.get("type");
+        return sendJson(res, 200, (await catalogue.get()).index.search({
+          text: p.get("text") ?? undefined,
+          type: type === "ship" || type === "book" ? type : undefined,
+          tag: p.get("tag") ?? undefined,
+          limit: Math.min(100, Number(p.get("limit") ?? 50)),
+        }));
+      }
+      case "POST /api/inspect": {
+        const { workspace, artifact } = await readJson<{ workspace?: unknown; artifact?: unknown }>(req);
+        if (typeof workspace !== "string" || typeof artifact !== "string") throw new HttpError(400, "workspace and artifact are required");
+        return sendJson(res, 200, await catalogue.summary(workspaces, workspace, artifact));
+      }
+      case "POST /api/match": {
+        const { workspace, artifacts, text } = await readJson<{ workspace?: unknown; artifacts?: unknown; text?: unknown }>(req);
+        if (typeof workspace !== "string" || !Array.isArray(artifacts)) throw new HttpError(400, "workspace and artifacts are required");
+        return sendJson(res, 200, await catalogue.match(workspaces, workspace, artifacts.map(String), typeof text === "string" ? text : undefined));
+      }
       case "GET /api/status":
         return sendJson(res, 200, await orch.refreshStatus());
       case "GET /api/events":
@@ -370,6 +394,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     close: () =>
       new Promise((ok) => {
         library.close();
+        catalogue.close();
         server.closeAllConnections();
         server.close(() => ok());
       }),

@@ -35,7 +35,7 @@ API, for authors and automation.
 
 ## Development
 
-Requires Node 20.19 or later.
+Requires Node 22.13 or later.
 
 ```sh
 npm install

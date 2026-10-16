@@ -7,17 +7,18 @@
     "packages/books",
     "packages/orchestrator",
     "packages/core",
+    "packages/catalogue",
     "packages/ui",
     "packages/server"
   ],
   "engines": {
-    "node": ">=20.19"
+    "node": ">=22.13"
   },
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build": "npm run build -w @pharos/contracts && npm run build -w @pharos/books && npm run build -w @pharos/orchestrator && npm run build -w @pharos/core && npm run build -w @pharos/ui && npm run build -w pharos-lab",
+    "build": "npm run build -w @pharos/contracts && npm run build -w @pharos/books && npm run build -w @pharos/orchestrator && npm run build -w @pharos/core && npm run build -w @pharos/catalogue && npm run build -w @pharos/ui && npm run build -w pharos-lab",
     "start": "node packages/server/bin/pharos.js --library .",
-    "typecheck": "tsc -p packages/contracts && tsc -p packages/books && tsc -p packages/orchestrator && tsc -p packages/core && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
+    "typecheck": "tsc -p packages/contracts && tsc -p packages/books && tsc -p packages/orchestrator && tsc -p packages/core && tsc -p packages/catalogue && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
     "test": "vitest run",
     "test:rust": "cargo test --manifest-path kernels/Cargo.toml"
   },

@@ -9,6 +9,7 @@ export default defineConfig({
       { find: /^@pharos\/contracts$/, replacement: fileURLToPath(new URL("./packages/contracts/src/index.ts", import.meta.url)) },
       { find: /^@pharos\/books$/, replacement: fileURLToPath(new URL("./packages/books/src/index.ts", import.meta.url)) },
       { find: /^@pharos\/orchestrator$/, replacement: fileURLToPath(new URL("./packages/orchestrator/src/index.ts", import.meta.url)) },
+      { find: /^@pharos\/catalogue$/, replacement: fileURLToPath(new URL("./packages/catalogue/src/index.ts", import.meta.url)) },
     ],
   },
   test: {

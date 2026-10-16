@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { newBook, newShip } from "@pharos/books";
+import { createImage, writeTiff } from "@pharos/core";
 import { runAuthorCommand } from "../src/author.js";
 import { type RunningServer, startServer } from "../src/server.js";
 import { WASM_PATH } from "../../core/test/helpers.js";
@@ -58,6 +59,23 @@ describe("library routes", () => {
       issues = await (await api("/api/library/issues")).json();
     }
     expect(issues.find((x) => x.id === "broken")?.problems[0]).toMatchObject({ line: expect.any(Number) });
+  });
+});
+
+describe("inspect, match and search", () => {
+  it("summarises workspace data once and shortlists the books that accept it", async () => {
+    const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+    await api("/api/workspaces", json({ name: "w" }));
+    const tif = join(tmp, "stack.tif");
+    await writeFile(tif, writeTiff(createImage({ dtype: "uint8", width: 8, height: 8, slices: 3 })));
+    const a = await (await api("/api/workspaces/w/artifacts", json({ path: tif }))).json();
+    const s = await (await api("/api/inspect", json({ workspace: "w", artifact: a.id }))).json();
+    expect(s).toMatchObject({ axes: "zyx", shape: [3, 8, 8], dtype: "uint8" });
+    expect((await (await api(`/api/workspaces/w/artifacts/${a.id}`)).json()).meta.summary).toEqual(s);
+    const m = await (await api("/api/match", json({ workspace: "w", artifacts: [a.id], text: "count" }))).json();
+    expect(m.matches[0]).toMatchObject({ book: { id: "my-book" }, tier: "direct" });
+    expect(await (await api("/api/catalogue/search?text=tool&type=ship")).json()).toEqual([expect.objectContaining({ id: "my-tool" })]);
+    expect(await (await api("/api/catalogue/stats")).json()).toMatchObject({ books: { imported: 1 } });
   });
 });
 
