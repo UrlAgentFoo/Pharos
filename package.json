@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/contracts",
     "packages/core",
     "packages/ui",
     "packages/server"
@@ -12,9 +13,9 @@
   },
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build": "npm run build -w @pharos/core && npm run build -w @pharos/ui && npm run build -w pharos-lab",
+    "build": "npm run build -w @pharos/contracts && npm run build -w @pharos/core && npm run build -w @pharos/ui && npm run build -w pharos-lab",
     "start": "node packages/server/bin/pharos.js",
-    "typecheck": "tsc -p packages/core && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
+    "typecheck": "tsc -p packages/contracts --noEmit && tsc -p packages/core && tsc -p packages/server --noEmit && tsc -p packages/ui --noEmit",
     "test": "vitest run",
     "test:rust": "cargo test --manifest-path kernels/Cargo.toml"
   },
@@ -22,6 +23,7 @@
     "@types/node": "^22.15.0",
     "typescript": "^5.9.0",
     "vite": "^8.0.0",
-    "vitest": "^5.0.0"
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
   }
 }

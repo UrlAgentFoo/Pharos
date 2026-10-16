@@ -1,0 +1,27 @@
+{
+  "name": "@pharos/contracts",
+  "version": "0.1.0",
+  "description": "Shared Pharos contracts: types and JSON Schemas for artifacts, ships, books, plans, jobs and the server API.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./schemas/*": "./schemas/*"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "scripts": {
+    "build": "tsc -p . && node ../../scripts/emit-schemas.mjs"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "0.34.52",
+    "ajv": "8.20.0"
+  }
+}

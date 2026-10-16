@@ -1,0 +1,22 @@
+id: cell-tracking
+version: 0.1.0
+title: Track cells in a 3D time-lapse
+summary: Segments nuclei in every frame, links them into tracks and measures each cell.
+tags: [microscopy, tracking, 3d+t]
+ships: { bio-utils: ^0.1, cellpose: ^0.1, ultrack: ^0.6 }
+inputs:
+  - name: movie
+    accepts:
+      kind: volume
+      formats: [ome-zarr, tiff]
+      axes: tzyx
+      channels: 1-4
+      dtype: [uint8, uint16, float32]
+parameters:
+  - { name: diameter, type: number, unit: px, default: 30, sets: segment.diameter }
+steps:
+  - { id: convert, run: bio-utils.convert, in: { image: $movie } }
+  - { id: segment, run: cellpose.segment, in: { image: convert.zarr }, with: { model: nuclei } }
+  - { id: track,   run: ultrack.track,    in: { labels: segment.masks } }
+  - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }
+outputs: { tracks: track.tracks, table: measure.table }
