@@ -27,7 +27,11 @@ export function showDialog<T>(html: string, wire: (done: (v: T) => void, el: HTM
       dialog.close();
       resolve(v);
     };
-    dialog.onclose = () => done(cancelValue);
+    // "close" is dispatched after a delay, so a closed dialog's event can reach the next
+    // dialog opened in its place; that one is open by then, so ignore the event
+    dialog.onclose = () => {
+      if (!dialog.open) done(cancelValue);
+    };
     dialog.querySelectorAll("[data-cancel]").forEach((b) => b.addEventListener("click", () => done(cancelValue)));
     wire(done, dialog);
     dialog.showModal();

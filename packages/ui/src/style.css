@@ -3182,3 +3182,203 @@ dialog.side::backdrop {
   top: 0;
   background: var(--sheet);
 }
+
+/* ---- ships: status chip, jobs panel, run and storage dialogs */
+.sys-status .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.sys-status[data-tone="ok"] .dot {
+  background: #3d8b5a;
+}
+
+.sys-status[data-tone="warn"] .dot {
+  background: var(--warn-line);
+}
+
+.jobs-btn .badge {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 11px/16px var(--mono);
+  text-align: center;
+}
+
+.chat.jobs {
+  right: auto;
+  left: 24px;
+}
+
+.jobs-mark {
+  background: var(--accent);
+}
+
+.jobs-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+}
+
+.jobs-empty {
+  padding: 16px 8px;
+  color: var(--muted);
+}
+
+.job {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.job-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.job-state {
+  color: var(--muted);
+  font: 11px/1.6 var(--mono);
+  white-space: nowrap;
+}
+
+.job.state-failed .job-state,
+.job.state-failed .job-msg {
+  color: var(--danger);
+}
+
+.job.state-done .job-state {
+  color: #3d8b5a;
+}
+
+.job-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.job-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.job-msg {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jobs-log {
+  max-height: 200px;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-row .file {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-tools {
+  height: auto;
+  max-height: 360px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.run-tools button > span {
+  align-items: flex-start;
+}
+
+.trust {
+  white-space: nowrap;
+}
+
+.trust-verified {
+  color: #3d8b5a;
+}
+
+.status-list,
+.storage-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.status-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.status-list li.warn {
+  color: var(--warn-text);
+}
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.storage-row small {
+  color: var(--muted);
+}
+
+.ws-row .file {
+  width: auto;
+}
+
+.ws-row .chip,
+.ws-head .chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  white-space: nowrap;
+}
+
+.ws-row .chip {
+  border: 1px solid var(--line-strong);
+  padding: 3px 10px;
+}
+
+.run-tools button > span > span {
+  display: block;
+}
+
+.job-actions .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}

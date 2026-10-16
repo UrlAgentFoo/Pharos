@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Without a server the
  * app runs in browser-only mode.
  */
-import type { Artifact, WorkspaceInfo } from "@pharos/contracts";
+import type { Artifact, CatalogueEntry, Job, Params, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -151,8 +151,97 @@ export class LocalServer {
     return r.json();
   }
 
+  async artifact(workspace: string, id: string): Promise<Artifact> {
+    return (await this.call(`${artifactsPath(workspace)}/${id}`)).json();
+  }
+
   async content(workspace: string, id: string): Promise<ArrayBuffer> {
     return (await this.call(`${artifactsPath(workspace)}/${id}/content`)).arrayBuffer();
+  }
+
+  // ---------------------------------------------------------- ships, jobs and storage
+
+  async status(): Promise<SystemStatus> {
+    return (await this.call("/api/status")).json();
+  }
+
+  async ships(): Promise<CatalogueEntry[]> {
+    return (await this.call("/api/library/ships")).json();
+  }
+
+  async ship(id: string, version?: string): Promise<{ manifest: ShipManifest; entry: CatalogueEntry }> {
+    return (await this.call(`/api/library/ships/${encodeURIComponent(id)}${version ? `?version=${encodeURIComponent(version)}` : ""}`)).json();
+  }
+
+  async runJob(req: { workspace: string; tool: string; version?: string; inputs: Record<string, string>; params?: Params; force?: boolean }): Promise<Job> {
+    return (await this.json("/api/jobs", "POST", req)) as Job;
+  }
+
+  async jobs(): Promise<Job[]> {
+    return (await this.call("/api/jobs")).json();
+  }
+
+  async job(id: string): Promise<Job & { log: string }> {
+    return (await this.call(`/api/jobs/${encodeURIComponent(id)}`)).json();
+  }
+
+  async cancelJob(id: string): Promise<Job> {
+    return (await this.json(`/api/jobs/${encodeURIComponent(id)}/cancel`, "POST", {})) as Job;
+  }
+
+  async rerunJob(id: string): Promise<Job> {
+    return (await this.json(`/api/jobs/${encodeURIComponent(id)}/rerun`, "POST", {})) as Job;
+  }
+
+  async storage(): Promise<StorageReport> {
+    return (await this.call("/api/storage")).json();
+  }
+
+  async clearCache(): Promise<{ freedBytes: number }> {
+    return (await this.call("/api/cache", { method: "DELETE" })).json();
+  }
+
+  async removeShip(id: string, version: string, force = false): Promise<{ freedBytes: number }> {
+    return (await this.call(`/api/ships/${encodeURIComponent(id)}/${encodeURIComponent(version)}${force ? "?force=1" : ""}`, { method: "DELETE" })).json();
+  }
+
+  async testShip(id: string, version?: string): Promise<TestResult> {
+    return (await this.json(`/api/ships/${encodeURIComponent(id)}/test`, "POST", { version })) as TestResult;
+  }
+
+  /**
+   * Follows the server's live events (jobs, logs, downloads, status) until
+   * `stop` is called, reconnecting after a dropped connection. Uses fetch
+   * rather than EventSource so the token travels in a header.
+   */
+  events(onEvent: (e: ServerEvent) => void): { stop: () => void } {
+    const abort = new AbortController();
+    const loop = async () => {
+      while (!abort.signal.aborted) {
+        try {
+          const res = await this.call("/api/events", { signal: abort.signal });
+          const reader = res.body!.getReader();
+          const decoder = new TextDecoder();
+          let buf = "";
+          for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            let i: number;
+            while ((i = buf.indexOf("\n\n")) >= 0) {
+              const msg = buf.slice(0, i);
+              buf = buf.slice(i + 2);
+              if (msg.startsWith("data: ")) onEvent(JSON.parse(msg.slice(6)) as ServerEvent);
+            }
+          }
+        } catch {
+          /* dropped or refused: try again shortly */
+        }
+        if (!abort.signal.aborted) await new Promise((r) => setTimeout(r, 2000));
+      }
+    };
+    void loop();
+    return { stop: () => abort.abort() };
   }
 
   private async json(path: string, method: string, body: unknown): Promise<unknown> {

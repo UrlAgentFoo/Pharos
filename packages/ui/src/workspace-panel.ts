@@ -46,10 +46,13 @@ function setCurrent(name: string) {
 }
 
 /** What the panel closed for; `refresh` reopens it (another workspace chosen, files dropped). */
-type PanelResult = { open: Artifact } | { add: "path" | "upload" } | { create: true } | { refresh: true } | null;
+type PanelResult = { open: Artifact } | { run: Artifact } | { add: "path" | "upload" } | { create: true } | { refresh: true } | null;
 
 /** Shows the panel until the user closes it, handling adds and opens in between. */
-export async function workspacePanel(server: LocalServer, opts: { open: (a: Artifact, workspace: string) => Promise<void>; notify: (text: string) => void }) {
+export async function workspacePanel(
+  server: LocalServer,
+  opts: { open: (a: Artifact, workspace: string) => Promise<void>; run: (a: Artifact, workspace: string) => Promise<void>; notify: (text: string) => void },
+) {
   let name = currentWorkspace();
   await server.createWorkspace(name);
   for (;;) {
@@ -61,6 +64,7 @@ export async function workspacePanel(server: LocalServer, opts: { open: (a: Arti
     if (!result) return;
     if ("refresh" in result) continue;
     if ("open" in result) return opts.open(result.open, name);
+    if ("run" in result) return opts.run(result.run, name);
     if ("create" in result) {
       const next = await promptDialog("New workspace", "Name", "");
       if (next) {
@@ -95,9 +99,10 @@ function showPanel(
   const rows = artifacts.length
     ? artifacts
         .map(
-          (a, i) => `<li><button class="file" data-i="${i}" title="${escapeHtml(viewerFor(a).label)}">
+          (a, i) => `<li class="ws-row"><button class="file" data-i="${i}" title="${escapeHtml(viewerFor(a).label)}">
             <span>${icon(KIND_ICON[a.kind], 16)} ${escapeHtml(a.name ?? a.id.slice(0, 12))}</span>
-            <small>${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button></li>`,
+            <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button>
+            <button class="chip" data-run="${i}" title="Run a ship on this">Run…</button></li>`,
         )
         .join("")
     : `<li class="none">No data yet. Add files from this computer, or drop them here.</li>`;
@@ -116,6 +121,7 @@ function showPanel(
       el.querySelector("[data-path]")!.addEventListener("click", () => done({ add: "path" }));
       el.querySelector("[data-upload]")!.addEventListener("click", () => done({ add: "upload" }));
       el.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.addEventListener("click", () => done({ open: artifacts[Number(b.dataset.i)] })));
+      el.querySelectorAll<HTMLButtonElement>("[data-run]").forEach((b) => b.addEventListener("click", () => done({ run: artifacts[Number(b.dataset.run)] })));
       const drop = el.querySelector<HTMLElement>(".ws-drop")!;
       drop.addEventListener("dragover", (e) => {
         e.preventDefault();

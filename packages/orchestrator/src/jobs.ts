@@ -132,6 +132,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
     }
     const job: Job = {
       id: newId("job"),
+      workspace: req.workspace,
       ship: req.ship.id,
       version: req.ship.version,
       operation: req.operation,

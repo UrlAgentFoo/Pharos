@@ -19,6 +19,10 @@ import { WindowManager } from "./windows.js";
 import { type Doc, Workspace } from "./workspace.js";
 import { viewerFor } from "./viewers.js";
 import { workspacePanel } from "./workspace-panel.js";
+import { JobsPanel } from "./jobs-panel.js";
+import { runDialog } from "./run-dialog.js";
+import { statusChip, storageDialog } from "./storage.js";
+import type { Artifact, SystemStatus } from "@pharos/contracts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -151,6 +155,8 @@ function act(a: Omit<AppAction, "section">): AppAction {
 const appActions: AppAction[] = [
   act({ id: "open", title: "Open…", menu: ["File"], icon: "open", shortcut: "Mod+O", keywords: ["load", "file", "tiff", "browse"], enabled: () => true, run: () => openDialog() }),
   act({ id: "workspace", title: "Workspace…", menu: ["File"], icon: "panel", keywords: ["data", "artifacts", "project", "folder", "library", "import", "add"], description: "Your data on disk: add files and open them", enabled: () => true, run: () => openWorkspace() }),
+  act({ id: "jobs", title: "Jobs", menu: ["View"], icon: "batch", keywords: ["running", "progress", "queue", "cancel", "ships", "containers", "logs"], description: "Ship operations: progress, logs, cancel", enabled: () => !!server, run: () => jobsPanel.toggle() }),
+  act({ id: "storage", title: "Ships and storage…", menu: ["View"], icon: "save", keywords: ["docker", "gpu", "disk", "download", "remove", "cache", "status", "test"], description: "Docker, GPU, downloaded ships and the cache", enabled: () => !!server, run: () => openStorage() }),
   act({ id: "open-local", title: "Open from this computer…", menu: ["File"], icon: "upload", keywords: ["upload", "browse"], enabled: () => true, run: () => openFromComputer() }),
   act({ id: "sample", title: "Open sample image", menu: ["File"], icon: "image", keywords: ["demo", "example", "2d"], enabled: () => true, run: () => openSample(false) }),
   act({ id: "sample-3d", title: "Open 3D sample", menu: ["File"], icon: "cube", keywords: ["demo", "example", "volume", "stack", "z"], enabled: () => true, run: () => openSample(true) }),
@@ -270,7 +276,11 @@ function buildToolbar() {
       ${text("results", "table", "Results")}
       ${text("overview", "overview", "Overview", { shortcut: "Tab" })}
     </nav>
-    <div class="tb-right">${text("settings-menu", "settings", "Settings", { menu: true })}</div>`;
+    <div class="tb-right">
+      <button class="tb-text sys-status" data-action="storage" hidden><span class="dot" aria-hidden="true"></span><span class="sys-text"></span></button>
+      <button class="tb-text jobs-btn" data-action="jobs" title="Jobs" hidden>${icon("batch", 16)}<span>Jobs</span><span class="badge" hidden></span></button>
+      ${text("settings-menu", "settings", "Settings", { menu: true })}
+    </div>`;
 
   // search lives in the bottom-right corner, out of the way of the work
   const dock = document.createElement("button");
@@ -966,21 +976,85 @@ function copyStep(target: Doc, payload: StepPayload) {
 
 // ------------------------------------------------------------ workspace: data on disk, opened by its viewer
 
+/** Opens an artifact in its viewer, reading its bytes from the server. */
+function openArtifact(s: LocalServer, a: Artifact, workspace: string) {
+  return viewerFor(a).open(a, {
+    content: (x) => run(`Reading ${x.name ?? "data"}`, () => s.content(workspace, x.id)).then((b) => b ?? Promise.reject(new Error("could not read the data"))),
+    openImage: (bytes, name) => openBytes(bytes, name, null),
+  });
+}
+
 async function openWorkspace() {
   const s = server;
   if (!s) return alertDialog("Workspace", "Workspaces keep your data on disk, so they need the local Pharos server. Start it with `npx pharos-lab`.");
   try {
     await workspacePanel(s, {
       notify,
-      open: (a, workspace) =>
-        viewerFor(a).open(a, {
-          content: (x) => run(`Reading ${x.name ?? "data"}`, () => s.content(workspace, x.id)).then((b) => b ?? Promise.reject(new Error("could not read the data"))),
-          openImage: (bytes, name) => openBytes(bytes, name, null),
-        }),
+      open: (a, workspace) => openArtifact(s, a, workspace),
+      run: async (a, workspace) => {
+        const req = await runDialog(s, workspace, a);
+        if (!req) return;
+        await s.runJob({ workspace, ...req });
+        jobsPanel.show();
+      },
     });
   } catch (e) {
     void alertDialog("Workspace", e instanceof Error ? e.message : String(e));
   }
+}
+
+// ------------------------------------------------------------ ships: system status, jobs, storage
+
+function showStatus(status: SystemStatus | null) {
+  const el = document.querySelector<HTMLElement>(".sys-status");
+  if (!el) return;
+  const chip = statusChip(status);
+  el.hidden = false;
+  el.dataset.tone = chip.tone;
+  el.title = `${chip.title} Click for ships and storage.`;
+  el.querySelector(".sys-text")!.textContent = chip.text;
+}
+
+async function openStorage() {
+  if (!server) return;
+  try {
+    await storageDialog(server, notify);
+  } catch (e) {
+    void alertDialog("Ships and storage", e instanceof Error ? e.message : String(e));
+  }
+}
+
+const jobsPanel = new JobsPanel({
+  cancel: (id) => server!.cancelJob(id),
+  rerun: (id) => server!.rerunJob(id),
+  log: async (id) => (await server!.job(id)).log,
+  openOutput: (workspace, id) => {
+    const s = server!;
+    void s
+      .artifact(workspace, id)
+      .then((a) => openArtifact(s, a, workspace))
+      .catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+  },
+  onActive: (count) => {
+    const badge = document.querySelector<HTMLElement>(".jobs-btn .badge");
+    if (!badge) return;
+    badge.hidden = count === 0;
+    badge.textContent = String(count);
+  },
+  notify,
+});
+
+/** Follows the server's jobs, downloads and status for as long as the page is open. */
+async function connectShips(s: LocalServer) {
+  document.querySelector<HTMLElement>(".jobs-btn")!.hidden = false;
+  showStatus(null);
+  s.events((e) => {
+    jobsPanel.handle(e);
+    if (e.type === "status") showStatus(e.status);
+  });
+  const [status, jobs] = await Promise.all([s.status().catch(() => null), s.jobs().catch(() => [])]);
+  showStatus(status);
+  jobsPanel.load(jobs);
 }
 
 // ------------------------------------------------------------ batch
@@ -1331,6 +1405,7 @@ refresh();
 async function boot() {
   [kernels, server] = await Promise.all([loadKernels(fetch(wasmUrl)), LocalServer.connect()]);
   if (server) aiConfig = await server.aiConfig().catch(() => null);
+  if (server) void connectShips(server);
   await restoreSession();
   autosaveReady = true;
   updateEnabled();

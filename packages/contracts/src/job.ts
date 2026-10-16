@@ -14,6 +14,7 @@ export const FINISHED_JOB_STATES: readonly JobState[] = ["done", "failed", "canc
 export const JobSchema = Type.Object(
   {
     id: Type.String({ minLength: 1 }),
+    workspace: Type.Optional(Type.String({ description: "Where its inputs come from and its outputs go." })),
     planId: Type.Optional(Type.String()),
     stepId: Type.Optional(Type.String()),
     ship: IdSchema,
