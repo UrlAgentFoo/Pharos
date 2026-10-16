@@ -59,8 +59,8 @@ export interface WorkspaceInfo {
 
 /** What `POST /api/plans` takes: a book to load, or a request for the assistant. */
 export type PlanRequest =
-  | { from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params }
-  | { from: "assistant"; text: string; inputs: Record<string, string> };
+  | { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params }
+  | { workspace: string; from: "assistant"; text: string; inputs: Record<string, string> };
 
 /**
  * Route → request and response bodies. `:name` segments are path
@@ -117,7 +117,10 @@ export interface ApiRoutes {
   "POST /api/plans": { req: PlanRequest; res: Plan };
   "GET /api/plans/:id": { req: void; res: Plan };
   "PUT /api/plans/:id": { req: Pick<Plan, "parameters" | "steps" | "inputs">; res: Plan };
+  /** Answers 422 with the problems while the plan has errors. */
   "POST /api/plans/:id/approve": { req: void; res: { plan: Plan; jobs: Job[] } };
+  /** Cancels a proposed plan, or the running jobs of an approved one. */
+  "POST /api/plans/:id/cancel": { req: void; res: Plan };
   "POST /api/plans/:id/save-as-book": { req: { id: string; title: string; summary: string }; res: CatalogueEntry };
 
   "GET /api/jobs": { req: void; res: Job[] };

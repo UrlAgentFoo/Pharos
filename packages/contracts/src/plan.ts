@@ -37,6 +37,7 @@ export type PlanProblem = Static<typeof PlanProblemSchema>;
 export const PlanSchema = Type.Object(
   {
     id: Type.String({ minLength: 1 }),
+    workspace: Type.String({ description: "Where the inputs come from and the outputs go." }),
     source: Type.Union([Type.Literal("book"), Type.Literal("improvised")]),
     book: Type.Optional(Type.Object({ id: IdSchema, version: VersionSchema }, { additionalProperties: false })),
     title: Type.String(),
@@ -47,6 +48,11 @@ export const PlanSchema = Type.Object(
     ships: Type.Array(ShipNeedSchema),
     problems: Type.Array(PlanProblemSchema, { description: "Validation results; a plan with errors cannot be approved." }),
     status: Type.Union(PLAN_STATUSES.map((s) => Type.Literal(s))),
+    /** Step id → job id, once approved. */
+    jobs: Type.Optional(Type.Record(Type.String(), Type.String())),
+    /** Book output name → artifact id, once done. */
+    outputs: Type.Optional(Type.Record(Type.String(), Type.String())),
+    error: Type.Optional(Type.String()),
     createdAt: Type.String({ format: "date-time" }),
   },
   { additionalProperties: false, $id: "plan.schema.json", title: "Pharos plan" },

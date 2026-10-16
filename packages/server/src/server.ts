@@ -23,6 +23,7 @@ import {
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
+import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
 export const VERSION = "0.1.0";
@@ -109,6 +110,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)), trust.get);
   const orch = new Orchestration(dataDir, workspaces, () => library.get(), trust);
   const catalogue = new CatalogueHolder(() => library.get(), trust, () => orch.gpu());
+  const plans = new Plans(dataDir, workspaces, () => library.get(), catalogue, orch);
   void orch.refreshStatus();
   let port = 0;
 
@@ -245,6 +247,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (typeof workspace !== "string" || !Array.isArray(artifacts)) throw new HttpError(400, "workspace and artifacts are required");
         return sendJson(res, 200, await catalogue.match(workspaces, workspace, artifacts.map(String), typeof text === "string" ? text : undefined));
       }
+      case "POST /api/plans": {
+        const body = await readJson<{ workspace?: unknown; from?: unknown; book?: unknown; version?: unknown; inputs?: unknown; parameters?: unknown }>(req);
+        if (typeof body.workspace !== "string") throw new HttpError(400, "workspace is required");
+        if (body.from !== "book" || typeof body.book !== "string") throw new HttpError(400, 'only { from: "book" } plans can be made here; the assistant makes the others');
+        const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined);
+        return sendJson(res, 200, plan);
+      }
       case "GET /api/status":
         return sendJson(res, 200, await orch.refreshStatus());
       case "GET /api/events":
@@ -270,6 +279,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, await orch.clearCache());
       default:
         if (url.pathname.startsWith("/api/jobs/")) return jobApi(req, res, url, route);
+        if (url.pathname.startsWith("/api/plans/")) return planApi(req, res, url, route);
         if (/^\/api\/(library|books|ships)\//.test(url.pathname)) return libraryApi(req, res, url, route);
         return workspaceApi(req, res, url, route);
     }
@@ -305,6 +315,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const { version } = await readJson<{ version?: string }>(req);
       return sendJson(res, 200, await orch.getReady(decodeURIComponent(m[1]), version));
     }
+    m = url.pathname.match(/^\/api\/books\/([^/]+)\/test$/);
+    if (m && req.method === "POST") {
+      const { version } = await readJson<{ version?: string }>(req);
+      return sendJson(res, 200, await plans.testBook(decodeURIComponent(m[1]), version));
+    }
     m = url.pathname.match(/^\/api\/ships\/([^/]+)\/test$/);
     if (m && req.method === "POST") {
       const { version } = await readJson<{ version?: string }>(req);
@@ -313,6 +328,22 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     m = url.pathname.match(/^\/api\/ships\/([^/]+)\/([^/]+)$/);
     if (m && req.method === "DELETE") {
       return sendJson(res, 200, await orch.removeShip(decodeURIComponent(m[1]), decodeURIComponent(m[2]), url.searchParams.get("force") === "1"));
+    }
+    throw new HttpError(404, `no route ${route}`);
+  }
+
+  async function planApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
+    const m = url.pathname.match(/^\/api\/plans\/([^/]+)(?:\/(approve|cancel|save-as-book))?$/);
+    if (!m) throw new HttpError(404, `no route ${route}`);
+    const id = decodeURIComponent(m[1]);
+    if (req.method === "GET" && !m[2]) return sendJson(res, 200, plans.get(id));
+    if (req.method === "PUT" && !m[2]) return sendJson(res, 200, await plans.update(id, await readJson(req)));
+    if (req.method === "POST" && m[2] === "approve") return sendJson(res, 200, await plans.approve(id));
+    if (req.method === "POST" && m[2] === "cancel") return sendJson(res, 200, await plans.cancel(id));
+    if (req.method === "POST" && m[2] === "save-as-book") {
+      const body = await readJson<{ id?: unknown; title?: unknown; summary?: unknown }>(req);
+      if (typeof body.id !== "string" || typeof body.title !== "string" || typeof body.summary !== "string") throw new HttpError(400, "id, title and summary are required");
+      return sendJson(res, 200, await plans.saveAsBook(id, { id: body.id, title: body.title, summary: body.summary }));
     }
     throw new HttpError(404, `no route ${route}`);
   }

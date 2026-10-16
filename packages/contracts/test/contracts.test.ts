@@ -79,6 +79,7 @@ describe("plans", () => {
     const book = fixture("cell-tracking.book.yaml");
     const plan: Plan = {
       id: "p1",
+      workspace: "w",
       source: "book",
       book: { id: book.id, version: book.version },
       title: book.title,

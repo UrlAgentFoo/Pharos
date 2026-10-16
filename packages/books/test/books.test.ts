@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { BookManifest } from "@pharos/contracts";
-import { Library, acceptedFormats, checkBook, converters, newBook, newShip, resolveBook } from "@pharos/books";
+import { Library, acceptedFormats, checkBook, converters, dependencies, newBook, newShip, planProblems, resolveBook, stepParams } from "@pharos/books";
 
 const BIO_UTILS = `id: bio-utils
 version: 0.1.0
@@ -293,5 +293,31 @@ describe("scaffold", () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe("plans", () => {
+  const artifact = (id: string, kind: "volume" | "table") => ({ id, kind, format: "tiff" as const, uri: `/x/${id}`, meta: {}, createdAt: "" });
+
+  it("fills a step's parameters from its own values and the book parameters that set it", () => {
+    const b = book();
+    expect(stepParams(b.steps[1], b.parameters!, {})).toEqual({ model: "nuclei", diameter: 30 });
+    expect(stepParams(b.steps[1], b.parameters!, { diameter: 12 })).toEqual({ model: "nuclei", diameter: 12 });
+    expect(stepParams(b.steps[0], b.parameters!, { diameter: 12 })).toEqual({});
+  });
+
+  it("knows which steps a step waits for", () => {
+    expect(dependencies(book().steps[3])).toEqual(["track", "convert"]);
+    expect(dependencies(book().steps[0])).toEqual([]);
+  });
+
+  it("checks the data given and the parameter values", () => {
+    const b = book();
+    const ctx = { ships: lib, inventory: { has: () => false }, machine: { gpu: false }, artifacts: { a1: artifact("a1", "volume"), t1: artifact("t1", "table") } };
+    expect(planProblems({ steps: b.steps, inputs: { movie: "a1" }, parameters: {} }, b, ctx)).toEqual([]);
+    expect(planProblems({ steps: b.steps, inputs: { movie: "t1" }, parameters: {} }, b, ctx).map((p) => p.message)).toContain('"movie" needs volume data, this is table');
+    expect(planProblems({ steps: b.steps, inputs: {}, parameters: { diameter: "big" } }, b, ctx).map((p) => p.message)).toEqual(['no data chosen for "movie"', '"diameter" must be a number']);
+    const extra = planProblems({ steps: b.steps, inputs: { movie: "a1" }, parameters: {} }, b, { ...ctx, inputProblems: () => ["needs axes tzyx"] });
+    expect(extra.map((p) => p.message)).toEqual(["needs axes tzyx"]);
   });
 });

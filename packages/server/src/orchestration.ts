@@ -9,9 +9,9 @@ import { join } from "node:path";
 import { parse } from "yaml";
 import type { Library } from "@pharos/books";
 import type { ImageInventory } from "@pharos/books";
-import type { Artifact, Params, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, TrustLevel } from "@pharos/contracts";
+import type { Artifact, Job, Params, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, TrustLevel } from "@pharos/contracts";
 import { withDefaults } from "@pharos/core";
-import { type DockerClient, JobQueue, RunCache, type WorkspaceAccess, connect, detectStatus } from "@pharos/orchestrator";
+import { type DockerClient, JobQueue, type JobRequest, RunCache, type WorkspaceAccess, connect, detectStatus } from "@pharos/orchestrator";
 import { WorkspaceError, type WorkspaceStore } from "./workspaces.js";
 
 export class OrchestrationError extends Error {
@@ -67,7 +67,7 @@ export class Orchestration {
     readonly trust: TrustStore,
   ) {}
 
-  private emit(event: ServerEvent) {
+  emit(event: ServerEvent) {
     this.events.emit("event", event);
   }
 
@@ -148,6 +148,20 @@ export class Orchestration {
     } catch (e) {
       throw new OrchestrationError(400, e instanceof Error ? e.message : String(e));
     }
+  }
+
+  /** Queues one job of a plan; parameters must already be checked. */
+  async submit(req: JobRequest): Promise<Job> {
+    const { queue } = await this.ready();
+    try {
+      return queue.submit(req);
+    } catch (e) {
+      throw new OrchestrationError(400, e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  async finished(jobId: string): Promise<Job> {
+    return (await this.ready()).queue.finished(jobId);
   }
 
   jobs() {
