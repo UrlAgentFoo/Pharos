@@ -254,6 +254,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined);
         return sendJson(res, 200, plan);
       }
+      case "POST /api/assistant/plan": {
+        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown }>(req);
+        if (typeof body.workspace !== "string" || typeof body.text !== "string" || !Array.isArray(body.artifacts)) throw new HttpError(400, "workspace, text and artifacts are required");
+        const settings = await loadSettings(settingsDir);
+        let client;
+        try {
+          client = makeClient(settings.apiKey);
+        } catch {
+          throw new HttpError(400, "No API key configured. Add one in Settings.");
+        }
+        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }));
+      }
       case "GET /api/status":
         return sendJson(res, 200, await orch.refreshStatus());
       case "GET /api/events":

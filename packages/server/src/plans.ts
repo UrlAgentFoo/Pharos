@@ -8,10 +8,12 @@ import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify, parse } from "yaml";
 import { type Library, dependencies, hasErrors, planProblems, shipNeeds, stepParams } from "@pharos/books";
-import { acceptProblems } from "@pharos/catalogue";
+import { acceptProblems, matchBooks } from "@pharos/catalogue";
 import type { Artifact, BookManifest, CatalogueEntry, DataSummary, Job, Params, Plan, Step, TestResult } from "@pharos/contracts";
 import { withDefaults } from "@pharos/core";
+import type { AiClient } from "./ai.js";
 import type { CatalogueHolder } from "./catalogue.js";
+import { type PlannerResult, planWithAssistant } from "./planner.js";
 import { type Orchestration, OrchestrationError, TEST_WORKSPACE } from "./orchestration.js";
 import type { WorkspaceStore } from "./workspaces.js";
 
@@ -86,6 +88,34 @@ export class Plans {
       createdAt: now(),
     };
     return this.store(await this.check(plan));
+  }
+
+  /**
+   * Asks the assistant to choose a book for workspace data (or improvise a
+   * pipeline). Only the final proposal is kept; earlier attempts the
+   * assistant repaired are cancelled.
+   */
+  async withAssistant(workspace: string, text: string, artifacts: string[], ai: { client: AiClient; model: string }): Promise<PlannerResult> {
+    const lib = await this.library();
+    const ctx = await this.catalogue.get();
+    const data = await Promise.all(artifacts.map(async (id) => ({ id, summary: await this.catalogue.summary(this.workspaces, workspace, id) })));
+    const matches = matchBooks(ctx.books, data.map((d) => d.summary), { text, gpu: ctx.gpu });
+    const made: Plan[] = [];
+    const result = await planWithAssistant(ai.client, ai.model, { text, data }, { ...ctx, library: lib, matches }, {
+      fromBook: async (book, inputs, parameters, rationale) => {
+        const plan = await this.fromBook(workspace, book, inputs, parameters);
+        plan.rationale = rationale;
+        made.push(this.store(plan));
+        return plan;
+      },
+      improvised: async (title, rationale, inputs, steps) => {
+        const plan = await this.improvised({ workspace, title, rationale, inputs, steps });
+        made.push(plan);
+        return plan;
+      },
+    });
+    for (const p of made) if (p !== result.plan && p.status === "proposed") await this.cancel(p.id);
+    return result;
   }
 
   /** Validates a plan without keeping it; the assistant uses this to repair its proposals. */

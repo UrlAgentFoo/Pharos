@@ -57,10 +57,16 @@ export interface WorkspaceInfo {
   artifacts: number;
 }
 
-/** What `POST /api/plans` takes: a book to load, or a request for the assistant. */
-export type PlanRequest =
-  | { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params }
-  | { workspace: string; from: "assistant"; text: string; inputs: Record<string, string> };
+/** What `POST /api/plans` takes: a book to run on workspace data. */
+export type PlanRequest = { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params };
+
+/** What the assistant proposes for some data and a request; `plan` is null when nothing fits. */
+export interface AssistantPlan {
+  plan: Plan | null;
+  message: string;
+  matches: BookMatch[];
+  model?: string;
+}
 
 /**
  * Route → request and response bodies. `:name` segments are path
@@ -115,6 +121,8 @@ export interface ApiRoutes {
   "POST /api/match": { req: { workspace: string; artifacts: string[]; text?: string }; res: { summaries: DataSummary[]; matches: BookMatch[] } };
 
   "POST /api/plans": { req: PlanRequest; res: Plan };
+  /** The assistant picks a book for the data (or improvises), proposing a plan to approve. */
+  "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[] }; res: AssistantPlan };
   "GET /api/plans/:id": { req: void; res: Plan };
   "PUT /api/plans/:id": { req: Pick<Plan, "parameters" | "steps" | "inputs">; res: Plan };
   /** Answers 422 with the problems while the plan has errors. */
