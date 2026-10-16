@@ -1,0 +1,25 @@
+{
+  "name": "pharos-lab",
+  "version": "0.1.0",
+  "description": "Pharos: describe a problem, drop in data, and run scientific tools locally in containers. Run `npx pharos-lab` to start it.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "pharos": "./bin/pharos.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "ui"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "scripts": {
+    "build": "tsc -p . && node ../../scripts/copy-ui.mjs"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "0.134.0",
+    "@pharos/core": "*"
+  }
+}

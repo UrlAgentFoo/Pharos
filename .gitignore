@@ -1,1 +1,6 @@
 context/
+node_modules/
+dist/
+kernels/target/
+packages/server/ui/
+.DS_Store

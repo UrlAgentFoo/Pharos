@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pharos</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%232b2a27'/%3E%3Cpath d='M11 8v16M11 16l8-8M13.5 14l6.5 10' stroke='%23f3f0eb' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <header class="topbar" id="toolbar" aria-label="Pharos"></header>
+
+    <main class="desktop" id="desktop">
+      <!-- the project notebook: its name, and notes that can reference windows -->
+      <aside class="notes" id="notes" aria-label="Project notes"></aside>
+      <div class="project-bar" id="project-bar">
+        <button class="tb-text" data-action="save-project" title="Save the project (images, histories, layout and notes) as one .pharos file"></button>
+        <button class="tb-text" data-action="open-project" title="Open an .pharos project file"></button>
+        <button class="tb-text" data-action="export-menu" aria-haspopup="menu" title="Export images or notes"></button>
+      </div>
+
+      <div class="welcome" id="welcome">
+        <p class="eyebrow">Pharos · New session</p>
+        <h1 class="display">Drop an image.</h1>
+        <button class="dropzone" data-action="open" aria-describedby="formats-line">
+          <span class="dropzone-icon" id="dropzone-icon"></span>
+          <span class="dropzone-title">Drag and drop an image here</span>
+          <span class="dropzone-sub">or click to browse</span>
+        </button>
+        <p class="formats-line" id="formats-line">TIFF, or <button class="link" id="formats-toggle" aria-expanded="false" aria-controls="formats">see more accepted files</button></p>
+        <div class="formats" id="formats" hidden>
+          <p class="eyebrow">Opens today</p>
+          <ul>
+            <li>TIFF (<code>.tif</code>, <code>.tiff</code>): 8-bit, 16-bit and 32-bit float</li>
+            <li>Stacks and hyperstacks: channels, z-slices, time frames</li>
+            <li>ImageJ TIFFs keep their pixel size and units</li>
+          </ul>
+          <p class="eyebrow">Coming next</p>
+          <ul>
+            <li>OME-TIFF, Zeiss <code>.czi</code>, Nikon <code>.nd2</code>, Leica <code>.lif</code></li>
+            <li>PNG, JPEG and other everyday formats</li>
+          </ul>
+        </div>
+        <div class="samples">
+          <button class="sample" data-action="sample"><span class="sample-icon" data-icon="image"></span><span><strong>Load sample</strong><small>2D cells · 16-bit · 3 slices</small></span></button>
+          <button class="sample" data-action="sample-3d"><span class="sample-icon" data-icon="cube"></span><span><strong>Load 3D sample</strong><small>z-stack · 2 channels · 40 slices</small></span></button>
+        </div>
+        <p class="welcome-hint" id="welcome-hint"></p>
+      </div>
+    </main>
+
+    <div class="busy" id="busy" hidden>Working…</div>
+    <div class="toast" id="toast" role="status" hidden></div>
+
+    <div class="drop-overlay" id="drop" hidden><div><span id="drop-icon"></span><p id="drop-text">Drop to open</p></div></div>
+    <input type="file" id="file-input" accept=".tif,.tiff,image/tiff" multiple hidden />
+    <input type="file" id="project-input" accept=".pharos,.zip,application/zip" hidden />
+    <dialog id="dialog"></dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
