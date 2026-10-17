@@ -25,29 +25,27 @@
       </div>
 
       <div class="welcome" id="welcome">
-        <h1 class="display">Drop your data.</h1>
-        <p class="chat-warn" id="no-server" hidden>Pharos runs its tools on this computer through its local server. Start it with <code>npx pharos-lab</code> and open the address it prints.</p>
-        <!-- the drop area, or the examples in its place -->
+        <!-- the drop area in the middle of a ring of example cards, which turns slowly; "See all examples"
+             lays the cards out in a grid under the drop area instead, with "Hide examples" at its foot -->
         <div class="welcome-stage" id="welcome-stage">
-          <button class="dropzone" data-action="add-data">
-            <span class="dropzone-icon" id="dropzone-icon"></span>
-            <span class="dropzone-title">Drag and drop files here</span>
-            <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, tables · or click to choose</span>
-          </button>
-          <section class="examples" id="examples" aria-labelledby="examples-title">
-            <header class="examples-head">
-              <h2 class="examples-title" id="examples-title">Get started from our examples</h2>
-              <span class="examples-nav">
-                <button class="icon-btn" data-scroll="-1" aria-label="Previous examples" title="Previous examples"></button>
-                <button class="icon-btn" data-scroll="1" aria-label="Next examples" title="Next examples"></button>
-              </span>
-            </header>
+          <div class="welcome-centre">
+            <h1 class="display">Drop your data.</h1>
+            <p class="chat-warn" id="no-server" hidden>Pharos runs its tools on this computer through its local server. Start it with <code>npx pharos-lab</code> and open the address it prints.</p>
+            <button class="dropzone" data-action="add-data">
+              <span class="dropzone-icon" id="dropzone-icon"></span>
+              <span class="dropzone-title">Drag and drop files here</span>
+              <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, videos, tables · or click to choose</span>
+            </button>
+            <div class="examples-actions">
+              <button class="icon-btn" data-turn="-1" aria-label="Turn the examples back" title="Turn the examples back" hidden></button>
+              <button class="tb-text" id="examples-more" aria-expanded="false" aria-controls="example-list" hidden>See all examples</button>
+              <button class="icon-btn" data-turn="1" aria-label="Turn the examples on" title="Turn the examples on" hidden></button>
+            </div>
+          </div>
+          <section class="examples" id="examples" aria-label="Examples to try">
             <div class="example-list" id="example-list"></div>
+            <button class="tb-text examples-hide" id="examples-toggle" aria-controls="example-list" hidden>Hide examples</button>
           </section>
-        </div>
-        <div class="examples-actions">
-          <button class="tb-text examples-toggle" id="examples-toggle" aria-expanded="false" aria-controls="examples" hidden>View examples</button>
-          <button class="tb-text" id="examples-more" aria-expanded="false" aria-controls="example-list" hidden>See more</button>
         </div>
       </div>
 

@@ -942,8 +942,8 @@ async function loadExample(s: LocalServer, e: Example) {
 async function showExamples(s: LocalServer) {
   const examples = await s.examples().catch(() => []);
   const list = $("example-list");
+  // the ring (or grid) of cards lays itself out as they arrive (examples.ts)
   list.innerHTML = exampleCards(examples);
-  $("examples-toggle").hidden = !examples.length;
   list.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) =>
     b.addEventListener("click", () => loadExample(s, examples.find((x) => x.id === b.dataset.example)!)),
   );

@@ -4265,115 +4265,149 @@ dialog.side::backdrop {
   text-align: right;
 }
 
-/* the drop area and the examples share one place, as tall as the taller (the row of cards),
-   so switching between them moves nothing; only one shows */
+/* the stage: the drop area, with the example cards in a ring around it, or (after "See all examples",
+   and on a small screen) in a grid under it. Only its parts take clicks, so the bottom corners keep the
+   ask box and the project buttons */
 .welcome-stage {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  position: relative;
   width: min(920px, calc(100vw - 32px));
-  min-height: 330px; /* the row of cards' height, so the drop area doesn't grow when the examples arrive */
+  pointer-events: none;
 }
 
-.welcome-stage > * {
-  grid-area: 1 / 1;
-  transition: opacity 0.15s, visibility 0.15s;
+.welcome-centre,
+.examples > * {
+  pointer-events: auto;
 }
 
-.welcome-stage.examples-on > .dropzone,
-.welcome-stage:not(.examples-on) > .examples {
-  visibility: hidden;
-  opacity: 0;
+.welcome-centre {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
 }
 
 .welcome .dropzone {
-  width: auto;
+  width: min(440px, calc(100vw - 32px));
   align-content: center;
 }
 
-/* examples wait behind "View examples", with "See more" beside it once they show; the caret turns when they do */
 .examples-actions {
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 8px;
+  min-height: 30px;
 }
 
-.examples-toggle .caret {
-  transition: transform 0.15s;
+/* the ring: everything under the top bar, seen in perspective and a little from above. The centre and the
+   cards share one 3D space, so a card at the front passes before the drop area and one at the back behind it;
+   examples.ts places each card on the ellipse and turns it */
+.welcome:has(.ring-on) {
+  padding-bottom: 16px;
+  overflow: hidden;
 }
 
-.examples-toggle[aria-expanded="true"] .caret {
-  transform: rotate(180deg);
+/* the whole area under the top bar (the welcome's grid would size it to the drop area) */
+.welcome-stage.ring-on {
+  position: absolute;
+  inset: 64px 0 16px;
+  width: auto;
+  perspective: 1200px; /* PERSPECTIVE in examples.ts */
+  transform-style: preserve-3d;
 }
 
+/* the centre is compact in the ring, so the front cards can pass under it */
+.ring-on .welcome-centre {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max-content;
+  gap: 10px;
+  transform: translate(-50%, -50%);
+}
+
+.ring-on .welcome-centre .display {
+  margin-bottom: 4px;
+  font-size: 44px;
+}
+
+.ring-on .dropzone {
+  padding: 20px 24px;
+}
+
+.ring-on .examples,
+.ring-on .example-list {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+  transform-style: preserve-3d;
+}
+
+/* the list spans the stage but only its cards take clicks, so the drop area and its buttons under it stay usable */
+.ring-on .example-list {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ring-on .example {
+  pointer-events: auto;
+}
+
+/* a card in the ring is its picture, its kind and its name; the question shows in the grid */
+.ring-on .example {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 168px;
+  margin: -72px 0 0 -84px;
+  box-shadow: var(--shadow);
+}
+
+/* turned away (the back of the ring), a card shows its reverse: mirrored by the turn itself, and under an
+   opaque veil of the sheet's colour, so it reads as a card's back and the front stays clear */
+.ring-on .example::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--sheet);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s;
+}
+
+.ring-on .example.away::after {
+  opacity: 0.72;
+}
+
+.ring-on .example em,
+.ring-on .beyond-ring {
+  display: none;
+}
+
+.ring-on .example-text {
+  padding: 8px 10px 10px;
+}
+
+.ring-on .example strong {
+  font-size: 13px;
+}
+
+/* the grid: every card under the drop area, with "Hide examples" at its foot (on a small screen, the grid alone) */
 .examples {
-  min-width: 0; /* the row of cards scrolls inside the stage rather than widening it */
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  margin-top: 24px;
   text-align: left;
 }
 
-/* the title centred over the row, the arrows at its right */
-.examples-head {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 12px;
-  min-height: 30px;
-  margin-bottom: 8px;
-}
-
-.examples-title {
-  grid-column: 2;
-  margin: 0;
-  color: var(--ink);
-  font-size: 16px;
-  font-weight: 500;
-}
-
-.examples-nav {
-  grid-column: 3;
-  justify-self: end;
-  display: flex;
-  gap: 4px;
-}
-
-/* one row of cards that scrolls sideways and snaps to them; the padding keeps focus rings in view,
-   and the scroll padding lines snapped and focused cards up clear of the faded edges */
 .example-list {
-  --fade: 48px; /* FADE in examples.ts */
+  justify-self: stretch;
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 256px;
-  gap: 12px;
-  margin: 0 -4px;
-  padding: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scroll-snap-type: x mandatory;
-  scroll-padding: 0 calc(var(--fade) + 4px);
-  scrollbar-width: none;
-}
-
-.example-list > * {
-  scroll-snap-align: start;
-}
-
-/* each side fades away while more cards wait beyond it */
-.example-list.more-before {
-  mask-image: linear-gradient(to right, transparent, black var(--fade));
-}
-
-.example-list.more-after {
-  mask-image: linear-gradient(to right, black calc(100% - var(--fade)), transparent);
-}
-
-.example-list.more-before.more-after {
-  mask-image: linear-gradient(to right, transparent, black var(--fade), black calc(100% - var(--fade)), transparent);
-}
-
-/* "See more", and the Example data… dialog: every card, in a grid */
-.example-list.grid {
-  grid-auto-flow: row;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  overflow: visible;
+  gap: 12px;
+  padding: 4px;
 }
 
 #dialog .example-list.grid {
