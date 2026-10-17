@@ -3,7 +3,7 @@
  * readout, display range and LUTs, selections drawn with the current tool,
  * overlays (particle outlines) and a live threshold preview.
  */
-import { type Image, LUTS, type Lut, type Roi, autoContrast, getPlane, minMax, renderComposite, renderGray, roiBounds, roiMask } from "@pharos/core";
+import { type Image, LUTS, type Lut, type Roi, autoContrast, getPlane, minMax, renderComposite, renderGray, renderLabels, roiBounds, roiMask } from "@pharos/core";
 
 /** Canvas tools, shared by every window (as ImageJ's toolbar). */
 export type Tool = "hand" | "rect" | "oval" | "polygon" | "freehand" | "line";
@@ -86,6 +86,8 @@ export interface ViewState {
   manualRange: boolean;
   /** Channels switched off in the composite. */
   hidden: boolean[];
+  /** A label image: every object id in its own colour, background black. */
+  labels?: boolean;
 }
 
 export function newViewState(img: Image): ViewState {
@@ -129,6 +131,10 @@ function renderPixels(img: Image, view: ViewState): ImageData {
   const { width, height, channels } = img.shape;
   const data = new ImageData(width, height);
   const { z, t, c } = view.pos;
+  if (view.labels) {
+    renderLabels(getPlane(img, c, z, t), data.data);
+    return data;
+  }
   if (view.composite && channels > 1) {
     const shown = Array.from({ length: channels }, (_, ch) => ch).filter((ch) => !view.hidden[ch]);
     if (!shown.length) {

@@ -9,7 +9,7 @@ import type { Artifact } from "@pharos/contracts";
 import type { DirEntry, LocalServer } from "./api.js";
 import { browseDialog, escapeHtml, formatSize, promptDialog, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
-import { kindLabel, viewerFor } from "./viewers.js";
+import { kindLabel } from "./viewers.js";
 
 const CURRENT_KEY = "pharos.workspace";
 const DEFAULT_WORKSPACE = "default";
@@ -117,10 +117,9 @@ function showPanel(
   const rows = artifacts.length
     ? artifacts
         .map(
-          (a, i) => `<li class="ws-row"><input type="checkbox" data-pick="${i}" aria-label="Choose ${escapeHtml(a.name ?? "data")}"/><button class="file" data-i="${i}" title="${escapeHtml(viewerFor(a).label)}">
+          (a, i) => `<li class="ws-row"><input type="checkbox" data-pick="${i}" aria-label="Choose ${escapeHtml(a.name ?? "data")}"/><button class="file" data-i="${i}" title="Open in its own window">
             <span>${icon(KIND_ICON[a.kind], 16)} ${escapeHtml(a.name ?? a.id.slice(0, 12))}</span>
-            <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button>
-            <button class="chip" data-run="${i}" title="Run a ship on this">Run…</button></li>`,
+            <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button></li>`,
         )
         .join("")
     : `<li class="none">No data yet. Add files from this computer, or drop them here.</li>`;
@@ -142,7 +141,6 @@ function showPanel(
       el.querySelector("[data-path]")!.addEventListener("click", () => done({ add: "path" }));
       el.querySelector("[data-upload]")!.addEventListener("click", () => done({ add: "upload" }));
       el.querySelectorAll<HTMLButtonElement>("[data-i]").forEach((b) => b.addEventListener("click", () => done({ open: artifacts[Number(b.dataset.i)] })));
-      el.querySelectorAll<HTMLButtonElement>("[data-run]").forEach((b) => b.addEventListener("click", () => done({ run: artifacts[Number(b.dataset.run)] })));
       const picked = () => [...el.querySelectorAll<HTMLInputElement>("[data-pick]:checked")].map((c) => artifacts[Number(c.dataset.pick)]);
       el.querySelectorAll<HTMLInputElement>("[data-pick]").forEach((c) =>
         c.addEventListener("change", () => {

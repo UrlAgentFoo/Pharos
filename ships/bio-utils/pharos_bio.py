@@ -196,7 +196,10 @@ def write_ome_zarr(path, image, name="image"):
     group = zarr.open_group(path, mode="w", zarr_format=2)
     # chunk planes (y, x) whole, one step along the other axes
     chunks = tuple(1 if a in "tcz" else n for a, n in zip(image.axes, data.shape))
-    arr = group.create_array("0", shape=data.shape, dtype=data.dtype, chunks=chunks)
+    # zstd: compact, and readable by Pharos itself for previews (blosc isn't)
+    from numcodecs import Zstd
+
+    arr = group.create_array("0", shape=data.shape, dtype=data.dtype, chunks=chunks, compressors=Zstd(level=3))
     arr[...] = data
     unit = {"µm": "micrometer", "um": "micrometer", "nm": "nanometer"}.get(image.unit)
     axes = []

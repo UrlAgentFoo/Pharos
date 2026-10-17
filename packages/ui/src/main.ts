@@ -16,13 +16,12 @@ import { Results } from "./results.js";
 import { Autosave } from "./session.js";
 import { TOOLS, type Tool, onToolChange, resetRanges, setTool, thumbnailElement } from "./viewer.js";
 import { WindowManager } from "./windows.js";
-import { type Doc, Workspace } from "./workspace.js";
-import { viewerFor } from "./viewers.js";
+import { type DataDoc, type Doc, Workspace } from "./workspace.js";
 import { currentWorkspace, isSupported, workspacePanel } from "./workspace-panel.js";
 import { type LibraryTab, libraryPanel } from "./library-panel.js";
-import { PlanPanel } from "./plan-panel.js";
+import { DataProcesses } from "./data-processes.js";
+import type { Suggestion } from "./data-window.js";
 import { JobsPanel } from "./jobs-panel.js";
-import { runDialog } from "./run-dialog.js";
 import { statusChip, storageDialog } from "./storage.js";
 import type { Artifact, SystemStatus } from "@pharos/contracts";
 
@@ -414,6 +413,12 @@ function setDark(dark: boolean) {
   for (const d of ws.docs) windows.renderDoc(d.id);
 }
 pop.addEventListener("click", (e) => {
+  const dp = (e.target as HTMLElement).closest<HTMLElement>("[data-dp]");
+  if (dp) {
+    closePopover();
+    void processes.menuClick(dp.dataset.dp!);
+    return;
+  }
   const b = (e.target as HTMLElement).closest<HTMLElement>("[data-group-act]");
   if (!b) return;
   const g = b.dataset.group!;
@@ -853,7 +858,7 @@ function refresh() {
   updateDesk();
   scheduleAutosave();
   windows.sync();
-  $("welcome").hidden = ws.docs.length > 0;
+  $("welcome").hidden = ws.docs.length > 0 || ws.dataDocs.length > 0;
   updateEnabled();
 }
 
@@ -975,12 +980,10 @@ function copyStep(target: Doc, payload: StepPayload) {
 
 // ------------------------------------------------------------ workspace: data on disk, opened by its viewer
 
-/** Opens an artifact in its viewer, reading its bytes from the server. */
-function openArtifact(s: LocalServer, a: Artifact, workspace: string) {
-  return viewerFor(a).open(a, {
-    content: (x) => run(`Reading ${x.name ?? "data"}`, () => s.content(workspace, x.id)).then((b) => b ?? Promise.reject(new Error("could not read the data"))),
-    openImage: (bytes, name) => openBytes(bytes, name, null),
-  });
+/** Opens an artifact in a data window of its own (or brings its window forward). */
+function openArtifact(_s: LocalServer, a: Artifact, workspace: string) {
+  ws.openData(a, workspace);
+  return Promise.resolve();
 }
 
 async function openWorkspace() {
@@ -991,10 +994,7 @@ async function openWorkspace() {
       notify,
       open: (a, workspace) => openArtifact(s, a, workspace),
       run: async (a, workspace) => {
-        const req = await runDialog(s, workspace, a);
-        if (!req) return;
-        await s.runJob({ workspace, ...req });
-        jobsPanel.show();
+        ws.openData(a, workspace);
       },
       find: (data, workspace) => openLibrary({ workspace, artifacts: data }),
       ask: (data, workspace) => askAssistant(s, workspace, data),
@@ -1006,11 +1006,19 @@ async function openWorkspace() {
 
 // ------------------------------------------------------------ books: library, plans, the assistant's proposals
 
-const planPanel = new PlanPanel(() => server, {
-  openOutput: (workspace, id) => openOutput(workspace, id),
+const processes: DataProcesses = new DataProcesses(ws, {
+  server: () => server,
   notify,
-  started: () => jobsPanel.show(),
+  busy: (label, fn) => run(label, fn),
+  openImage: (image) => ws.open(image),
+  shownImage: (doc): import("@pharos/core").Image | null => windows.dataView(doc.id)?.shownImage()?.image ?? null,
+  shownArtifact: (doc): Promise<Artifact | null> => windows.dataView(doc.id)?.shownArtifact() ?? Promise.resolve(null),
 });
+
+async function dataMenu(doc: DataDoc, anchor: DOMRect) {
+  const html = await processes.menuHtml(doc);
+  togglePopover(`data:${doc.id}`, anchor, () => html);
+}
 
 async function openLibrary(data?: { workspace: string; artifacts: Artifact[]; text?: string }, tab?: LibraryTab) {
   const s = server;
@@ -1021,9 +1029,11 @@ async function openLibrary(data?: { workspace: string; artifacts: Artifact[]; te
         notify,
         gpu: () => !!lastStatus?.gpu.available,
         tools: builtinTools,
-        usePlan: async (book, inputs) => {
-          const plan = await s!.createPlan(data?.workspace ?? currentWorkspace(), book.id, inputs);
-          await planPanel.show(plan);
+        usePlan: async (book) => {
+          // a recipe applies to a dataset: its window, or the active one
+          const doc = data?.artifacts[0] ? ws.openData(data.artifacts[0], data.workspace) : ws.activeData;
+          if (!doc) return notify("Open your data first (Workspace, or drop it in), then choose this recipe from its window's ⋯ menu.");
+          await processes.useBook(doc, book.id);
         },
       },
       data,
@@ -1042,7 +1052,15 @@ async function askAssistant(s: LocalServer, workspace: string, data: Artifact[],
   if (!text) return;
   const r = await run("The assistant is choosing a book", () => s.assistantPlan(workspace, text, data.map((a) => a.id)));
   if (!r) return;
-  if (r.plan) await planPanel.show(r.plan);
+  if (r.plan) {
+    const plan = r.plan;
+    const source = data.find((a) => Object.values(plan.inputs).includes(a.id)) ?? data[0];
+    try {
+      await processes.fromPlan(plan, source);
+    } catch (e) {
+      void alertDialog("Assistant", e instanceof Error ? e.message : String(e));
+    }
+  }
   else void alertDialog("Assistant", `${r.message}${r.matches.some((m) => m.tier !== "excluded") ? "" : "\n\nNo installed book can run on this data."}`);
 }
 
@@ -1059,10 +1077,10 @@ const problemText = () => $<HTMLTextAreaElement>("problem").value.trim();
 async function dataFlow(workspace: string, artifacts: Artifact[]) {
   const s = server;
   if (!s || !artifacts.length) return;
+  for (const a of artifacts) ws.openData(a, workspace);
   const text = problemText();
   if (text && !aiUnavailable()) return askAssistant(s, workspace, artifacts, text);
-  if (text && aiConfig && !aiConfig.keySource) notify("Add an API key in Settings to let the assistant plan; showing the books that fit instead.");
-  await openLibrary({ workspace, artifacts, ...(text ? { text } : {}) });
+  if (text && aiConfig && !aiConfig.keySource) notify("Add an API key in Settings and the assistant will propose the steps; for now, pick a suggestion in the window or its ⋯ menu.");
 }
 
 /** Add data: a file or folder on this computer into the workspace (or, without the server, open TIFFs to view). */
@@ -1133,9 +1151,9 @@ async function showExamples(s: LocalServer) {
 async function clearProject() {
   if (!(await confirmDialog("New project", "Close every window and clear the notes and results? Your data on disk, the workspace and the library are kept.", "Clear"))) return;
   for (const d of [...ws.docs]) ws.close(d.id);
+  for (const d of [...ws.dataDocs]) ws.close(d.id);
   notes.load({ name: "", lines: [] }, new Map());
   results.load(undefined);
-  planPanel.el.hidden = true;
   $<HTMLTextAreaElement>("problem").value = "";
   ws.touch();
   await autosaveNow();
@@ -1196,7 +1214,7 @@ async function connectShips(s: LocalServer) {
   showStatus(null);
   s.events((e) => {
     jobsPanel.handle(e);
-    planPanel.handle(e);
+    processes.handle(e);
     if (e.type === "status") showStatus(e.status);
   });
   const [status, jobs] = await Promise.all([s.status().catch(() => null), s.jobs().catch(() => [])]);
@@ -1337,7 +1355,24 @@ const notes = new Notes($("notes"), {
   },
 });
 
-const windows = new WindowManager($("desktop"), ws, {
+const windows: WindowManager = new WindowManager($("desktop"), ws, {
+  dataMenu: (doc, anchor) => void dataMenu(doc, anchor),
+  data: {
+    server: () => server,
+    notify,
+    select: (doc, marker, output) => processes.select(doc, marker, output),
+    addProcess: (doc, anchor) => void dataMenu(doc, anchor),
+    approve: (doc) => processes.approve(doc),
+    rerun: (doc) => processes.rerun(doc),
+    cancel: (doc) => processes.cancel(doc),
+    updateStep: (doc, i, params) => processes.updateStep(doc, i, params),
+    removeStep: (doc, i) => processes.removeStep(doc, i),
+    apply: (doc, s) => void processes.apply(doc, s),
+    suggestions: (doc, a): Promise<Suggestion[]> => processes.suggestions(doc, a),
+    stepSpec: (r) => processes.stepSpec(r),
+    openSeparately: (doc, a) => processes.openSeparately(doc, a),
+    openAsImage: (_a, image) => ws.open(image),
+  },
   addToNotes: (doc) => notes.cite(snapshot(doc)),
   roiChanged: (doc) => {
     ws.activate(doc.id);

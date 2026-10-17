@@ -38,7 +38,9 @@ def read(path):
 def write(path, labels, names, scale, axes_meta):
     group = zarr.open_group(path, mode="w", zarr_format=2)
     chunks = tuple(1 if a in "tz" else n for a, n in zip(names, labels.shape))
-    arr = group.create_array("0", shape=labels.shape, dtype=labels.dtype, chunks=chunks)
+    from numcodecs import Zstd  # zstd: readable by Pharos itself for previews (blosc isn't)
+
+    arr = group.create_array("0", shape=labels.shape, dtype=labels.dtype, chunks=chunks, compressors=Zstd(level=3))
     arr[...] = labels
     keep = [a for a in axes_meta if (a["name"] if isinstance(a, dict) else a) in names]
     group.attrs["multiscales"] = [

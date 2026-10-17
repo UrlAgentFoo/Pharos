@@ -11,6 +11,7 @@ import type { BookMatch, CatalogueEntry, CatalogueStats } from "./catalogue.js";
 import type { Job } from "./job.js";
 import type { Params } from "./params.js";
 import type { Plan, PlanProblem, ShipNeed } from "./plan.js";
+import type { Step } from "./book.js";
 import type { ShipManifest } from "./ship.js";
 
 export interface SystemStatus {
@@ -57,8 +58,22 @@ export interface WorkspaceInfo {
   artifacts: number;
 }
 
-/** What `POST /api/plans` takes: a book to run on workspace data. */
-export type PlanRequest = { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params };
+/** What `POST /api/plans` takes: a book to run on workspace data, or steps (as a data window's history holds them). */
+export type PlanRequest =
+  | { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params }
+  | { workspace: string; from: "steps"; title: string; inputs: Record<string, string>; steps: Step[] };
+
+export interface CaseSummary {
+  application?: string;
+  endTime?: number;
+  cells?: number;
+  patches: { name: string; type: string }[];
+  times: number[];
+  fields: string[];
+  inletSpeed?: number;
+  viscosity?: number;
+  solved: boolean;
+}
 
 /** Example data offered on the start screen. */
 export interface Example {
@@ -128,6 +143,10 @@ export interface ApiRoutes {
   "GET /api/workspaces/:name/artifacts/:id": { req: void; res: Artifact };
   /** The artifact's bytes (files only; folders such as OME-Zarr answer 400). */
   "GET /api/workspaces/:name/artifacts/:id/content": { req: void; res: ArrayBuffer };
+  /** An image or labels artifact as TIFF for the viewer (TIFF as is; OME-Zarr uncompressed or zstd converted). */
+  "GET /api/workspaces/:name/artifacts/:id/image": { req: void; res: ArrayBuffer };
+  /** An OpenFOAM case's solver, mesh size, patches, saved times and inlet speed. */
+  "GET /api/workspaces/:name/artifacts/:id/case": { req: void; res: CaseSummary };
 
   /** Reads an artifact's metadata once and keeps it in `meta.summary`. */
   "POST /api/inspect": { req: { workspace: string; artifact: string }; res: DataSummary };

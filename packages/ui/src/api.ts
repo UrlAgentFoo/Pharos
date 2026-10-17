@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Without a server the
  * app runs in browser-only mode.
  */
-import type { Artifact, AssistantPlan, Example, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { Artifact, AssistantPlan, CaseSummary, Example, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -149,6 +149,19 @@ export class LocalServer {
   async upload(workspace: string, file: File): Promise<Artifact> {
     const r = await this.call(`${artifactsPath(workspace)}/upload?name=${encodeURIComponent(file.name)}`, { method: "PUT", body: file });
     return r.json();
+  }
+
+  /** An image or labels artifact as TIFF bytes, for the image viewer. */
+  async artifactImage(workspace: string, id: string): Promise<ArrayBuffer> {
+    return (await this.call(`${artifactsPath(workspace)}/${id}/image`)).arrayBuffer();
+  }
+
+  async caseSummary(workspace: string, id: string): Promise<CaseSummary> {
+    return (await this.call(`${artifactsPath(workspace)}/${id}/case`)).json();
+  }
+
+  async createStepsPlan(workspace: string, title: string, inputs: Record<string, string>, steps: Step[]): Promise<Plan> {
+    return (await this.json("/api/plans", "POST", { workspace, from: "steps", title, inputs, steps })) as Plan;
   }
 
   async artifact(workspace: string, id: string): Promise<Artifact> {

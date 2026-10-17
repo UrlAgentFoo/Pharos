@@ -38,7 +38,9 @@ def read(path):
 def write(path, labels, names, scale, axes_meta):
     root = zarr.open_group(path, mode="w")
     chunks = tuple(1 if a in "tz" else n for a, n in zip(names, labels.shape))
-    root.create_dataset("0", data=labels, chunks=chunks)
+    from numcodecs import Zstd  # zstd: readable by Pharos itself for previews (blosc isn't)
+
+    root.create_dataset("0", data=labels, chunks=chunks, compressor=Zstd(level=3))
     root.attrs["multiscales"] = [{"version": "0.4", "name": "tracks", "axes": axes_meta, "datasets": [{"path": "0", "coordinateTransformations": [{"type": "scale", "scale": scale}]}]}]
 
 

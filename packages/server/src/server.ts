@@ -6,6 +6,7 @@ import type { AddressInfo } from "node:net";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { Library, type TrustLookup, resolveBook } from "@pharos/books";
+import type { Step } from "@pharos/contracts";
 import { type Kernels, findCommand, loadKernels, parseParams, readTiff, runSteps, writeTiff } from "@pharos/core";
 import {
   AiError,
@@ -25,6 +26,7 @@ import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
 import { ExampleError, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
+import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
@@ -119,7 +121,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
-      const known = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError || err instanceof OrchestrationError || err instanceof ExampleError;
+      const known = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError || err instanceof OrchestrationError || err instanceof ExampleError || err instanceof PreviewError;
       const status = known ? err.status : 500;
       if (status === 500) console.error(err);
       if (!res.headersSent) sendJson(res, status, { error: err instanceof Error ? err.message : String(err) });
@@ -260,7 +262,13 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case "POST /api/plans": {
         const body = await readJson<{ workspace?: unknown; from?: unknown; book?: unknown; version?: unknown; inputs?: unknown; parameters?: unknown }>(req);
         if (typeof body.workspace !== "string") throw new HttpError(400, "workspace is required");
-        if (body.from !== "book" || typeof body.book !== "string") throw new HttpError(400, 'only { from: "book" } plans can be made here; the assistant makes the others');
+        if (body.from === "steps") {
+          const b = body as { title?: unknown; inputs?: unknown; steps?: unknown };
+          if (!Array.isArray(b.steps) || !b.steps.length) throw new HttpError(400, "steps are required");
+          const plan = await plans.improvised({ workspace: body.workspace, title: typeof b.title === "string" ? b.title : "Steps", inputs: (b.inputs ?? {}) as Record<string, string>, steps: b.steps as Step[] });
+          return sendJson(res, 200, plan);
+        }
+        if (body.from !== "book" || typeof body.book !== "string") throw new HttpError(400, 'make plans { from: "book" } or { from: "steps" }');
         const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined);
         return sendJson(res, 200, plan);
       }
@@ -403,10 +411,15 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   /** Routes under /api/workspaces/:name/artifacts. */
   async function workspaceApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
-    const m = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/artifacts(?:\/([^/]+)(\/content)?)?$/);
+    const m = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/artifacts(?:\/([^/]+)(\/content|\/image|\/case)?)?$/);
     if (!m) throw new HttpError(404, `no route ${route}`);
     const name = decodeURIComponent(m[1]);
-    const [id, content] = [m[2], !!m[3]];
+    const [id, content] = [m[2], m[3] === "/content"];
+    if (req.method === "GET" && id && m[3] === "/image") {
+      const tiff = await imageAsTiff(await workspaces.get(name, id));
+      return sendBytes(res, Buffer.from(tiff.buffer, tiff.byteOffset, tiff.byteLength), "image/tiff");
+    }
+    if (req.method === "GET" && id && m[3] === "/case") return sendJson(res, 200, await caseSummary(await workspaces.get(name, id)));
     if (req.method === "GET" && !id) return sendJson(res, 200, await workspaces.artifacts(name));
     if (req.method === "POST" && !id) {
       const body = await readJson<{ path?: unknown; name?: unknown }>(req);

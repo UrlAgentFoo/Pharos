@@ -6,6 +6,7 @@
  * Images can also be put in a group, so they share controls: zoom and pan,
  * slice, contrast, and (optionally) every step applied to one of them.
  */
+import type { Artifact, Params } from "@pharos/contracts";
 import { type CommandContext, type Image, Timeline } from "@pharos/core";
 import { type ViewState, type ViewerLayers, newViewState } from "./viewer.js";
 
@@ -28,6 +29,49 @@ export interface Doc {
   layers: ViewerLayers;
 }
 
+/** One process in a data window's history: a ship operation, wired to the data or earlier steps. */
+export interface DataStep {
+  /** Step id (lowercase_snake), what later steps' wires refer to. */
+  id: string;
+  /** `<ship>.<operation>` */
+  run: string;
+  /** Wires: `$data`, or `<step id>.<output>`. */
+  in: Record<string, string>;
+  with: Params;
+  /** The recipe (book) the step came from, shown as a label over its steps. */
+  book?: { id: string; title: string };
+  /** proposed: waiting for Approve; stale: changed, re-runs on the next run. */
+  status: "proposed" | "stale" | "queued" | "running" | "done" | "failed" | "cancelled";
+  progress?: number;
+  message?: string;
+  jobId?: string;
+  cached?: boolean;
+  /** Output name → artifact id, once done. */
+  outputs?: Record<string, string>;
+  error?: string;
+}
+
+/**
+ * A dataset in its own window (an OpenFOAM case, a time-lapse, a table):
+ * its history of processes along the bottom, and the body showing the
+ * data as of the selected step, like an image and its timeline.
+ */
+export interface DataDoc {
+  readonly kind: "data";
+  readonly id: string;
+  name: string;
+  workspace: string;
+  source: Artifact;
+  steps: DataStep[];
+  /** What the body shows: 0 = the data itself, n = the result of step n. */
+  marker: number;
+  /** Which output of the shown step is on view, when it has several. */
+  output?: string;
+  /** Why the assistant proposed these steps, when it did. */
+  rationale?: string;
+  ui: { controls: boolean; history: "full" | "slim" };
+}
+
 /** Images that share controls, for example the same field in several conditions. */
 export interface Group {
   readonly id: string;
@@ -43,6 +87,7 @@ let nextGroup = 0;
 
 export class Workspace {
   private _docs: Doc[] = [];
+  private _data: DataDoc[] = [];
   private _activeId: string | null = null;
   private _groups = new Map<string, Group>();
   private listeners = new Set<() => void>();
@@ -53,8 +98,36 @@ export class Workspace {
     return this._docs;
   }
 
+  /** The active window when it shows an image (null for a data window, or none). */
   get active(): Doc | null {
     return this._docs.find((d) => d.id === this._activeId) ?? null;
+  }
+
+  get dataDocs(): readonly DataDoc[] {
+    return this._data;
+  }
+
+  /** The active window when it shows a dataset. */
+  get activeData(): DataDoc | null {
+    return this._data.find((d) => d.id === this._activeId) ?? null;
+  }
+
+  getData(id: string): DataDoc | undefined {
+    return this._data.find((d) => d.id === id);
+  }
+
+  /** Opens a dataset in its own window, or brings its window forward if it's open. */
+  openData(source: Artifact, workspace: string): DataDoc {
+    const open = this._data.find((d) => d.source.id === source.id && d.workspace === workspace);
+    if (open) {
+      this.activate(open.id);
+      return open;
+    }
+    const doc: DataDoc = { kind: "data", id: `d${++nextDoc}`, name: source.name ?? source.id.slice(0, 12), workspace, source, steps: [], marker: 0, ui: { controls: true, history: "full" } };
+    this._data.push(doc);
+    this._activeId = doc.id;
+    this.emit();
+    return doc;
   }
 
   subscribe(fn: () => void): () => void {
@@ -84,7 +157,7 @@ export class Workspace {
   }
 
   activate(id: string) {
-    if (this._activeId === id || !this.get(id)) return;
+    if (this._activeId === id || (!this.get(id) && !this.getData(id))) return;
     this._activeId = id;
     this.emit();
   }
@@ -104,6 +177,13 @@ export class Workspace {
   }
 
   close(id: string) {
+    const di = this._data.findIndex((d) => d.id === id);
+    if (di >= 0) {
+      this._data.splice(di, 1);
+      if (this._activeId === id) this._activeId = this._data[Math.min(di, this._data.length - 1)]?.id ?? this._docs.at(-1)?.id ?? null;
+      this.emit();
+      return;
+    }
     const i = this._docs.findIndex((d) => d.id === id);
     if (i < 0) return;
     const [doc] = this._docs.splice(i, 1);

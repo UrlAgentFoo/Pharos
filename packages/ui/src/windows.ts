@@ -13,13 +13,30 @@ import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { STEP_MIME, type StepPayload, TimelineBar, type TimelineBarHooks } from "./timeline-bar.js";
 import { Viewer, adaptView, thumbnailElement } from "./viewer.js";
-import type { Doc, Workspace } from "./workspace.js";
+import { DataWindow, type DataWindowHooks, KIND_ICON } from "./data-window.js";
+import type { DataDoc, Doc, Workspace } from "./workspace.js";
 
 export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
+}
+
+/** What every window has, image or data: its element and where it sits. */
+interface Frame {
+  el: HTMLElement;
+  rect: Rect;
+  z: number;
+  minimized: boolean;
+  /** The rect to restore when un-zooming. */
+  zoomedFrom: Rect | null;
+}
+
+/** A dataset's window. */
+interface DataWin extends Frame {
+  doc: DataDoc;
+  view: DataWindow;
 }
 
 interface Win {
@@ -62,6 +79,9 @@ export interface WindowHooks {
   expandArea(): Rect;
   timeline: TimelineBarHooks;
   controls: Omit<ControlsHooks, "redraw">;
+  /** Opens a data window's ⋯ menu under `anchor`. */
+  dataMenu(doc: DataDoc, anchor: DOMRect): void;
+  data: DataWindowHooks;
 }
 
 /** Parts of a window that do something when clicked; citing never takes these clicks. */
@@ -75,6 +95,7 @@ const MIN_H = 220;
 
 export class WindowManager {
   private wins = new Map<string, Win>();
+  private dwins = new Map<string, DataWin>();
   private topZ = 10;
   private overviewOn = false;
   private lastOrder: Doc[] = [];
@@ -89,7 +110,7 @@ export class WindowManager {
     this.shelf.className = "shelf";
     desktop.append(this.shelf);
     window.addEventListener("resize", () => {
-      for (const w of this.wins.values()) this.place(w, w.zoomedFrom ? this.hooks.expandArea() : this.clampRect(w.rect));
+      for (const w of [...this.wins.values(), ...this.dwins.values()]) this.place(w, w.zoomedFrom ? this.hooks.expandArea() : this.clampRect(w.rect));
       if (this.overviewOn) this.layoutOverview(this.lastOrder);
     });
   }
@@ -145,19 +166,114 @@ export class WindowManager {
       w.timeline.render();
       this.setReadout(w);
     }
-    const active = this.ws.active;
+    this.syncData();
+    const active = this.ws.active ?? this.ws.activeData;
     if (active) {
-      const w = this.wins.get(active.id)!;
+      const w = this.frame(active.id)!;
       if (w.minimized && !this.overviewOn) this.restore(active.id);
       if (w.z !== this.topZ) w.z = ++this.topZ;
     }
-    for (const w of this.wins.values()) {
+    for (const w of [...this.wins.values(), ...this.dwins.values()]) {
       w.el.classList.toggle("active", w.doc === active);
       w.el.classList.toggle("minimized", w.minimized);
       if (!this.overviewOn) w.el.style.zIndex = String(w.z);
     }
     this.renderShelf();
     this.markExpanded();
+  }
+
+  private frame(id: string): (Win | DataWin) | undefined {
+    return this.wins.get(id) ?? this.dwins.get(id);
+  }
+
+  /** Creates, removes and re-renders data windows to match the workspace. */
+  private syncData() {
+    const docs = this.ws.dataDocs;
+    for (const [id, w] of this.dwins) {
+      if (!docs.includes(w.doc)) {
+        w.view.destroy();
+        w.el.remove();
+        this.dwins.delete(id);
+      }
+    }
+    for (const doc of docs) {
+      const w = this.dwins.get(doc.id) ?? this.createData(doc);
+      w.el.classList.toggle("controls-open", doc.ui.controls);
+      w.el.classList.toggle("history-slim", doc.ui.history === "slim");
+      w.el.querySelector(".win-title-text")!.textContent = doc.name;
+      w.el.setAttribute("aria-label", doc.name);
+      const toggle = w.el.querySelector("[data-win=\"controls\"]")!;
+      toggle.textContent = doc.ui.controls ? "Hide controls" : "Show controls";
+      toggle.setAttribute("aria-pressed", String(doc.ui.controls));
+      w.view.render();
+    }
+  }
+
+  /** The data window's own view, e.g. to read the image it shows. */
+  dataView(id: string): DataWindow | undefined {
+    return this.dwins.get(id)?.view;
+  }
+
+  private createData(doc: DataDoc): DataWin {
+    const el = document.createElement("section");
+    el.className = "win data-win";
+    el.dataset.doc = doc.id;
+    el.setAttribute("role", "dialog");
+    el.innerHTML = `
+      <header class="win-title">
+        <div class="win-left">
+          <div class="win-name"><span class="win-kind">${icon(KIND_ICON[doc.source.kind], 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
+        </div>
+        <div class="win-center">
+          <button class="win-ctl-toggle" data-win="controls"></button>
+        </div>
+        <div class="win-right">
+          <button class="win-icon" data-win="menu" title="Processes and more" aria-label="Processes and more">${icon("more", 16)}</button>
+          <button class="win-icon" data-win="min" title="Minimise (⇧⌘M)" aria-label="Minimise window">${icon("minimize", 15)}</button>
+          <button class="win-icon win-zoom" data-win="zoom" title="Expand" aria-label="Expand window">${icon("expand", 15)}</button>
+        </div>
+      </header>
+      <div class="win-main">
+        <div class="win-body"></div>
+      </div>
+      <footer class="win-history">
+        <div class="win-history-bar"></div>
+        <button class="win-history-toggle" data-win="history" title="Slim or full history" aria-label="Toggle history size">${icon("collapse", 14)}</button>
+      </footer>
+      <div class="win-resize" aria-hidden="true"></div>`;
+    this.desktop.append(el);
+    const view = new DataWindow(doc, el.querySelector<HTMLElement>(".win-body")!, el.querySelector<HTMLElement>(".win-history-bar")!, this.hooks.data);
+    el.querySelector(".win-main")!.append(view.drawer);
+    const w: DataWin = { doc, el, view, rect: { x: 0, y: 0, w: 0, h: 0 }, z: ++this.topZ, minimized: false, zoomedFrom: null };
+    w.rect = this.dataRect();
+    this.dwins.set(doc.id, w);
+    this.place(w, w.rect);
+    this.wireFrame(w, (what, anchor) => {
+      if (what === "menu") this.hooks.dataMenu(doc, anchor);
+      if (what === "controls") {
+        doc.ui.controls = !doc.ui.controls;
+        this.ws.touch();
+      }
+      if (what === "history") {
+        doc.ui.history = doc.ui.history === "full" ? "slim" : "full";
+        this.ws.touch();
+      }
+    });
+    requestAnimationFrame(() => el.classList.add("shown"));
+    return w;
+  }
+
+  /** A data window opens large, cascading from the newest window like images do. */
+  private dataRect(): Rect {
+    const free = this.free();
+    const w = Math.min(980, free.w * 0.78);
+    const h = Math.min(660, free.h * 0.82);
+    const last = [...this.wins.values(), ...this.dwins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
+    let x = last ? last.rect.x + 32 : free.x + (free.w - w) / 2;
+    let y = last ? last.rect.y + TITLE_H + 6 : free.y + Math.max(0, (free.h - h) / 2);
+    if (y + TITLE_H * 3 > free.y + free.h) y = free.y;
+    if (x + 120 > free.x + free.w) x = free.x;
+    return this.clampRect({ x, y, w, h });
   }
 
   /** Lets floating UI step aside (the search field) while a window fills the desktop. */
@@ -260,7 +376,7 @@ export class WindowManager {
    * stack, side by side, a grid, or the active window filling the space.
    */
   arrange(layout: Layout) {
-    const visible = this.ws.docs.map((d) => this.wins.get(d.id)!).filter((w) => w && !w.minimized);
+    const visible: (Win | DataWin)[] = [...this.ws.docs.map((d) => this.wins.get(d.id)!), ...this.ws.dataDocs.map((d) => this.dwins.get(d.id)!)].filter((w) => w && !w.minimized);
     if (!visible.length) return;
     const f = this.free();
     const gap = 12;
@@ -273,7 +389,7 @@ export class WindowManager {
       w.zoomedFrom = null;
       if (layout === "stack") {
         // back to a cascade of comfortable sizes, newest on top
-        const r = this.initialRect(w.doc);
+        const r = "view" in w ? this.dataRect() : this.initialRect(w.doc);
         this.place(w, this.clampRect({ ...r, x: f.x + 24 + i * 30, y: f.y + i * 26 }), true);
       } else if (layout === "columns") {
         const cols = Math.min(visible.length, 3);
@@ -281,7 +397,7 @@ export class WindowManager {
       } else if (layout === "grid") {
         const cols = Math.ceil(Math.sqrt(visible.length));
         this.place(w, cell(cols, Math.ceil(visible.length / cols), i), true);
-      } else if (w.doc === this.ws.active) {
+      } else if (w.doc === (this.ws.active ?? this.ws.activeData)) {
         w.zoomedFrom = { ...w.rect };
         this.place(w, this.hooks.expandArea(), true);
       }
@@ -290,18 +406,18 @@ export class WindowManager {
   }
 
   minimize(id: string) {
-    const w = this.wins.get(id);
+    const w = this.frame(id);
     if (!w || w.minimized) return;
     w.minimized = true;
     // hand focus to the topmost visible window, or to none if this was the last one
-    const next = [...this.wins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
+    const next = [...this.wins.values(), ...this.dwins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
     if (next) this.ws.activate(next.doc.id);
     else this.ws.deactivate();
     this.sync();
   }
 
   restore(id: string) {
-    const w = this.wins.get(id);
+    const w = this.frame(id);
     if (!w) return;
     w.minimized = false;
     w.z = ++this.topZ;
@@ -311,7 +427,7 @@ export class WindowManager {
 
   /** Expands a window to fill everything below the top bar, or collapses it back to its size before. */
   toggleZoom(id: string) {
-    const w = this.wins.get(id);
+    const w = this.frame(id);
     if (!w) return;
     if (w.zoomedFrom) {
       this.place(w, w.zoomedFrom, true);
@@ -323,7 +439,7 @@ export class WindowManager {
     this.setZoomButton(w);
   }
 
-  private setZoomButton(w: Win) {
+  private setZoomButton(w: Frame) {
     const b = w.el.querySelector<HTMLElement>(".win-zoom")!;
     const expanded = !!w.zoomedFrom;
     w.el.classList.toggle("expanded", expanded);
@@ -510,7 +626,7 @@ export class WindowManager {
     return { x, y, w, h };
   }
 
-  private place(w: Win, r: Rect, animate = false) {
+  private place(w: Frame, r: Rect, animate = false) {
     w.rect = r;
     w.el.classList.toggle("animate", animate);
     Object.assign(w.el.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.w}px`, height: `${r.h}px` });
@@ -530,6 +646,12 @@ export class WindowManager {
 
   private wire(w: Win) {
     const { el, doc } = w;
+    this.wireFrame(w, (what, anchor) => {
+      if (what === "menu") this.hooks.windowMenu(doc, anchor);
+      if (what === "group") this.hooks.groupMenu(anchor);
+      if (what === "controls") this.toggleControls(doc.id);
+      if (what === "history") this.toggleHistory(doc.id);
+    });
 
     // while writing notes, a click on a non-interactive part of a window (the image,
     // empty space) cites it and the notes keep the cursor; controls work as usual
@@ -548,23 +670,46 @@ export class WindowManager {
     el.addEventListener("click", (e) => {
       if (citing(e)) e.stopImmediatePropagation();
     }, true);
+    // drop a timeline step from another image onto this window to copy it here
+    el.addEventListener("dragover", (e) => {
+      if (!e.dataTransfer?.types.includes(STEP_MIME)) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      el.classList.add("drop-target");
+    });
+    el.addEventListener("dragleave", (e) => {
+      if (!el.contains(e.relatedTarget as Node)) el.classList.remove("drop-target");
+    });
+    el.addEventListener("drop", (e) => {
+      el.classList.remove("drop-target");
+      const raw = e.dataTransfer?.getData(STEP_MIME);
+      if (!raw) return;
+      const payload = JSON.parse(raw) as StepPayload;
+      if (payload.docId === doc.id) return; // a reorder within this window's own history line
+      e.preventDefault();
+      e.stopPropagation();
+      this.hooks.copyStep(doc, payload);
+    });
+  }
+
+  /** What every window does: activate on press, title-bar buttons, drag by the title, resize from the corner. */
+  private wireFrame(w: Frame & { doc: { id: string } }, button: (what: string, anchor: DOMRect) => void) {
+    const { el } = w;
+    const id = w.doc.id;
     el.addEventListener("pointerdown", () => {
-      if (!this.overviewOn && this.ws.active !== doc) this.ws.activate(doc.id);
+      if (!this.overviewOn && (this.ws.active ?? this.ws.activeData)?.id !== id) this.ws.activate(id);
     }, true);
 
     el.addEventListener("click", (e) => {
       // look the button up first: expand/collapse swaps its icon, detaching the clicked element
-      const button = (e.target as HTMLElement).closest<HTMLElement>("[data-win]");
-      const what = button?.dataset.win;
-      if (!button || !what || this.overviewOn) return;
+      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-win]");
+      const what = target?.dataset.win;
+      if (!target || !what || this.overviewOn) return;
       e.stopPropagation();
-      const anchor = button.getBoundingClientRect();
-      if (what === "zoom") this.toggleZoom(doc.id);
-      if (what === "min") this.minimize(doc.id);
-      if (what === "menu") this.hooks.windowMenu(doc, anchor);
-      if (what === "group") this.hooks.groupMenu(anchor);
-      if (what === "controls") this.toggleControls(doc.id);
-      if (what === "history") this.toggleHistory(doc.id);
+      const anchor = target.getBoundingClientRect();
+      if (what === "zoom") this.toggleZoom(id);
+      else if (what === "min") this.minimize(id);
+      else button(what, anchor);
     });
 
     // drag by the title bar
@@ -592,7 +737,7 @@ export class WindowManager {
       title.addEventListener("pointercancel", up);
     });
     title.addEventListener("dblclick", (e) => {
-      if (!this.overviewOn && !(e.target as HTMLElement).closest("button")) this.toggleZoom(doc.id);
+      if (!this.overviewOn && !(e.target as HTMLElement).closest("button")) this.toggleZoom(id);
     });
 
     // resize from the bottom-right corner
@@ -613,32 +758,11 @@ export class WindowManager {
       grip.addEventListener("pointermove", move);
       grip.addEventListener("pointerup", up);
     });
-
-    // drop a timeline step from another image onto this window to copy it here
-    el.addEventListener("dragover", (e) => {
-      if (!e.dataTransfer?.types.includes(STEP_MIME)) return;
-      e.preventDefault();
-      e.dataTransfer.dropEffect = "copy";
-      el.classList.add("drop-target");
-    });
-    el.addEventListener("dragleave", (e) => {
-      if (!el.contains(e.relatedTarget as Node)) el.classList.remove("drop-target");
-    });
-    el.addEventListener("drop", (e) => {
-      el.classList.remove("drop-target");
-      const raw = e.dataTransfer?.getData(STEP_MIME);
-      if (!raw) return;
-      const payload = JSON.parse(raw) as StepPayload;
-      if (payload.docId === doc.id) return; // a reorder within this window's own history line
-      e.preventDefault();
-      e.stopPropagation();
-      this.hooks.copyStep(doc, payload);
-    });
   }
 
   /** Minimised windows as a small stack of cards in the bottom-left corner. */
   private renderShelf() {
-    const mins = [...this.wins.values()].filter((w) => w.minimized);
+    const mins: (Win | DataWin)[] = [...this.wins.values(), ...this.dwins.values()].filter((w) => w.minimized);
     this.shelf.hidden = !mins.length || this.overviewOn;
     this.shelf.innerHTML = "";
     mins.forEach((w, i) => {
@@ -647,7 +771,12 @@ export class WindowManager {
       card.style.setProperty("--i", String(mins.length - 1 - i));
       card.title = `Restore ${w.doc.name}`;
       card.setAttribute("aria-label", `Restore ${w.doc.name}`);
-      card.append(thumbnailElement(w.doc.timeline.current(), w.doc.view, 120));
+      if ("view" in w) {
+        const glyph = document.createElement("span");
+        glyph.className = "shelf-glyph";
+        glyph.innerHTML = icon(KIND_ICON[w.doc.source.kind], 28);
+        card.append(glyph);
+      } else card.append(thumbnailElement(w.doc.timeline.current(), w.doc.view, 120));
       const label = document.createElement("span");
       label.textContent = w.doc.name;
       card.append(label);

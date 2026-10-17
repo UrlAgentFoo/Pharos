@@ -503,7 +503,8 @@ body.has-expanded .search-dock {
   color: var(--faint);
 }
 
-.menu-pop button[data-action] {
+.menu-pop button[data-action],
+.menu-pop button[data-dp] {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -516,15 +517,18 @@ body.has-expanded .search-dock {
   cursor: pointer;
 }
 
-.menu-pop button[data-action] span {
+.menu-pop button[data-action] span,
+.menu-pop button[data-dp] span {
   flex: 1;
 }
 
-.menu-pop button[data-action] .icon {
+.menu-pop button[data-action] .icon,
+.menu-pop button[data-dp] .icon {
   color: var(--muted);
 }
 
-.menu-pop button[data-action]:hover:not(:disabled) {
+.menu-pop button[data-action]:hover:not(:disabled),
+.menu-pop button[data-dp]:hover:not(:disabled) {
   background: var(--hover);
 }
 
@@ -3715,4 +3719,331 @@ dialog.side::backdrop {
 
 .ship-ops small {
   color: var(--muted);
+}
+
+/* ---- data windows: a dataset, its history of processes, and the result on view */
+.data-win .win-kind {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.win-body.data-body {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.dv-outputs {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  padding: 8px 10px 0;
+}
+
+.dv-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.dv-stage.has-image {
+  overflow: hidden;
+  background: #1e1d1b;
+}
+
+.dv-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.dv-canvas canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.dv-sliders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  flex: none;
+  padding: 6px 10px;
+  background: var(--sheet);
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+
+.dv-sliders:empty {
+  display: none;
+}
+
+.dv-sliders label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.dv-sliders input {
+  flex: 1;
+}
+
+.dv-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  z-index: 2;
+}
+
+.dv-status-card {
+  display: grid;
+  gap: 8px;
+  width: min(360px, 90%);
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+}
+
+.dv-status-card.failed span {
+  color: var(--danger);
+}
+
+.dv-status-card button {
+  justify-self: start;
+}
+
+.dv-loading {
+  margin: auto;
+  color: var(--muted);
+}
+
+.dv-table {
+  flex: 1;
+  max-height: none;
+  margin: 10px;
+}
+
+.dv-foot {
+  flex: none;
+  margin: 0 10px 8px;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.dv-video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+.dv-card {
+  margin: auto;
+  width: min(520px, 92%);
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.dv-card h3 {
+  margin: 2px 0 12px;
+}
+
+.dv-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.dv-card dt {
+  color: var(--muted);
+}
+
+.dv-card dd {
+  margin: 0;
+}
+
+.dv-card dd small {
+  color: var(--faint);
+}
+
+.dv-text {
+  flex: 1;
+  margin: 10px;
+  max-height: none;
+}
+
+/* history: the dataset, then one node per process, linked */
+.tl-link {
+  flex: none;
+  width: 14px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+.tl-group {
+  flex: none;
+  margin: 0 4px 0 6px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: var(--accent-soft);
+  font: 500 10px/1.4 var(--mono);
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.tl-node.data-step.status-done {
+  color: #3d8b5a;
+}
+
+.tl-node.data-step.status-failed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tl-node.data-step.status-proposed {
+  border-style: dashed;
+  color: var(--ai);
+}
+
+.tl-node.data-step.status-stale,
+.tl-node.data-step.status-cancelled {
+  opacity: 0.55;
+}
+
+.tl-node.data-step.status-queued,
+.tl-node.data-step.status-running {
+  color: var(--accent);
+}
+
+/* a running step fills a ring as it goes */
+.tl-node.data-step.status-running {
+  background: conic-gradient(var(--accent-soft) var(--p, 0%), var(--surface) 0);
+  animation: step-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes step-pulse {
+  50% {
+    border-color: var(--accent);
+  }
+}
+
+.tl-node.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.tl-text.primary-text {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+/* drawer */
+.ctl-sec-title {
+  margin: 8px 0 6px;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-suggest {
+  display: grid;
+  gap: 6px;
+}
+
+.dv-suggestion {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.dv-suggestion:hover {
+  border-color: var(--ink);
+}
+
+.dv-suggestion > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dv-suggestion small {
+  color: var(--muted);
+}
+
+.dv-why {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ai);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.dv-approve {
+  width: 100%;
+}
+
+.dv-params .primary {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.dv-out {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.link.danger {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.shelf-glyph {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 80px;
+  color: var(--muted);
+}
+
+.menu-pop button[data-dp] small {
+  color: var(--muted);
+  font-size: 11px;
 }

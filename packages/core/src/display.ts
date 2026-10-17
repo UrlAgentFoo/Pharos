@@ -55,6 +55,35 @@ export function renderGray(plane: PixelArray, min: number, max: number, lut: Lut
   }
 }
 
+/**
+ * A label image (one integer id per object, 0 = background) in distinct
+ * colours: each id gets its own hue, so neighbouring objects stand apart.
+ */
+export function renderLabels(plane: PixelArray, rgba: Uint8ClampedArray): void {
+  for (let i = 0, j = 0; i < plane.length; i++, j += 4) {
+    const id = Math.round(plane[i]);
+    if (id <= 0) {
+      rgba[j] = rgba[j + 1] = rgba[j + 2] = 0;
+    } else {
+      // golden-ratio hues, so consecutive ids are far apart on the colour wheel
+      const h = (id * 0.618033988749895) % 1;
+      const [r, g, b] = hsv(h, 0.65, 0.95);
+      rgba[j] = r;
+      rgba[j + 1] = g;
+      rgba[j + 2] = b;
+    }
+    rgba[j + 3] = 255;
+  }
+}
+
+function hsv(h: number, s: number, v: number): [number, number, number] {
+  const f = (n: number) => {
+    const k = (n + h * 6) % 6;
+    return Math.round(255 * (v - v * s * Math.max(0, Math.min(k, 4 - k, 1))));
+  };
+  return [f(5), f(3), f(1)];
+}
+
 /** Composites channels additively (each with its own LUT and range) into `rgba`. */
 export function renderComposite(
   planes: readonly PixelArray[],
