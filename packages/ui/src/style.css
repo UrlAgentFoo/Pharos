@@ -1161,6 +1161,21 @@ body.overview-mode .desk-hint {
   pointer-events: none;
 }
 
+/* the window's number, as the assistant cites it ([2]) */
+.win-ref {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 14px;
+  text-align: center;
+}
+
 .win.active .win-name {
   color: var(--ink);
 }
@@ -2499,6 +2514,24 @@ body.overview-mode .project-bar {
   margin: 0;
 }
 
+/* a reply's paragraphs and lists, spaced like the messages around them */
+.msg .reply {
+  display: grid;
+  gap: 8px;
+}
+
+.msg .reply ul,
+.msg .reply ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.msg .reply strong {
+  font-weight: 600;
+}
+
 .msg.user {
   align-self: flex-end;
   max-width: 85%;
@@ -2512,6 +2545,23 @@ body.overview-mode .project-bar {
 .msg.assistant {
   display: grid;
   gap: 8px;
+}
+
+/* a citation in a reply, [2] a window or [2.1] a run in its history: it brings that window forward */
+.msg .cite {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.msg .cite:hover {
+  background: var(--accent-soft);
 }
 
 .msg.note {

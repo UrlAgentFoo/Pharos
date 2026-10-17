@@ -14,7 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Library } from "@pharos/books";
 import type { McpContext } from "@pharos/catalogue";
-import type { BookMatch, ChatTurn, DataSummary, Plan, Step } from "@pharos/contracts";
+import type { BookMatch, ChatTurn, DataSummary, Plan, Step, WindowRef } from "@pharos/contracts";
 import { type AiClient, AiError } from "./ai.js";
 
 const CHOOSE_BOOK = "choose_book";
@@ -28,6 +28,8 @@ export interface PlannerInput {
   data: { id: string; summary: DataSummary }[];
   /** The conversation so far, oldest first. */
   history?: ChatTurn[];
+  /** The open windows and the runs in their histories, which the answer cites as [1] or [1.2]. */
+  windows?: WindowRef[];
 }
 
 export interface PlannerResult {
@@ -48,12 +50,14 @@ const SYSTEM = `You are Pharos, the assistant in a local app that runs scientifi
 
 Ships are container images with typed operations. Books are tested apps for a domain; each offers one or more actions, and each action chains ship operations for a task. Pharos has already matched the window's data against every book; you get the books that can run on it (direct, or after a conversion step), each with its guide.
 
-Many messages are conversation: a greeting, thanks, a question about Pharos, the data, a book or a result. Answer those in one to three plain, friendly sentences without calling a tool; when it helps, say what you could do with this data (by the books' action titles).
+Many messages are conversation: a greeting, thanks, a question about Pharos, the data, a book or a result. Answer those in plain, friendly sentences without calling a tool: one to four, or a short paragraph or two when they ask you to explain or compare results. When it helps, say what you could do with this data (by the books' action titles).
 
 When the user asks for something to be done with the data, decide in this order:
 1. If a shortlisted book has an action that fits the request, call ${CHOOSE_BOOK} with the book and that action (only actions listed as fitting the data can run). Prefer verified books and direct matches. Fill parameters from the data summaries and the book's guide (for example a diameter in pixels from the voxel size and the typical object size); leave out parameters whose default suits. Assign each of the action's inputs the number of the data item it should get.
 2. Only if no book fits, call ${IMPROVISE} to chain the listed ship operations. Every step's input must come from a data item (as "$<input name>") or an earlier step's output ("<step id>.<output name>"), with matching kinds and formats.
 3. If neither works, call no tool and say briefly what is missing (a ship, a book or different data).
+
+The open windows are listed in <windows>, each with the runs in its history. When your answer or rationale mentions one of them, cite it right after the words it supports, with its reference in square brackets: [2] for a window, [2.1] for a run in its history. The user clicks a citation to bring that window forward, so cite only references listed there, and never make one up. The chat shows plain text, short lists ("- " or "1. " lines) and **bold**, and nothing else: no headings, tables or links.
 
 Call at most one tool, and only when asked to do something. Pharos checks the plan you propose and shows it in the window, where the user edits and approves it before anything runs. Your rationale is shown to the user: one or two plain sentences on why this book or pipeline, and any parameter you guessed. You see data summaries only, never the data itself; don't claim to have looked at it.`;
 
@@ -158,6 +162,32 @@ function describeOperations(ctx: McpContext, library: Library, text: string): st
   return lines.join("\n") || "(no ships in the library)";
 }
 
+/** The open windows as the model reads them: "[1] name: what it shows (the active window)", then each run indented. */
+function describeWindows(windows: WindowRef[]): string {
+  return windows
+    .flatMap((w) => [`[${w.ref}] ${w.title}: ${w.data}${w.active ? " (the window this message is about)" : ""}`, ...(w.runs ?? []).map((r) => `  [${r.ref}] ${r.title} (${r.status})`)])
+    .join("\n");
+}
+
+/**
+ * The windows a request lists, kept to what the prompt needs: well-formed
+ * references (a window's number, a run's "window.run"), short titles, and not
+ * too many of either; anything else is dropped.
+ */
+export function cleanWindows(raw: unknown): WindowRef[] {
+  if (!Array.isArray(raw)) return [];
+  const text = (v: unknown, max: number) => (typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, max) : "");
+  return raw.slice(0, 20).flatMap((w: Record<string, unknown>): WindowRef[] => {
+    const ref = text(w?.ref, 4);
+    if (!/^\d{1,3}$/.test(ref) || !text(w.title, 120)) return [];
+    const runs = (Array.isArray(w.runs) ? w.runs : []).slice(0, 30).flatMap((r: Record<string, unknown>) => {
+      const id = text(r?.ref, 8);
+      return id.startsWith(`${ref}.`) && /^\d{1,3}\.\d{1,3}$/.test(id) && text(r.title, 120) ? [{ ref: id, title: text(r.title, 120), status: text(r.status, 20) || "done" }] : [];
+    });
+    return [{ ref, title: text(w.title, 120), data: text(w.data, 160), ...(w.active === true ? { active: true } : {}), ...(runs.length ? { runs } : {}) }];
+  });
+}
+
 /** Earlier turns as alternating messages, starting with the user's (the API wants that), same-role neighbours joined. */
 function conversation(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
   const out: { role: ChatTurn["role"]; text: string }[] = [];
@@ -228,6 +258,7 @@ export async function planWithAssistant(
         `<data>\n${describeData(input.data)}\n</data>`,
         `<shortlist>\n${describeBooks(ctx.matches, ctx.library)}\n</shortlist>`,
         `<operations>\n${describeOperations(ctx, ctx.library, input.text)}\n</operations>`,
+        ...(input.windows?.length ? [`<windows>\n${describeWindows(input.windows)}\n</windows>`] : []),
         `<machine gpu="${ctx.gpu}"/>`,
         `Message: ${input.text}`,
       ].join("\n\n"),

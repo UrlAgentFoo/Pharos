@@ -40,6 +40,8 @@ export interface DataStep {
 export interface DataDoc {
   readonly kind: "data";
   readonly id: string;
+  /** Its number, shown in its title and cited by the assistant as [n]; never reused while the page is open, so old citations stay right. */
+  readonly ref: number;
   name: string;
   workspace: string;
   source: Artifact;
@@ -67,6 +69,7 @@ let nextDoc = 0;
 export class Workspace {
   private _docs: DataDoc[] = [];
   private _activeId: string | null = null;
+  private lastRef = 0;
   private listeners = new Set<() => void>();
 
   get docs(): readonly DataDoc[] {
@@ -93,8 +96,18 @@ export class Workspace {
   }
 
   /** Adds a window restored from a project, as it was. */
-  restore(doc: Omit<DataDoc, "id" | "kind">): DataDoc {
+  restore(doc: Omit<DataDoc, "id" | "kind" | "ref">): DataDoc {
     return this.add({ ...doc, kind: "data", id: `d${++nextDoc}` });
+  }
+
+  /** The window cited as [ref], if it's open. */
+  byRef(ref: number): DataDoc | undefined {
+    return this._docs.find((d) => d.ref === ref);
+  }
+
+  /** Numbers windows from 1 again: for a new project, once its windows have closed (and the conversation citing them is gone). */
+  resetRefs() {
+    if (!this._docs.length) this.lastRef = 0;
   }
 
   subscribe(fn: () => void): () => void {
@@ -135,7 +148,8 @@ export class Workspace {
     this.emit();
   }
 
-  private add(doc: DataDoc): DataDoc {
+  private add(fields: Omit<DataDoc, "ref">): DataDoc {
+    const doc: DataDoc = { ...fields, ref: ++this.lastRef };
     this._docs.push(doc);
     this._activeId = doc.id;
     this.emit();

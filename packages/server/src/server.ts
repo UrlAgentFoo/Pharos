@@ -9,6 +9,7 @@ import { Library, type TrustLookup, hasErrors, resolveBook } from "@pharos/books
 import type { ChatTurn, ControlsLayout, Step } from "@pharos/contracts";
 import { layoutControls } from "./controls.js";
 import { AiError, type AiClientFactory, apiKeyFor, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
+import { cleanWindows } from "./planner.js";
 import { TokenMeter, metered } from "./token-usage.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
@@ -18,8 +19,8 @@ import { installFrom } from "./install.js";
 import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
-
 import { exportProject, importProject } from "./bundle.js";
+
 export const VERSION = "0.1.0";
 
 export interface ServerOptions {
@@ -194,7 +195,6 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         });
         return sendJson(res, 200, { path: file, bytes: body.length });
       }
-      case "GET /api/ai/config":
       // a project saved with its data, as one file; and opened again, its data back in the workspaces
       case "POST /api/projects/export": {
         const { project, path, results, overwrite } = await readJson<{ project?: unknown; path?: unknown; results?: unknown; overwrite?: unknown }>(req);
@@ -206,6 +206,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const { path } = await readJson<{ path?: unknown }>(req);
         return sendJson(res, 200, await importProject(workspaces, requirePath(typeof path === "string" ? path : null)));
       }
+      case "GET /api/ai/config":
         return sendJson(res, 200, { ...configView(await loadSettings(settingsDir), opts.envFile), usage: tokens.view() });
       case "PUT /api/ai/config": {
         const next = updateSettings(await loadSettings(settingsDir), await readJson(req));
@@ -276,7 +277,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case "GET /api/examples":
         return sendJson(res, 200, (await loadExamples(libraryDirs)).map(publicExample));
       case "POST /api/assistant/plan": {
-        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown; history?: unknown }>(req);
+        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown; history?: unknown; windows?: unknown }>(req);
         if (typeof body.workspace !== "string" || typeof body.text !== "string" || !Array.isArray(body.artifacts)) throw new HttpError(400, "workspace, text and artifacts are required");
         // the conversation so far: its last turns, each kept short
         const history: ChatTurn[] = (Array.isArray(body.history) ? body.history : [])
@@ -291,7 +292,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         } catch {
           throw new HttpError(400, "No API key configured. Add one in Settings.");
         }
-        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }, history));
+        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }, history, cleanWindows(body.windows)));
       }
       case "POST /api/assistant/controls": {
         const body = await readJson<{ workspace?: unknown; artifact?: unknown; book?: unknown; action?: unknown; request?: unknown }>(req);

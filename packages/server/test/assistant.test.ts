@@ -168,6 +168,22 @@ describe("assistant planning", () => {
     expect(String(messages[2].content)).toContain("Message: what can you do?");
   });
 
+  it("sees the open windows and their runs, to cite as [1] and [1.1]", async () => {
+    replies = [[{ type: "text", text: "The table [1] has two rows; counting them [1.1] took a moment." }]];
+    const windows = [
+      { ref: "1", title: "cells.csv", data: "cells.csv, a table (CSV)", active: true, runs: [{ ref: "1.1", title: "Count the rows", status: "done" }, { ref: "2.1", title: "another window's run", status: "done" }] },
+      { ref: "two", title: "not a reference" },
+      { ref: "3", title: "  spaced\n  out  ", data: "x".repeat(500) },
+    ];
+    const r: AssistantPlan = await (await send("/api/assistant/plan", { workspace: "w", text: "what's in my windows?", artifacts: [table], windows })).json();
+    expect(r.message).toBe("The table [1] has two rows; counting them [1.1] took a moment.");
+    const prompt = String((requests.at(-1)!.messages as { content: unknown }[]).at(-1)!.content);
+    expect(prompt).toContain("<windows>\n[1] cells.csv: cells.csv, a table (CSV) (the window this message is about)\n  [1.1] Count the rows (done)\n[3] spaced out: " + "x".repeat(160) + "\n</windows>");
+    expect(prompt).not.toContain("not a reference");
+    expect(prompt).not.toContain("another window's run");
+    expect(JSON.stringify(requests.at(-1)!.system)).toContain("[2.1] for a run in its history");
+  });
+
   it("counts the tokens of every reply, for Settings to show", async () => {
     const config = await (await fetch(`${server.url}/api/ai/config`, { headers: { "x-pharos-token": TOKEN } })).json();
     const counts = Object.values(config.usage.total) as { requests: number; input: number; output: number }[];

@@ -12,13 +12,18 @@
  * it); Enter with nothing picked sends the text to the assistant.
  */
 import type { ChatTurn } from "@pharos/contracts";
+import { type CiteTarget, replyHtml } from "./reply.js";
 import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { formatShortcut } from "./keys.js";
 
+export type { CiteTarget } from "./reply.js";
+
 /** What the assistant made of a request: its message, and the window it proposed steps in, if it did. */
 export interface AskReply {
   text: string;
+  /** What each citation the text may hold ([1], [2.1]) points at; text that cites nothing here stays plain. */
+  cites?: Record<string, CiteTarget>;
   /** Steps it proposed in a window's history, waiting for Approve. */
   proposed?: { window: string; windowId: string; steps: number; title: string };
   /** A book action it set up in a window's Controls (Suggested tab), waiting to be run. */
@@ -48,11 +53,14 @@ export interface AssistantHooks {
   renamed(): void;
   /** Brings a window forward, showing what the assistant left there: its Controls' Suggested tab, or its history. */
   show(windowId: string, place: "suggested" | "history"): void;
+  /** Brings a cited window forward, at the cited run when it's one. */
+  cite(target: CiteTarget): void;
 }
 
 type Message = { role: "user"; text: string } | { role: "assistant"; reply: AskReply } | { role: "note"; text: string; error?: boolean };
 
 export const UNTITLED = "Untitled project";
+
 /** What the title shows until the project is named. */
 const ASK = "Ask Pharos";
 
@@ -117,10 +125,14 @@ export class Assistant {
       this.hooks.renamed();
     });
 
-    // a reply's "Show in Controls" or "Show the steps"
+    // a reply's "Show in Controls" or "Show the steps", and its citations
     this.log.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-show]");
       if (b) this.hooks.show(b.dataset.show!, b.dataset.place === "history" ? "history" : "suggested");
+      const c = (e.target as HTMLElement).closest<HTMLElement>("[data-cite]");
+      const m = c && this.messages[Number(c.dataset.msg)];
+      const target = m?.role === "assistant" ? m.reply.cites?.[c!.dataset.cite!] : undefined;
+      if (target) this.hooks.cite(target);
     });
 
     box.querySelector("form")!.addEventListener("submit", (e) => {
@@ -256,13 +268,13 @@ export class Assistant {
     // before the conversation starts, only what stops the assistant; the column above lists what fits the window
     const why = !this.messages.length && this.hooks.unavailable();
     if (why) log.innerHTML = `<div class="assistant-intro"><p class="chat-warn">${escapeHtml(why)}</p></div>`;
-    for (const m of this.messages) log.append(this.messageEl(m));
+    this.messages.forEach((m, i) => log.append(this.messageEl(m, i)));
     if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Thinking…</p></div>`);
     // the window's summary scrolls with the conversation, above it: keep the latest message in view
     if (this.messages.length || this.busy) this.scroller.scrollTop = this.scroller.scrollHeight;
   }
 
-  private messageEl(m: Message): HTMLElement {
+  private messageEl(m: Message, index: number): HTMLElement {
     const el = document.createElement("div");
     if (m.role === "user") {
       el.className = "msg user";
@@ -276,7 +288,7 @@ export class Assistant {
     }
     const { reply } = m;
     el.className = "msg assistant";
-    if (reply.text) el.insertAdjacentHTML("beforeend", `<p>${escapeHtml(reply.text).replace(/\n/g, "<br>")}</p>`);
+    if (reply.text) el.insertAdjacentHTML("beforeend", `<div class="reply">${replyHtml(reply.text, reply.cites ?? {}, index)}</div>`);
     // what it left in a window, in two lines: what, then where it waits, with a way there
     if (reply.proposed) {
       const p = reply.proposed;

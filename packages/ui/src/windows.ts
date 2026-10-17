@@ -87,7 +87,7 @@ export class WindowManager {
       const w = this.wins.get(doc.id) ?? this.create(doc);
       w.el.classList.toggle("controls-open", doc.ui.controls);
       w.el.querySelector(".win-title-text")!.textContent = doc.name;
-      w.el.setAttribute("aria-label", doc.name);
+      w.el.setAttribute("aria-label", `${doc.ref}: ${doc.name}`);
       const side = w.el.querySelector("[data-win=\"controls\"]")!;
       side.setAttribute("aria-pressed", String(doc.ui.controls));
       side.setAttribute("title", doc.ui.controls ? "Hide the side panel" : "Show the side panel");
@@ -121,7 +121,7 @@ export class WindowManager {
     el.innerHTML = `
       <header class="win-title">
         <div class="win-left">
-          <div class="win-name"><span class="win-kind">${icon(kindIcon(doc.source.kind), 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
+          <div class="win-name"><span class="win-ref">${doc.ref}</span><span class="win-kind">${icon(kindIcon(doc.source.kind), 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
         </div>
         <div class="win-right">
           <button class="win-icon" data-win="controls" aria-label="Side panel">${icon("panel", 16)}</button>

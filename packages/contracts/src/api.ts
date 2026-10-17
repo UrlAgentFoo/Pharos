@@ -143,6 +143,22 @@ export interface ChatTurn {
   text: string;
 }
 
+/**
+ * An open window, as the assistant sees it so it can cite it: `[1]` for the
+ * window, `[1.2]` for the second run in its history. Names and titles only,
+ * never the data.
+ */
+export interface WindowRef {
+  ref: string;
+  /** The window's name. */
+  title: string;
+  /** What it shows: "bracket.step, a CAD part (STEP)". */
+  data: string;
+  /** The window the message is about. */
+  active?: boolean;
+  runs?: { ref: string; title: string; status: string }[];
+}
+
 /** What the assistant says to a message, and the plan it proposes when asked to do something; `plan` is null otherwise. */
 export interface AssistantPlan {
   plan: Plan | null;
@@ -240,9 +256,10 @@ export interface ApiRoutes {
   "POST /api/examples/:id/prepare": { req: void; res: Plan };
   /**
    * The assistant answers a message about the active window's data, with the
-   * conversation so far in `history`; when asked to do something it proposes a plan.
+   * conversation so far in `history` and the open windows in `windows`, which
+   * its answers cite; when asked to do something it proposes a plan.
    */
-  "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[]; history?: ChatTurn[] }; res: AssistantPlan };
+  "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[]; history?: ChatTurn[]; windows?: WindowRef[] }; res: AssistantPlan };
   /**
    * The assistant lays out the Controls for a book action on an artifact,
    * starting from the book's own design; `request` is what the user asked

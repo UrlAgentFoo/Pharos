@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Everything Pharos
  * does goes through it; without one the page can only say how to start it.
  */
-import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, ChatTurn, ControlsLayout, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, ChatTurn, ControlsLayout, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WindowRef, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -315,8 +315,9 @@ export class LocalServer {
   }
 
   /** The assistant's answer to a message, with the conversation so far; a plan when asked to do something. */
-  async assistantPlan(workspace: string, text: string, artifacts: string[], history: ChatTurn[] = []): Promise<AssistantPlan> {
-    return (await this.json("/api/assistant/plan", "POST", { workspace, text, artifacts, history })) as AssistantPlan;
+  /** `windows`: the open windows and their runs, which the reply can cite as [1] and [1.2]. */
+  async assistantPlan(workspace: string, text: string, artifacts: string[], history: ChatTurn[] = [], windows: WindowRef[] = []): Promise<AssistantPlan> {
+    return (await this.json("/api/assistant/plan", "POST", { workspace, text, artifacts, history, windows })) as AssistantPlan;
   }
 
   async plan(id: string): Promise<Plan> {

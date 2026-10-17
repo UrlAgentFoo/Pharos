@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { stringify, parse } from "yaml";
 import { type Library, type PlanRecipe, dependencies, hasErrors, planProblems, shipNeeds, stepParams } from "@pharos/books";
 import { acceptProblems, matchBooks } from "@pharos/catalogue";
-import { type Artifact, type BookAction, type BookManifest, type CatalogueEntry, type ChatTurn, type DataSummary, type Job, type Params, type Plan, type Step, type TestResult, bookAction } from "@pharos/contracts";
+import { type Artifact, type BookAction, type BookManifest, type CatalogueEntry, type ChatTurn, type DataSummary, type Job, type Params, type Plan, type Step, type TestResult, type WindowRef, bookAction } from "@pharos/contracts";
 import { withDefaults } from "@pharos/core";
 import type { AiClient } from "./ai.js";
 import type { CatalogueHolder } from "./catalogue.js";
@@ -97,13 +97,13 @@ export class Plans {
    * pipeline). Only the final proposal is kept; earlier attempts the
    * assistant repaired are cancelled.
    */
-  async withAssistant(workspace: string, text: string, artifacts: string[], ai: { client: AiClient; model: string }, history: ChatTurn[] = []): Promise<PlannerResult> {
+  async withAssistant(workspace: string, text: string, artifacts: string[], ai: { client: AiClient; model: string }, history: ChatTurn[] = [], windows: WindowRef[] = []): Promise<PlannerResult> {
     const lib = await this.library();
     const ctx = await this.catalogue.get();
     const data = await Promise.all(artifacts.map(async (id) => ({ id, summary: await this.catalogue.summary(this.workspaces, workspace, id) })));
     const matches = matchBooks(ctx.books, data.map((d) => d.summary), { text, gpu: ctx.gpu });
     const made: Plan[] = [];
-    const result = await planWithAssistant(ai.client, ai.model, { text, data, history }, { ...ctx, library: lib, matches }, {
+    const result = await planWithAssistant(ai.client, ai.model, { text, data, history, windows }, { ...ctx, library: lib, matches }, {
       fromBook: async (book, action, inputs, parameters, rationale) => {
         const plan = await this.fromBook(workspace, book, inputs, parameters, undefined, action);
         plan.rationale = rationale;

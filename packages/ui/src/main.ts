@@ -1,7 +1,7 @@
 import "./style.css";
-import type { Artifact, CatalogueEntry, ChatTurn, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
+import type { Artifact, CatalogueEntry, ChatTurn, Example, ServerEvent, SystemStatus, WindowRef } from "@pharos/contracts";
 import { type AiConfig, LocalServer } from "./api.js";
-import { type AskReply, Assistant, type SearchHit, UNTITLED } from "./chat.js";
+import { type AskReply, Assistant, type CiteTarget, type SearchHit, UNTITLED } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
 import { alertDialog, browseDialog, confirmDialog, escapeHtml, isDialogOpen, promptDialog, showDialog } from "./dialogs.js";
 import { exampleCards, showPictures, wireExampleGallery } from "./examples.js";
@@ -15,7 +15,8 @@ import { PROJECT_EXT, type ProjectDoc, type ProjectFile, packProject, unpackProj
 import { Autosave } from "./session.js";
 import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
-import { type DataDoc, Workspace, blockAt, timeBlocks } from "./workspace.js";
+import { type DataDoc, Workspace, blockAt, timeBlocks, underWay } from "./workspace.js";
+import { kindLabel } from "./viewers.js";
 import { SuggestedControls } from "./suggested-controls.js";
 import { localDay, tokenUsageHtml } from "./token-usage.js";
 import { WindowSummary } from "./window-summary.js";
@@ -614,6 +615,7 @@ async function keptOnDisk(): Promise<string> {
 async function clearProject() {
   if (!(await confirmDialog("New project", `Close every window and clear the conversation? ${await keptOnDisk()}`, "Clear"))) return;
   for (const d of [...ws.docs]) ws.close(d.id);
+  ws.resetRefs(); // the conversation citing them goes too, so windows count from 1 again
   assistant.setProjectName("");
   assistant.reset();
   lastSaved = null;
@@ -768,18 +770,43 @@ async function ask(text: string, history: ChatTurn[]): Promise<AskReply> {
   const s = server!;
   const doc = ws.active!;
   const shown = (await windows.dataView(doc.id)?.shownArtifact()) ?? doc.source;
-  const r = await s.assistantPlan(doc.workspace, text, [shown.id], history);
+  const { open, cites } = windowRefs(doc);
+  const r = await s.assistantPlan(doc.workspace, text, [shown.id], history, open);
   // a reply in words (a greeting, an answer, or what's missing): the assistant knows what fits and says so itself
-  if (!r.plan) return { text: r.message };
+  if (!r.plan) return { text: r.message, cites };
   if (r.plan.book) {
     const target = await processes.suggest(r.plan, shown, text);
     void s.cancelPlan(r.plan.id).catch(() => {}); // the server's copy isn't needed: it runs from the Controls
     const sug = target.suggestion;
-    return { text: r.plan.rationale ?? r.message, suggested: { window: target.name, windowId: target.id, title: sug?.title ?? r.plan.title, book: sug?.book.title ?? "" } };
+    return { text: r.plan.rationale ?? r.message, cites, suggested: { window: target.name, windowId: target.id, title: sug?.title ?? r.plan.title, book: sug?.book.title ?? "" } };
   }
   const target = await processes.fromPlan(r.plan, shown);
   const steps = r.plan.steps.length;
-  return { text: r.plan.rationale ?? r.message, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title } };
+  return { text: r.plan.rationale ?? r.message, cites, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title } };
+}
+
+/**
+ * The open windows as the assistant sees them, to cite: each by its number
+ * ([2]), the runs in its history as they're numbered there ([2.1]); and what
+ * each citation points at, kept with the reply so it still finds them later.
+ */
+function windowRefs(active: DataDoc): { open: WindowRef[]; cites: Record<string, CiteTarget> } {
+  const open: WindowRef[] = [];
+  const cites: Record<string, CiteTarget> = {};
+  for (const d of ws.docs) {
+    const ref = String(d.ref);
+    const runs = timeBlocks(d).filter((b) => !underWay(d, b));
+    open.push({
+      ref,
+      title: d.name,
+      data: `${d.source.name ?? d.name}, ${kindLabel(d.source)} (${formatTitle(d.source.format)})`,
+      ...(d === active ? { active: true } : {}),
+      runs: runs.map((b, i) => ({ ref: `${ref}.${i + 1}`, title: b.title, status: b.status })),
+    });
+    cites[ref] = { windowId: d.id, label: d.name };
+    runs.forEach((b, i) => (cites[`${ref}.${i + 1}`] = { windowId: d.id, block: d.steps[b.first].block, run: i + 1, label: `run ${i + 1} in ${d.name}` }));
+  }
+  return { open, cites };
 }
 
 function aiUnavailable(): string | null {
@@ -1016,6 +1043,22 @@ const assistant = new Assistant($("assistant"), $("ask-box"), {
       doc.ui.controlsTab = "suggested";
     }
     windows.restore(id); // forward and active, out of the minimised stack if it was there
+    ws.touch();
+  },
+  // a citation: the window forward, at the cited run (found by its id, so later runs don't move it)
+  cite: (t) => {
+    const doc = ws.get(t.windowId);
+    if (!doc) return notify(`${t.label} has been closed.`);
+    if (t.run) {
+      const own = t.block ? doc.steps.flatMap((s, i) => (s.block === t.block ? [i] : [])) : [];
+      const last = own.length ? own[own.length - 1] : timeBlocks(doc).filter((b) => !underWay(doc, b))[t.run - 1]?.last;
+      if (last === undefined) notify(`That run is no longer in ${doc.name}'s history.`);
+      else {
+        doc.marker = last + 1;
+        doc.output = undefined;
+      }
+    }
+    windows.restore(doc.id);
     ws.touch();
   },
 });
