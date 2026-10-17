@@ -31,9 +31,9 @@
   --scrim: rgba(238, 234, 227, 0.8);
   --backdrop: rgba(43, 42, 39, 0.18);
   /* the beam rising behind the start screen's drop area: by day a soft shade, as light can't show on paper */
-  --beam: rgba(43, 42, 39, 0.11);
-  --beam-core: rgba(43, 42, 39, 0.2); /* its heart, low down, and the pool on the floor it rises from */
-  --beam-halo: rgba(243, 240, 235, 0.94); /* the ground under the drop area's text, hiding the cards behind */
+  --beam: rgba(43, 42, 39, 0.094);
+  --beam-core: rgba(43, 42, 39, 0.2); /* the heart of the pool on the floor it rises from */
+  --beam-halo: rgba(243, 240, 235, 0.94); /* the veil in the beam, hiding the cards behind the drop area */
   --beam-button: #fbfaf7; /* the upload button in it, and its arrow */
   --beam-button-ink: #2b2a27;
   --warn-bg: #fbf3e6;
@@ -73,7 +73,7 @@
   --glass-soft: rgba(33, 32, 29, 0.6);
   --scrim: rgba(18, 17, 16, 0.8);
   --backdrop: rgba(0, 0, 0, 0.45);
-  --beam: rgba(236, 232, 225, 0.1);
+  --beam: rgba(236, 232, 225, 0.085);
   --beam-core: rgba(236, 232, 225, 0.24);
   --beam-halo: rgba(25, 24, 22, 0.92);
   --beam-button: #d8d3ca; /* lit by the beam */
@@ -4274,10 +4274,10 @@ dialog.side::backdrop {
   min-height: 30px;
 }
 
-/* the ring: everything under the top bar, seen in perspective and a little from above. examples.ts places
-   each card on the ellipse, turns it, and seen through its own perspective from the one eye, and stacks the
-   cards by depth: a nearer card always covers a farther one, the front passes before the drop area and the
-   back behind it. (In one shared 3D space, cards whose planes cross at the sides would show through each other.) */
+/* the ring: everything under the top bar, a band of cards seen in perspective and a little from above.
+   examples.ts stands each card flush on the band, sees it through its own perspective from the one eye, and
+   stacks the cards by depth: a nearer card always covers a farther one, the front passes before the drop area
+   and the back behind it */
 .welcome:has(.ring-on) {
   padding-bottom: 16px;
   overflow: hidden;
@@ -4326,35 +4326,37 @@ dialog.side::backdrop {
   pointer-events: none;
 }
 
-/* the beam: rising from the pool of light on the floor, already a little wide there, keeping its strength
-   and its cone for most of its height, brighter at its heart, and fading out near the top. Its foot fades into the pool, so the pool reads as a whole
-   ellipse; its sides are soft: the mask is a cone whose point is well below the floor */
+/* the beam: rising from the pool of light on the floor, well below the drop area, and widening all the
+   way up from there, its light fading out softly over most of its height. It carries the veil that hides the cards behind the drop area,
+   so only the cone's own shape stands behind the text: soft sides, from a cone whose point is a little
+   below the floor, and a foot that fades into the pool */
 .ring-on .welcome-centre::before {
-  inset: -96px -160px -24px;
+  inset: -148px -300px -150px; /* down into the pool, so the cone grows out of it */
   background:
-    radial-gradient(ellipse 30% 90% at 50% 90%, var(--beam-core), transparent 85%),
-    linear-gradient(to top, var(--beam), var(--beam) 65%, transparent);
+    linear-gradient(to top, var(--beam), var(--beam) 25%, transparent 85%),
+    linear-gradient(to top, var(--beam-halo), var(--beam-halo) 74%, transparent 94%); /* the veil, as high as the cards behind */
   -webkit-mask-image:
-    conic-gradient(from -32deg at 50% calc(100% + 340px), transparent, black 14deg, black 50deg, transparent 64deg, transparent),
-    linear-gradient(to top, transparent, black 16%);
+    conic-gradient(from -38.5deg at 50% calc(100% + 200px), transparent, black 14deg, black 63deg, transparent 77deg, transparent),
+    linear-gradient(to top, transparent, black 5%);
   -webkit-mask-composite: source-in;
   mask-image:
-    conic-gradient(from -32deg at 50% calc(100% + 340px), transparent, black 14deg, black 50deg, transparent 64deg, transparent),
-    linear-gradient(to top, transparent, black 16%);
+    conic-gradient(from -38.5deg at 50% calc(100% + 200px), transparent, black 14deg, black 63deg, transparent 77deg, transparent),
+    linear-gradient(to top, transparent, black 5%);
   mask-composite: intersect;
 }
 
-/* the light on the floor it shines from */
+/* the light on the floor it shines from: its heart and a soft glow, circles on the floor that examples.ts
+   measures through the band's own perspective (--pool-*, --glow-*), so both lie as flat as the band. Both are
+   centred --pool-mid above the light's foot */
 .ring-on .welcome-centre::after {
   left: 50%;
-  bottom: -48px; /* FLOOR_BELOW in examples.ts */
-  width: 520px; /* twice FLOOR_HALF */
-  height: 56px;
-  margin-left: -260px;
-  border-radius: 50%;
+  bottom: -158px; /* FLOOR_BELOW in examples.ts */
+  width: var(--glow-w, 400px);
+  height: calc(2 * var(--pool-mid, 28px));
+  margin-left: calc(var(--glow-w, 400px) / -2);
   background:
-    radial-gradient(ellipse 28% 42% at 50% 50%, var(--beam-core), transparent),
-    radial-gradient(closest-side, var(--beam), transparent);
+    radial-gradient(calc(var(--pool-w, 224px) / 2) calc(var(--pool-h, 40px) / 2) at 50% 50%, var(--beam-core), transparent),
+    radial-gradient(calc(var(--glow-w, 400px) / 2) calc(var(--glow-h, 56px) / 2) at 50% 50%, var(--beam), transparent);
 }
 
 .ring-on .welcome-centre .display {
@@ -4362,16 +4364,13 @@ dialog.side::backdrop {
   font-size: 56px;
 }
 
-/* in the ring the drop area is open, with no box: a soft glow in the beam's own light, fading at its edges,
-   keeps its text clear of the cards behind */
+/* in the ring the drop area is open, with no box and no ground of its own: the beam behind it keeps its text clear */
 .ring-on .dropzone,
 .ring-on .dropzone:hover {
   width: 520px;
   padding: 16px 32px;
   border-color: transparent;
-  background:
-    radial-gradient(closest-side, var(--beam-core) 55%, transparent),
-    radial-gradient(closest-side, var(--beam-halo) 55%, transparent);
+  background: none;
 }
 
 .ring-on .dropzone-icon {
@@ -4408,26 +4407,66 @@ dialog.side::backdrop {
   position: absolute;
   left: 50%;
   top: var(--ring-y, 50%);
-  width: 228px;
-  margin: calc(var(--card-h, 200px) / -2) 0 0 -114px; /* centred on its place; examples.ts measures its height */
+  width: 262px;
+  margin: calc(var(--card-h, 230px) / -2) 0 0 -131px; /* centred on its place; examples.ts measures its height */
+  overflow: visible; /* the picture clips itself, so the card can hold its edges in 3D */
+  transform-style: preserve-3d;
   box-shadow: var(--shadow);
 }
 
-/* turned away (the back of the ring), a card shows its reverse: mirrored by the turn itself, and under an
-   opaque veil of the sheet's colour, so it reads as a card's back and the front stays clear */
-.ring-on .example::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: var(--sheet);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s;
+.ring-on .example-pic {
+  border-radius: 5px 5px 0 0;
 }
 
-/* well veiled: with the ring seen nearly side on, the back passes behind the drop area's text */
-.ring-on .example.away::after {
-  opacity: 0.86;
+/* the picture and the text lie just off the card's face, so in 3D they never fight it for the same plane.
+   Turned away, a card is a little see-through: its picture shows faintly through its face, mirrored */
+.ring-on .example-pic,
+.ring-on .example-text {
+  transform: translateZ(0.5px);
+}
+
+.ring-on .example.away {
+  background: color-mix(in srgb, var(--sheet) 90%, transparent);
+}
+
+.ring-on .example.away .example-pic {
+  opacity: 0.9;
+}
+
+/* a card in the ring has a little thickness: its two side edges, standing back from its face, so a card
+   turning edge-on stays a thin card rather than a jagged line */
+.example-edge {
+  display: none;
+}
+
+.ring-on .example-edge {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.ring-on .example-edge::before,
+.ring-on .example-edge::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 4px;
+  background: var(--line-strong);
+}
+
+.ring-on .example-edge::before {
+  left: -1px;
+  transform-origin: left;
+  transform: rotateY(90deg);
+}
+
+.ring-on .example-edge::after {
+  right: -1px;
+  transform-origin: right;
+  transform: rotateY(-90deg);
 }
 
 .ring-on .example em,

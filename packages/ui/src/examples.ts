@@ -1,7 +1,7 @@
 /**
  * Example cards: a picture of the data, what it is, its name and the
  * question it comes with. On the start screen they stand in a ring around
- * the drop area, seen a little from above, which turns slowly (hovering or
+ * the drop area, standing on a band seen a little from above, which turns slowly (hovering or
  * focusing a card stops it; the arrows turn it a card at a time; a card Tab
  * reaches comes round to the front). "See all examples" lays every card out
  * in a grid under the drop area, with "Hide examples" at its foot. Where the
@@ -19,7 +19,7 @@ export const exampleCards = (examples: Example[]) =>
       (e) => `<button class="example" data-example="${escapeHtml(e.id)}" title="${escapeHtml(e.description)}">
         <span class="example-pic">${e.image ? `<img data-pic="${escapeHtml(e.id)}" alt="" />` : icon("flask", 22)}</span>
         <span class="example-text"><small class="eyebrow">${escapeHtml(e.kind)}</small><strong>${escapeHtml(e.title)}</strong>
-        <em>“${escapeHtml(e.prompt)}”</em></span></button>`,
+        <em>“${escapeHtml(e.prompt)}”</em></span><span class="example-edge" aria-hidden="true"></span></button>`,
     )
     .join("");
 
@@ -41,25 +41,36 @@ export function showPictures(s: LocalServer, root: ParentNode) {
 
 /** The most cards in the ring; "See all examples" shows the rest. */
 const RING_MAX = 14;
-/** How far the eye is from the ring's middle, in px: each card is seen through `perspective()` from there. */
-const PERSPECTIVE = 1200;
 /**
- * The ring's scene is SCENE_W px wide, and as tall as the ring needs (measured in `measure`). The ring is laid
- * out in it, never in the window, and the scene is scaled as a whole to fit: zooming the page then makes the
- * ring larger or smaller without changing the angle it's seen from.
+ * The ring is a band: two circles of one radius, one above the other a card's height apart, and each card
+ * stands flush on it, its top corners on the upper circle and its bottom corners on the lower. One eye looks
+ * at the band from in front and above it, level, as through a shift lens: the cards all stand upright on
+ * screen, and every card's place, turn and size follow from the band and the eye.
+ * The band's middle is one radius behind the screen, so the front cards are at about their own size, and the
+ * eye is EYE radii in front of the screen: nearer makes the back of the band look farther off.
+ */
+const EYE = 1.3;
+/** How far the eye looks down on the band's middle: lower brings the front of the band up towards the drop area. */
+const ELEVATION = (15 * Math.PI) / 180;
+/**
+ * The ring's scene is SCENE_W px wide, and as tall as the band needs (measured in `measure`). The band is as
+ * wide as the scene allows, laid out in it and never in the window, and the scene is scaled as a whole to
+ * fit: zooming the page then makes the ring larger or smaller without changing the angle it's seen from.
  */
 const SCENE_W = 1500;
 /** Below this scale the cards are too small to read, and the grid shows instead. */
 const MIN_SCALE = 0.45;
-/** How near the front of the ring comes, and how far off the back goes, in px. */
-const NEAR = 200;
-const FAR = 760;
-/** How much the back of the ring rises, against how far the front falls: the ring is seen nearly side on. */
-const BACK_RISE = 0.45;
 /** How far the light on the floor under the centre reaches below it, and half its width (`.ring-on .welcome-centre::after`). */
-const FLOOR_BELOW = 48;
-const FLOOR_HALF = 260;
-/** How far the centre stands above the ring's middle: the front cards then clear it with a flatter ring. */
+const FLOOR_BELOW = 158;
+const FLOOR_HALF = 200;
+/**
+ * That light is two circles on the floor round the band's axis, seen by the band's eye: its heart POOL_R
+ * across, and its glow as wide on screen as the light (twice FLOOR_HALF). Their middle is at least POOL_MID
+ * above the light's foot on screen.
+ */
+const POOL_R = 200;
+const POOL_MID = 28;
+/** How far the centre stands above the ring's middle, at least: more if the front cards need it to clear the light. */
 const LIFT = 64;
 /** The clear space between the light on the floor and the tops of the front cards, and around the scene's edges. */
 const GAP = 20;
@@ -93,83 +104,145 @@ export function wireExampleGallery(onShow: () => void) {
   const welcome = document.getElementById("welcome")!;
   const scene = document.getElementById("ring-scene")!;
   const centre = stage.querySelector<HTMLElement>(".welcome-centre")!;
-  /** The ring's size and the scene's height, measured in ring mode; `place` and `scale` use them. */
-  let geo = { rx: 0, ry: 0, sceneH: 820 };
-  /** How much perspective enlarges something at depth `z`. */
-  const grow = (z: number) => PERSPECTIVE / (PERSPECTIVE - z);
-  /** The ring's depth behind or before the centre at angle `t` (90° is the front). */
-  const depth = (t: number) => Math.sin(t) * (Math.sin(t) > 0 ? NEAR : FAR);
-  /** How far below the ring's middle a card sits at angle `t` (above it, at the back). */
-  const drop = (t: number, ry: number) => Math.sin(t) * (Math.sin(t) > 0 ? ry : ry * BACK_RISE);
+  /**
+   * The band, measured in ring mode: its radius, how far its cards' edges stand in from it (they're chords
+   * of its circles), the eye's distance and its height above the band's middle, and the scene's height.
+   */
+  let geo = { radius: 1000, inset: 990, eye: 1300, height: 300, sceneH: 820 };
+  type Band = typeof geo;
+  /** How far the centre stands above the band's middle on screen (LIFT, or more for the front cards to clear the light). */
+  let lift = LIFT;
+  /**
+   * Where the point (u, v) of a card at turn `phi` (0 at the front, 90° at the right) lands: x and y on the
+   * screen from the band's middle, and its depth before (+) or behind (−) the band's middle. The same steps
+   * as the card's CSS transform in `place`: the eye looks level, so upright lines stay upright, and the
+   * picture is shifted so the band's middle stays where it is.
+   */
+  const project = (b: Band, phi: number, u: number, v: number) => {
+    const x = u * Math.cos(phi) + b.inset * Math.sin(phi);
+    const depth = -u * Math.sin(phi) + b.inset * Math.cos(phi);
+    const k = b.eye / (b.eye + b.radius - depth);
+    return { x: x * k, y: (v + b.height) * k - b.height * (b.eye / (b.eye + b.radius)), depth };
+  };
+  const band = (radius: number, height: number, cardW: number): Band => ({
+    radius,
+    inset: Math.sqrt(Math.max(0, radius * radius - (cardW / 2) ** 2)),
+    eye: EYE * radius,
+    height,
+    sceneH: geo.sceneH,
+  });
+  /** Each card's corners at `steps` turns round the band, with whether the card is in the front half. */
+  const corners = (b: Band, cardW: number, cardH: number, steps = 180) => {
+    const out: { xs: number[]; ys: number[]; front: boolean }[] = [];
+    for (let k = 0; k < steps; k++) {
+      const phi = (k / steps) * 2 * Math.PI;
+      const pts = [-1, 1].flatMap((su) => [-1, 1].map((sv) => project(b, phi, (su * cardW) / 2, (sv * cardH) / 2)));
+      out.push({ xs: pts.map((q) => q.x), ys: pts.map((q) => q.y), front: Math.cos(phi) > 0 });
+    }
+    return out;
+  };
 
   /**
-   * The ring as tall as it must be for every front card that passes under the light on the floor to clear
-   * it by GAP, and the scene as tall as the ring and the centre need, with the ring's middle where they fit.
+   * The band as wide as the scene, seen from ELEVATION, with the centre raised above the band's middle just
+   * enough for every front card that passes under the light on the floor to clear it by GAP, and the scene
+   * as tall as the band and the centre need.
    */
   const measure = () => {
     const card = ringCards()[0];
-    const cardW = card?.offsetWidth || 228;
-    const cardH = card?.offsetHeight || 200;
-    const rx = SCENE_W / 2 - cardW / 2 - 20;
-    const clear = centre.offsetHeight / 2 - LIFT + FLOOR_BELOW + GAP;
-    let ry = 0;
-    for (let k = 1; k < 90; k++) {
-      const t = (k / 90) * Math.PI;
-      const g = grow(depth(t));
-      // a card wholly to one side of the light can rise past it
-      if (g * (Math.abs(Math.cos(t) * rx) - cardW / 2) < FLOOR_HALF) ry = Math.max(ry, (clear / g + cardH / 2) / Math.sin(t));
+    const cardW = card?.offsetWidth || 262;
+    const cardH = card?.offsetHeight || 230;
+    const halfW = SCENE_W / 2 - EDGE / 2;
+    // the largest radius that fits the scene's width (the eye's height doesn't change how wide it looks)
+    let lo = cardW, hi = 8000;
+    for (let k = 0; k < 40; k++) {
+      const mid = (lo + hi) / 2;
+      const reach = Math.max(...corners(band(mid, 0, cardW), cardW, cardH, 90).flatMap((c) => c.xs.map(Math.abs)));
+      if (reach > halfW) hi = mid;
+      else lo = mid;
     }
-    // how far the ring (and the centre with its backdrop) reach above and below the ring's middle
-    let above = centre.offsetHeight / 2 + LIFT + 64;
+    const radius = lo;
+    const b = band(radius, Math.tan(ELEVATION) * (EYE * radius + radius), cardW);
+    // the centre high enough that the light's foot is GAP above every front card under it (a card wholly
+    // to one side of the light can rise past it)
+    const tops = corners(b, cardW, cardH)
+      .filter((c) => c.front && Math.min(...c.xs) < FLOOR_HALF && Math.max(...c.xs) > -FLOOR_HALF)
+      .map((c) => Math.min(...c.ys));
+    lift = Math.max(LIFT, centre.offsetHeight / 2 + FLOOR_BELOW + GAP - Math.min(Infinity, ...tops));
+    // how far the band (and the centre with its backdrop) reach above and below the band's middle
+    let above = centre.offsetHeight / 2 + lift + 64;
     let below = 0;
-    for (let k = 0; k < 180; k++) {
-      const t = (k / 180) * 2 * Math.PI;
-      const g = grow(depth(t));
-      above = Math.max(above, g * (cardH / 2 - drop(t, ry)));
-      below = Math.max(below, g * (cardH / 2 + drop(t, ry)));
+    for (const c of corners(b, cardW, cardH)) {
+      above = Math.max(above, -Math.min(...c.ys));
+      below = Math.max(below, Math.max(...c.ys));
     }
     const top = above + EDGE / 2;
-    geo = { rx, ry, sceneH: Math.ceil(top + below + EDGE) };
+    geo = { ...b, sceneH: Math.ceil(top + below + EDGE) };
     scene.style.height = `${geo.sceneH}px`;
     scene.style.setProperty("--ring-y", `${top.toFixed(1)}px`);
-    scene.style.setProperty("--centre-y", `${(top - LIFT).toFixed(1)}px`);
+    scene.style.setProperty("--centre-y", `${(top - lift).toFixed(1)}px`);
     scene.style.setProperty("--card-h", `${cardH}px`);
+    shapePool();
+  };
+  /**
+   * The light on the floor: its heart and its glow, circles on the floor round the band's axis, seen by the
+   * same eye as the band, so they lie as flat as it does, on the level that shows them where the light is
+   * (`.ring-on .welcome-centre::after`).
+   */
+  const shapePool = () => {
+    // a circle's width and height on screen, at level v
+    const shape = (r: number, v: number) => {
+      const pts = Array.from({ length: 120 }, (_, k) => project({ ...geo, inset: r }, (k / 120) * 2 * Math.PI, 0, v));
+      return {
+        w: Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x)),
+        h: Math.max(...pts.map((q) => q.y)) - Math.min(...pts.map((q) => q.y)),
+      };
+    };
+    let mid = POOL_MID;
+    let heart = { w: 0, h: 0 }, glow = { w: 0, h: 0 };
+    for (let pass = 0; pass < 3; pass++) {
+      const at = centre.offsetHeight / 2 + FLOOR_BELOW - mid - lift; // below the band's middle on screen
+      let lo = -4000, hi = 4000;
+      for (let k = 0; k < 40; k++) {
+        const v = (lo + hi) / 2;
+        if (project({ ...geo, inset: 0 }, 0, 0, v).y > at) hi = v;
+        else lo = v;
+      }
+      heart = shape(POOL_R, lo);
+      // the glow's circle, scaled to be as wide on screen as the light
+      glow = shape((POOL_R * 2 * FLOOR_HALF) / heart.w, lo);
+      mid = Math.max(POOL_MID, glow.h / 2);
+    }
+    scene.style.setProperty("--pool-w", `${heart.w.toFixed(1)}px`);
+    scene.style.setProperty("--pool-h", `${heart.h.toFixed(1)}px`);
+    scene.style.setProperty("--glow-w", `${glow.w.toFixed(1)}px`);
+    scene.style.setProperty("--glow-h", `${glow.h.toFixed(1)}px`);
+    scene.style.setProperty("--pool-mid", `${mid.toFixed(1)}px`);
   };
   /** The scene's scale that fits the stage; never above 1, so zooming the page in makes the ring larger. */
   const scale = () => Math.min(1, stage.clientWidth / SCENE_W, stage.clientHeight / geo.sceneH);
   const ring = () => stage.classList.contains("ring-on");
 
   /**
-   * Each card at its place on the ellipse, turned to face outwards like a card on a carousel: square on
-   * at the front and the back (where it shows its reverse, mirrored, under a veil, so the front stays
-   * clear), and edge-on at the ring's leftmost and rightmost points on screen. The turn is measured from
-   * the line between your eye and the card, so it reads that way through the perspective too.
+   * Each card flush on the band, facing outwards: square on at the front, and at the back showing its reverse,
+   * a little see-through. Each card is seen through its own `perspective()`
+   * from where they all start, the band's middle on screen, so all share the one eye, and they're stacked by
+   * depth: a nearer card always covers a farther one, the front passes before the drop area and the back behind.
    */
   const place = () => {
     const shown = ringCards();
     if (!shown.length) return;
-    const { rx, ry } = geo;
-    // the leftmost and rightmost points on screen are a little in front of the ring's sides, where
-    // cos t / (PERSPECTIVE - NEAR sin t) is largest
-    const side = Math.asin(NEAR / PERSPECTIVE);
+    const { radius, inset, eye, height } = geo;
+    const shift = height * (eye / (eye + radius));
     const step = (2 * Math.PI) / shown.length;
     shown.forEach((card, i) => {
-      // t from the right-hand side, round through the front and the left, to the back and round again
-      const tau = 2 * Math.PI;
-      const t = ((((angle + i * step - side) % tau) + tau) % tau) + side;
-      // how far round the card has turned from facing you: 0 at the front, 90° at the sides, 180° at the back
-      const facing =
-        t <= Math.PI - side
-          ? ((Math.PI / 2 - t) / (Math.PI / 2 - side)) * (Math.PI / 2)
-          : -Math.PI / 2 - ((t - (Math.PI - side)) / (Math.PI + 2 * side)) * Math.PI;
-      const x = Math.cos(t) * rx;
-      const z = depth(t);
-      // the turn that faces the card to your eye, then turned round from there
-      const turn = Math.atan2(-x, PERSPECTIVE - z) + facing;
-      // each card stands at the ring's middle before it moves, so its own perspective sees it from the one eye there
-      card.style.transform = `perspective(${PERSPECTIVE}px) translate3d(${x.toFixed(1)}px, ${drop(t, ry).toFixed(1)}px, ${z.toFixed(1)}px) rotateY(${turn.toFixed(4)}rad)`;
-      card.style.zIndex = String(Math.round(z));
-      card.classList.toggle("away", Math.cos(facing) < 0);
+      // the turn from the front, where `angle` 90° is: increasing `angle` carries the cards from right to left
+      const phi = Math.PI / 2 - (angle + i * step);
+      const depth = inset * Math.cos(phi);
+      // the card faces you while its outward side looks towards the eye
+      const toEye = Math.cos(phi) * (eye + radius) - inset;
+      card.style.transform = `translateY(${(-shift).toFixed(1)}px) perspective(${eye.toFixed(1)}px) translateY(${height.toFixed(1)}px) translateZ(${(-radius).toFixed(1)}px) rotateY(${phi.toFixed(4)}rad) translateZ(${inset.toFixed(1)}px)`;
+      card.style.zIndex = String(Math.round(depth));
+      card.classList.toggle("away", toEye < 0);
     });
   };
 
