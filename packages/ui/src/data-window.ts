@@ -190,6 +190,7 @@ export class DataWindow {
     this.body = body;
     this.body.classList.add("data-body");
     this.body.innerHTML = `<div class="dv-picked" hidden></div><div class="dv-outputs"></div><div class="dv-stage"></div><div class="dv-status" hidden></div>
+      <button type="button" class="btn dv-edit-part" data-act="edit-part" hidden title="Goes to the part this was made from and opens it in the editor">${icon("pencil", 14)}<span>Edit the part</span></button>
       <div class="dv-results-pop" id="${doc.id}-results" role="region" aria-label="Results" hidden>
         <p class="dv-results-head"><span class="eyebrow">Results</span><button type="button" class="icon-btn" data-act="results" aria-label="Close Results" title="Close">${icon("close", 14)}</button></p>
         <div class="dv-results-body"></div>
@@ -362,7 +363,10 @@ export class DataWindow {
     // what was on view stays under the card (the last result, or the step's previous one) rather than an empty stage
     if (!artifactId && busy && this.shownKey) return;
     // expanded, a window showing a STEP part edits it in place; otherwise it shows it as before
-    const editing = !!artifactId && this.isExpanded() && isEditablePart(await this.artifact(artifactId));
+    const onView = artifactId ? await this.artifact(artifactId) : null;
+    const editing = !!onView && this.isExpanded() && isEditablePart(onView);
+    // on something made from a part (a stress map, say), the way back to editing the part
+    this.body.querySelector<HTMLElement>(".dv-edit-part")!.hidden = !onView || isEditablePart(onView) || !this.partOnRecord();
     const key = `${artifactId}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}|${editing ? "edit" : ""}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
@@ -426,6 +430,16 @@ export class DataWindow {
       this.shownKey = "";
       await this.renderBody();
     }
+  }
+
+  /** The part what's on view came from: the nearest STEP made before it, or the data itself; null when there's none. */
+  private partOnRecord(): { marker: number } | null {
+    const d = this.doc;
+    for (let i = Math.min(d.marker, d.steps.length) - 1; i >= 0; i--) {
+      const s = d.steps[i];
+      if (s.status === "done" && this.hooks.stepSpec(s.run)?.makes === "cad") return { marker: i + 1 };
+    }
+    return isEditablePart(d.source) ? { marker: 0 } : null;
   }
 
   /** Whether the window fills the space beside the column (its expand button). */
@@ -715,8 +729,13 @@ export class DataWindow {
     switch (el.dataset.act) {
       case "approve":
         return this.hooks.approve(d);
-      case "edit-part":
-        return this.hooks.expand(d);
+      case "edit-part": {
+        // to the part (what's on view was made from it, or it is the data), then the editor
+        const part = this.partOnRecord();
+        if (part && (part.marker !== d.marker || d.output)) this.hooks.select(d, part.marker);
+        if (!this.isExpanded()) this.hooks.expand(d);
+        return;
+      }
       case "cancel":
         return this.hooks.cancel(d);
       case "log":

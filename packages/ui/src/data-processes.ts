@@ -539,6 +539,12 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     for (const id of [...this.running.keys()]) {
       const plan = await s.plan(id).catch(() => null);
       if (plan) this.onPlan(plan);
+      else {
+        // the server restarted and forgot the run: its steps would wait for their turn forever, so say what happened
+        const doc = this.running.get(id)!;
+        this.running.delete(id);
+        this.settle(doc, "failed", "Pharos's server restarted before this finished: press Re-run to run it again");
+      }
     }
   }
 

@@ -298,6 +298,12 @@ export class DockerClient {
     return this.call("GET", `/containers/json?all=1&filters=${encodeURIComponent(JSON.stringify({ label: [label] }))}`);
   }
 
+  /** A stopped container's exit code, or null while it still runs. */
+  async exitCode(id: string): Promise<number | null> {
+    const { State } = await this.call<{ State: { Running: boolean; ExitCode: number } }>("GET", `/containers/${id}/json`);
+    return State.Running ? null : State.ExitCode;
+  }
+
   /** Whether a container exists and is running. */
   async running(id: string): Promise<boolean> {
     try {

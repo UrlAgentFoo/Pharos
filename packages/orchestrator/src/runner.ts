@@ -14,6 +14,7 @@
  */
 import { mkdir, stat } from "node:fs/promises";
 import { basename, join, posix } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { Artifact, Params, ProgressLine, ShipManifest } from "@pharos/contracts";
 import { buildArgv } from "./command.js";
 import type { ContainerSpec, DockerClient } from "./docker.js";
@@ -93,6 +94,26 @@ export function containerSpec(o: Omit<RunOptions, "signal" | "onLog" | "onProgre
   };
 }
 
+/** How long the log stream may run on after the container stops. */
+const LOG_GRACE_MS = 2000;
+
+/**
+ * A container's exit code: Docker's wait, or its state, checked every
+ * `pollMs`, when the wait doesn't answer (under load Docker has kept a wait
+ * open after the container stopped, and the job then held its slot forever).
+ */
+export async function untilExit(docker: Pick<DockerClient, "wait" | "exitCode">, id: string, pollMs = 3000): Promise<number> {
+  let answered = false;
+  const wait = docker.wait(id).finally(() => (answered = true));
+  while (!answered) {
+    const code = await Promise.race([wait, sleep(pollMs, null)]);
+    if (code !== null) return code;
+    const stopped = await docker.exitCode(id).catch(() => null);
+    if (stopped !== null) return stopped;
+  }
+  return wait;
+}
+
 export async function runOperation(docker: DockerClient, o: RunOptions): Promise<RunResult> {
   const op = o.ship.operations[o.operation];
   const spec = containerSpec(o);
@@ -114,8 +135,10 @@ export async function runOperation(docker: DockerClient, o: RunOptions): Promise
       if (p) o.onProgress?.(p);
       else o.onLog?.(line, stream);
     });
-    const exitCode = await docker.wait(id);
-    await logs.catch(() => {});
+    const exitCode = await untilExit(docker, id);
+    // the log stream ends with the container, but Docker has been seen to keep it open after the exit:
+    // what it has sent by now is the output, so it gets a moment, not forever
+    await Promise.race([logs.catch(() => {}), sleep(LOG_GRACE_MS)]);
     if (o.signal?.aborted) throw new RunError("cancelled");
     if (exitCode !== 0) return { exitCode, outputs: {} };
 

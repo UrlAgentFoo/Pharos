@@ -5042,6 +5042,13 @@ dialog.side::backdrop {
 
 /* ---- the CAD editor: an expanded window's body for a STEP part (cad-editor.ts) */
 
+/* on a result made from a part (a stress map): back to the part, in the editor; Results, when open, covers it */
+.dv-edit-part {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+
 /* the tools along the top, the part's faces down the left, the part in 3D, and the tool's settings floating over it */
 .cad-ed {
   position: absolute;
