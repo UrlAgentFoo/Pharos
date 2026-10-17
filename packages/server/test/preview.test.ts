@@ -62,11 +62,11 @@ describe("OME-Zarr previews", () => {
     }
   });
 
-  it("serves it as a TIFF the browser can read, and refuses compressors it can't decode", async () => {
+  it("serves it as a TIFF the browser can read, and refuses compressors it doesn't decode", async () => {
     const tiff = await imageAsTiff(artifact(join(tmp, "z.zarr"), {}));
     expect((await readTiff(tiff)).shape).toMatchObject({ width: 7, slices: 3, frames: 2 });
-    await writeFile(join(tmp, "z.zarr", "0", ".zarray"), JSON.stringify({ shape: [2, 3, 5, 7], chunks: [1, 2, 4, 4], dtype: "<u2", order: "C", compressor: { id: "blosc" }, zarr_format: 2 }));
-    await expect(readOmeZarr(join(tmp, "z.zarr"))).rejects.toThrow(/blosc-compressed/);
+    await writeFile(join(tmp, "z.zarr", "0", ".zarray"), JSON.stringify({ shape: [2, 3, 5, 7], chunks: [1, 2, 4, 4], dtype: "<u2", order: "C", compressor: { id: "bz2" }, zarr_format: 2 }));
+    await expect(readOmeZarr(join(tmp, "z.zarr"))).rejects.toThrow(/bz2-compressed/);
     await expect(imageAsTiff(artifact("/x.csv", { kind: "table", format: "csv" }))).rejects.toThrow(/isn't an image/);
   });
 });
