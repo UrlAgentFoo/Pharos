@@ -147,6 +147,67 @@
         }
       }
     },
+    "links": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "book": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "version",
+              "action"
+            ],
+            "properties": {
+              "id": {
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "type": "string"
+              },
+              "version": {
+                "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+                "type": "string"
+              },
+              "action": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            }
+          },
+          "run": {
+            "description": "<ship>.<operation>, for a link that runs one operation.",
+            "type": "string"
+          },
+          "why": {
+            "description": "The assistant's reason for this link, for the user.",
+            "type": "string"
+          },
+          "steps": {
+            "minItems": 1,
+            "description": "The ids of the plan's steps this link became, in order.",
+            "type": "array",
+            "items": {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
     "ships": {
       "type": "array",
       "items": {

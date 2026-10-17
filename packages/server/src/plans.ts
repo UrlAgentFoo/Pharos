@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { stringify, parse } from "yaml";
-import { type Library, type PlanRecipe, dependencies, hasErrors, planProblems, shipNeeds, stepParams } from "@pharos/books";
+import { type ChainLinkSpec, type Library, type PlanRecipe, dependencies, expandChain, hasErrors, planProblems, shipNeeds, stepParams } from "@pharos/books";
 import { acceptProblems, matchBooks } from "@pharos/catalogue";
 import { type Artifact, type BookAction, type BookManifest, type CatalogueEntry, type ChatTurn, type DataSummary, type Job, type Params, type Plan, type Step, type TestResult, type WindowRef, bookAction } from "@pharos/contracts";
 import { withDefaults } from "@pharos/core";
@@ -93,8 +93,34 @@ export class Plans {
   }
 
   /**
-   * Asks the assistant to choose a book for workspace data (or improvise a
-   * pipeline). Only the final proposal is kept; earlier attempts the
+   * A chain the assistant put together from book actions and operations:
+   * expanded into steps and checked like any plan, its links kept so each
+   * runs as its own run with its why. A chain that can't be expanded throws
+   * a ChainError, in words the assistant can act on.
+   */
+  async chain(p: { workspace: string; title: string; rationale?: string; inputs: Record<string, string>; links: ChainLinkSpec[] }): Promise<Plan> {
+    const { steps, links } = expandChain(p.links, await this.library());
+    const plan: Plan = {
+      id: `plan-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+      workspace: p.workspace,
+      source: "improvised",
+      title: p.title,
+      ...(p.rationale ? { rationale: p.rationale } : {}),
+      inputs: p.inputs,
+      parameters: {},
+      steps,
+      links,
+      ships: [],
+      problems: [],
+      status: "proposed",
+      createdAt: now(),
+    };
+    return this.store(await this.check(plan));
+  }
+
+  /**
+   * Asks the assistant to choose a book for workspace data (or chain books
+   * and operations). Only the final proposal is kept; earlier attempts the
    * assistant repaired are cancelled.
    */
   async withAssistant(workspace: string, text: string, artifacts: string[], ai: { client: AiClient; model: string }, history: ChatTurn[] = [], windows: WindowRef[] = []): Promise<PlannerResult> {
@@ -110,8 +136,8 @@ export class Plans {
         made.push(this.store(plan));
         return plan;
       },
-      improvised: async (title, rationale, inputs, steps) => {
-        const plan = await this.improvised({ workspace, title, rationale, inputs, steps });
+      chain: async (title, rationale, inputs, links) => {
+        const plan = await this.chain({ workspace, title, rationale, inputs, links });
         made.push(plan);
         return plan;
       },

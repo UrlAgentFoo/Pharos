@@ -111,13 +111,45 @@ describe("assistant planning", () => {
     expect(r.plan?.book?.id).toBe("count-rows");
   });
 
-  it("improvises from ship operations when no book fits", async () => {
-    replies = [[toolUse("improvise", { title: "Count twice", inputs: { data: 1 }, steps: [{ id: "a", run: "hello.count", in: { table: "$data" } }, { id: "b", run: "hello.count", in: { table: "a.count" } }], rationale: "No book counts twice." })]];
+  it("chains book actions and operations, each link with its why, into one checked plan", async () => {
+    const links = [
+      { id: "rows", book: "count-rows", action: "count", in: { table: "$data" }, why: "Counts the table's rows." },
+      { id: "again", run: "hello.count", in: { table: "rows.rows" }, why: "Counts the count, to check it." },
+    ];
+    replies = [[toolUse("propose_chain", { title: "Count twice", inputs: { data: 1 }, links, rationale: "A book counts once; an operation counts its answer." })]];
     const r = await ask("count the rows, then count that");
     const plan = r.plan as Plan;
-    expect(plan).toMatchObject({ source: "improvised", title: "Count twice", inputs: { data: table }, problems: [] });
+    expect(plan).toMatchObject({ source: "improvised", title: "Count twice", inputs: { data: table }, problems: [], rationale: "A book counts once; an operation counts its answer." });
+    expect(plan.steps.map((s) => [s.id, s.run, s.in])).toEqual([
+      ["rows_count", "hello.count", { table: "$data" }],
+      ["again", "hello.count", { table: "rows_count.count" }],
+    ]);
+    expect(plan.links).toEqual([
+      { id: "rows", title: "Count the rows of a table › Count the rows", book: { id: "count-rows", version: "0.1.0", action: "count" }, why: "Counts the table's rows.", steps: ["rows_count"] },
+      { id: "again", title: "Count", run: "hello.count", why: "Counts the count, to check it.", steps: ["again"] },
+    ]);
     expect(plan.ships.map((s) => s.id)).toEqual(["hello"]);
-    expect(JSON.stringify(requests.at(-1)!.messages)).toContain("hello.count");
+    // what the model chains from: every book action, typed, and the operations
+    const prompt = JSON.stringify(requests.at(-1)!.messages);
+    expect(prompt).toContain("- count-rows / count: Count the rows. In: table: table. Out: rows: table [csv]. Params: wait=0.");
+    expect(prompt).toContain("hello.count");
+    expect(JSON.stringify(requests.at(-1)!.tools)).toContain("propose_chain");
+  });
+
+  it("sends a chain that doesn't wire up back to the model once, with what's wrong", async () => {
+    const bad = [
+      { id: "rows", book: "count-rows", action: "count", in: { table: "$data" }, why: "Counts." },
+      { id: "again", run: "hello.count", in: { table: "rows.count" }, why: "Counts again." },
+    ];
+    replies = [
+      [toolUse("propose_chain", { title: "Count twice", inputs: { data: 1 }, links: bad, rationale: "Twice." })],
+      [toolUse("propose_chain", { title: "Count twice", inputs: { data: 1 }, links: [bad[0], { ...bad[1], in: { table: "rows.rows" } }], rationale: "Twice." })],
+    ];
+    const before = requests.length;
+    const r = await ask("count twice");
+    expect(requests.length - before).toBe(2);
+    expect(JSON.stringify((requests.at(-1)!.messages as unknown[]).at(-1))).toContain('\\"rows\\" makes \\"rows\\"');
+    expect(r.plan?.steps.map((s) => s.id)).toEqual(["rows_count", "again"]);
   });
 
   it("answers in words when nothing fits", async () => {

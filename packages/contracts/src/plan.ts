@@ -1,5 +1,6 @@
 /**
- * Plans: a pipeline proposed from a book or improvised by the assistant.
+ * Plans: a pipeline proposed from a book, or chained by the assistant from
+ * book actions and ship operations.
  * Nothing runs until the user approves one.
  */
 import { type Static, Type } from "@sinclair/typebox";
@@ -34,6 +35,24 @@ export const PlanProblemSchema = Type.Object(
 );
 export type PlanProblem = Static<typeof PlanProblemSchema>;
 
+/**
+ * One link of a chain the assistant proposed: a book action or a ship
+ * operation, the steps it became, and why it's there. Each link runs as its
+ * own run in the window, carrying its why.
+ */
+export const PlanLinkSchema = Type.Object(
+  {
+    id: Type.String({ pattern: NAME_PATTERN }),
+    title: Type.String(),
+    book: Type.Optional(Type.Object({ id: IdSchema, version: VersionSchema, action: Type.String({ pattern: NAME_PATTERN }) }, { additionalProperties: false })),
+    run: Type.Optional(Type.String({ description: "<ship>.<operation>, for a link that runs one operation." })),
+    why: Type.Optional(Type.String({ description: "The assistant's reason for this link, for the user." })),
+    steps: Type.Array(Type.String({ pattern: NAME_PATTERN }), { minItems: 1, description: "The ids of the plan's steps this link became, in order." }),
+  },
+  { additionalProperties: false },
+);
+export type PlanLink = Static<typeof PlanLinkSchema>;
+
 export const PlanSchema = Type.Object(
   {
     id: Type.String({ minLength: 1 }),
@@ -47,6 +66,8 @@ export const PlanSchema = Type.Object(
     inputs: Type.Record(Type.String(), Type.String(), { description: "Action input name → artifact id." }),
     parameters: ParamsSchema,
     steps: Type.Array(StepSchema, { minItems: 1 }),
+    /** For a chain: its links, which together hold every step. */
+    links: Type.Optional(Type.Array(PlanLinkSchema)),
     ships: Type.Array(ShipNeedSchema),
     problems: Type.Array(PlanProblemSchema, { description: "Validation results; a plan with errors cannot be approved." }),
     status: Type.Union(PLAN_STATUSES.map((s) => Type.Literal(s))),

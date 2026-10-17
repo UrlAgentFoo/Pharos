@@ -784,7 +784,7 @@ async function ask(text: string, history: ChatTurn[]): Promise<AskReply> {
   }
   const target = await processes.fromPlan(r.plan, shown);
   const steps = r.plan.steps.length;
-  return { text: r.plan.rationale ?? r.message, cites, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title } };
+  return { text: r.plan.rationale ?? r.message, cites, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title, ...(r.plan.links?.length ? { runs: r.plan.links.length } : {}) } };
 }
 
 /**
@@ -842,20 +842,24 @@ async function showChain(doc: DataDoc) {
     }),
   );
   const { nodes, runs } = chainModel(doc, { outputs: (r) => processes.stepOutputs(r), formatTitle, kindTitle: (kind) => kindLabel({ kind } as Artifact), tables, summaries });
-  const marker = await showDialog<number | null>(
+  // a chain the assistant proposed: this is where it's looked over, and approved
+  const proposed = doc.steps.some((st) => st.status === "proposed");
+  const choice = await showDialog<number | "approve" | null>(
     `<p class="eyebrow">Chain</p><h2>${escapeHtml(doc.name)}</h2>
-     <p class="muted small">How each result here was made: the tools in order, what each passed to the next, and why each run ran. Click a step to see its result.</p>
+     <p class="muted small">${proposed ? "The assistant proposes the runs in violet: nothing runs until you approve them." : "How each result here was made:"} The tools in order, what each passed to the next, and why each run ran. Click a step to see it in the window.</p>
      <div class="cg-scroll">${chainHtml(layoutChain(nodes, runs))}</div>
-     <footer><button class="primary" data-cancel autofocus>Close</button></footer>`,
+     <footer>${proposed ? `<button data-cancel>Close</button><button class="primary" data-approve autofocus>${icon("batch", 14)} Approve and run</button>` : `<button class="primary" data-cancel autofocus>Close</button>`}</footer>`,
     (done, el) => {
       el.classList.add("wide");
       el.addEventListener("close", () => el.classList.remove("wide"), { once: true });
       el.querySelectorAll<HTMLElement>("[data-marker]").forEach((b) => b.addEventListener("click", () => done(Number(b.dataset.marker))));
+      el.querySelector("[data-approve]")?.addEventListener("click", () => done("approve"));
     },
     null,
   );
-  if (marker === null) return;
-  processes.select(doc, marker);
+  if (choice === null) return;
+  if (choice === "approve") processes.approve(doc);
+  else processes.select(doc, choice);
   windows.restore(doc.id);
 }
 
@@ -1088,6 +1092,10 @@ const assistant = new Assistant($("assistant"), $("ask-box"), {
   show: (id, place) => {
     const doc = ws.get(id);
     if (!doc) return notify("That window has been closed.");
+    if (place === "chain") {
+      windows.restore(id);
+      return void showChain(doc);
+    }
     if (place === "suggested") {
       doc.ui.controls = true;
       doc.ui.controlsTab = "suggested";

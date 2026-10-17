@@ -907,8 +907,21 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const inputNames = Object.keys(plan.inputs);
     const rename = new Map<string, string>();
     const block = newBlock();
+    // a chain: each link its own run, labelled with its book action, carrying its why
+    const linkOf = new Map((plan.links ?? []).flatMap((l) => l.steps.map((id) => [id, l] as const)));
+    const runOf = new Map((plan.links ?? []).map((l) => [l.id, newBlock()]));
+    const labels = new Map<string, NonNullable<DataStep["book"]>>();
+    for (const l of plan.links ?? []) {
+      if (!l.book) continue;
+      const m = (await this.server.book(l.book.id, l.book.version).catch(() => null))?.manifest;
+      const a = m && bookAction(m, l.book.action);
+      if (m && a) labels.set(l.id, bookLabel(m, a));
+    }
     for (const s of plan.steps) rename.set(s.id, this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id));
     for (const s of plan.steps) {
+      const link = linkOf.get(s.id);
+      const label = book && action ? bookLabel(book, action) : link && labels.get(link.id);
+      const reason = link?.why ?? plan.rationale;
       const wires: Record<string, string> = {};
       for (const [port, w] of Object.entries(s.in ?? {})) {
         if (w.startsWith("$")) {
@@ -921,9 +934,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
         run: s.run,
         in: wires,
         with: action ? bookStepParams(s, action, plan.parameters) : { ...(s.with ?? {}) },
-        ...(book && action ? { book: bookLabel(book, action) } : {}),
-        ...(plan.rationale ? { reason: plan.rationale } : {}),
-        block,
+        ...(label ? { book: label } : {}),
+        ...(reason ? { reason } : {}),
+        block: (link && runOf.get(link.id)) ?? block,
         status: "proposed",
       });
     }

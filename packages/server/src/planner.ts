@@ -2,7 +2,8 @@
  * The assistant's turn in the conversation: it answers a message about the
  * user's data, and when asked to do something, picks a book from the
  * shortlist and fills its parameters, or, when no book fits, chains ship
- * operations into an improvised pipeline. Earlier turns come as plain text.
+ * operations into a chain of book actions and ship operations, each link with
+ * its why. Earlier turns come as plain text.
  *
  * The shortlist comes from file-based matching, before the model sees
  * anything; the model sees data summaries (never pixels), the shortlisted
@@ -12,13 +13,13 @@
  * user approves the plan.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import type { Library } from "@pharos/books";
+import type { ChainLinkSpec, Library } from "@pharos/books";
 import type { McpContext } from "@pharos/catalogue";
-import type { BookMatch, ChatTurn, DataSummary, Plan, Step, WindowRef } from "@pharos/contracts";
+import type { BookMatch, ChatTurn, DataSummary, Plan, WindowRef } from "@pharos/contracts";
 import { type AiClient, AiError } from "./ai.js";
 
 const CHOOSE_BOOK = "choose_book";
-const IMPROVISE = "improvise";
+const PROPOSE_CHAIN = "propose_chain";
 const MAX_SHORTLIST = 12;
 const MAX_GUIDE = 4000;
 
@@ -40,10 +41,10 @@ export interface PlannerResult {
   model?: string;
 }
 
-/** Turns a model's choice into a plan; `check` re-validates an improvised one after repair. */
+/** Turns a model's choice into a plan: a book action, or a chain (whose problems in expanding it are thrown, in words for the model). */
 export interface PlanMaker {
   fromBook(book: string, action: string | undefined, inputs: Record<string, string>, parameters: Record<string, number | string | boolean>, rationale: string): Promise<Plan>;
-  improvised(title: string, rationale: string, inputs: Record<string, string>, steps: Step[]): Promise<Plan>;
+  chain(title: string, rationale: string, inputs: Record<string, string>, links: ChainLinkSpec[]): Promise<Plan>;
 }
 
 const SYSTEM = `You are Pharos, the assistant in a local app that runs scientific tools in containers on the user's computer. You talk with the user in a panel beside the window they're working in, about that window's data.
@@ -54,7 +55,7 @@ Many messages are conversation: a greeting, thanks, a question about Pharos, the
 
 When the user asks for something to be done with the data, decide in this order:
 1. If a shortlisted book has an action that fits the request, call ${CHOOSE_BOOK} with the book and that action (only actions listed as fitting the data can run). Prefer verified books and direct matches. Fill parameters from the data summaries and the book's guide (for example a diameter in pixels from the voxel size and the typical object size); leave out parameters whose default suits. Assign each of the action's inputs the number of the data item it should get.
-2. Only if no book fits, call ${IMPROVISE} to chain the listed ship operations. Every step's input must come from a data item (as "$<input name>") or an earlier step's output ("<step id>.<output name>"), with matching kinds and formats.
+2. If it takes more than one book action, or operations no fitting book offers, call ${PROPOSE_CHAIN}: a chain of links, each one book action (from <chain_books> or the shortlist) or one ship operation (from <operations>), in the order they run. Wire each link's inputs to a data item ("$<input name>") or to an earlier link's output ("<link id>.<output name>": a book action's outputs by the names <chain_books> gives them), with matching kinds and formats. Prefer a book's action to the operations inside it. Give every link a "why": one plain sentence the user reads beside that link, saying what it adds to the chain.
 3. If neither works, call no tool and say briefly what is missing (a ship, a book or different data).
 
 The open windows are listed in <windows>, each with the runs in its history. When your answer or rationale mentions one of them, cite it right after the words it supports, with its reference in square brackets: [2] for a window, [2.1] for a run in its history. The user clicks a citation to bring that window forward, so cite only references listed there, and never make one up. The chat shows plain text, short lists ("- " or "1. " lines) and **bold**, and nothing else: no headings, tables or links.
@@ -79,29 +80,32 @@ function tools(): Anthropic.Beta.BetaTool[] {
       },
     },
     {
-      name: IMPROVISE,
-      description: "Propose a pipeline of ship operations when no shortlisted book fits.",
+      name: PROPOSE_CHAIN,
+      description: "Propose a chain of book actions and ship operations, run in order, when no single book action does what is asked.",
       input_schema: {
         type: "object",
         properties: {
-          title: { type: "string", description: "A short title for the pipeline" },
-          inputs: { type: "object", description: "Pipeline input name (lowercase_snake) → data item number (1-based)", additionalProperties: { type: "integer" } },
-          steps: {
+          title: { type: "string", description: "A short title for the chain" },
+          inputs: { type: "object", description: "Chain input name (lowercase_snake) → data item number (1-based)", additionalProperties: { type: "integer" } },
+          links: {
             type: "array",
             items: {
               type: "object",
               properties: {
-                id: { type: "string", description: "lowercase_snake step id" },
-                run: { type: "string", description: "<ship>.<operation>" },
-                in: { type: "object", description: "Operation input → '$<pipeline input>' or '<step id>.<output>'", additionalProperties: { type: "string" } },
-                with: { type: "object", description: "Operation parameter → value", additionalProperties: { type: ["number", "string", "boolean"] } },
+                id: { type: "string", description: "lowercase_snake link id" },
+                book: { type: "string", description: "A book's id, for a link that runs one of its actions" },
+                action: { type: "string", description: "The book action's name" },
+                run: { type: "string", description: "<ship>.<operation>, for a link that runs one operation (instead of book and action)" },
+                in: { type: "object", description: "Input name → '$<chain input>' or '<earlier link id>.<output>'", additionalProperties: { type: "string" } },
+                parameters: { type: "object", description: "The book action's or operation's parameters to change from their defaults", additionalProperties: { type: ["number", "string", "boolean"] } },
+                why: { type: "string", description: "One plain sentence for the user: what this link adds to the chain" },
               },
-              required: ["id", "run"],
+              required: ["id", "in", "why"],
             },
           },
-          rationale: { type: "string", description: "One or two sentences for the user" },
+          rationale: { type: "string", description: "One or two sentences for the user about the whole chain" },
         },
-        required: ["title", "inputs", "steps", "rationale"],
+        required: ["title", "inputs", "links", "rationale"],
       },
     },
   ];
@@ -222,14 +226,46 @@ function bindInputs(raw: unknown, data: PlannerInput["data"]): Record<string, st
   return out;
 }
 
-function asSteps(raw: unknown): Step[] {
+function asLinks(raw: unknown): ChainLinkSpec[] {
   if (!Array.isArray(raw)) return [];
-  return raw.flatMap((s): Step[] => {
-    if (!s || typeof s !== "object") return [];
-    const o = s as Record<string, unknown>;
-    if (typeof o.id !== "string" || typeof o.run !== "string") return [];
-    return [{ id: o.id, run: o.run, ...(o.in && typeof o.in === "object" ? { in: o.in as Record<string, string> } : {}), ...(o.with && typeof o.with === "object" ? { with: o.with as Step["with"] } : {}) }];
+  const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  return raw.flatMap((l): ChainLinkSpec[] => {
+    if (!l || typeof l !== "object") return [];
+    const o = l as Record<string, unknown>;
+    if (typeof o.id !== "string") return [];
+    const link: ChainLinkSpec = { id: o.id, ...(o.in && typeof o.in === "object" ? { in: o.in as Record<string, string> } : {}) };
+    for (const k of ["book", "action", "run", "why"] as const) if (text(o[k])) link[k] = text(o[k]);
+    if (o.parameters && typeof o.parameters === "object") link.parameters = o.parameters as ChainLinkSpec["parameters"];
+    return [link];
   });
+}
+
+/**
+ * Every book action, typed, for chaining: what it takes, what it makes (by
+ * the names a later link uses) and what it can be set to. The shortlist
+ * carries the guides of the books that fit the data itself.
+ */
+function describeChainBooks(library: Library): string {
+  const kindOf = (run: string, output: string) => {
+    const [ship, op] = run.split(".");
+    const o = library.ship(ship)?.operations[op]?.outputs.find((x) => x.name === output);
+    return o ? `${o.kind} [${o.format}]` : "?";
+  };
+  const lines: string[] = [];
+  for (const book of library.bookManifests()) {
+    for (const [name, a] of Object.entries(book.actions)) {
+      const ins = (a.inputs ?? []).map((i) => `${i.name}: ${i.accepts.kind}${i.accepts.formats ? ` [${i.accepts.formats.join("/")}]` : ""}`).join(", ");
+      const outs = Object.entries(a.outputs)
+        .map(([out, ref]) => {
+          const step = a.steps.find((s) => s.id === ref.split(".")[0]);
+          return `${out}: ${step ? kindOf(step.run, ref.split(".")[1]) : "?"}`;
+        })
+        .join(", ");
+      const params = (a.parameters ?? []).map((p) => `${p.name}${p.unit ? ` (${p.unit})` : ""}${p.default !== undefined ? `=${p.default}` : ""}`).join(", ");
+      lines.push(`- ${book.id} / ${name}: ${a.title}. In: ${ins || "none"}. Out: ${outs}.${params ? ` Params: ${params}.` : ""}`);
+    }
+  }
+  return lines.join("\n") || "(no books in the library)";
 }
 
 function apiError(e: unknown, model: string): never {
@@ -257,6 +293,7 @@ export async function planWithAssistant(
       content: [
         `<data>\n${describeData(input.data)}\n</data>`,
         `<shortlist>\n${describeBooks(ctx.matches, ctx.library)}\n</shortlist>`,
+        `<chain_books>\n${describeChainBooks(ctx.library)}\n</chain_books>`,
         `<operations>\n${describeOperations(ctx, ctx.library, input.text)}\n</operations>`,
         ...(input.windows?.length ? [`<windows>\n${describeWindows(input.windows)}\n</windows>`] : []),
         `<machine gpu="${ctx.gpu}"/>`,
@@ -305,8 +342,8 @@ export async function planWithAssistant(
         const action = typeof args.action === "string" ? args.action : match.actions[0];
         if (!match.actions.includes(action)) throw new Error(`"${book}" has no action "${action}" that fits this data (fitting: ${match.actions.join(", ")})`);
         plan = await maker.fromBook(book, action, bindInputs(args.inputs, input.data), (args.parameters ?? {}) as Record<string, number | string | boolean>, rationale);
-      } else if (call.name === IMPROVISE) {
-        plan = await maker.improvised(String(args.title ?? "Improvised pipeline"), rationale, bindInputs(args.inputs, input.data), asSteps(args.steps));
+      } else if (call.name === PROPOSE_CHAIN) {
+        plan = await maker.chain(String(args.title ?? "A chain"), rationale, bindInputs(args.inputs, input.data), asLinks(args.links));
       } else throw new Error(`unknown tool ${call.name}`);
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);

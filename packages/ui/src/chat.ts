@@ -24,8 +24,8 @@ export interface AskReply {
   text: string;
   /** What each citation the text may hold ([1], [2.1]) points at; text that cites nothing here stays plain. */
   cites?: Record<string, CiteTarget>;
-  /** Steps it proposed in a window's history, waiting for Approve. */
-  proposed?: { window: string; windowId: string; steps: number; title: string };
+  /** Steps it proposed in a window's history, waiting for Approve; `runs` for a chain of several. */
+  proposed?: { window: string; windowId: string; steps: number; title: string; runs?: number };
   /** A book action it set up in a window's Controls (Suggested tab), waiting to be run. */
   suggested?: { window: string; windowId: string; title: string; book: string };
 }
@@ -51,8 +51,8 @@ export interface AssistantHooks {
   search(query: string): SearchHit[];
   /** The project was renamed. */
   renamed(): void;
-  /** Brings a window forward, showing what the assistant left there: its Controls' Suggested tab, or its history. */
-  show(windowId: string, place: "suggested" | "history"): void;
+  /** Brings a window forward, showing what the assistant left there: its Controls' Suggested tab, its history, or its chain. */
+  show(windowId: string, place: "suggested" | "history" | "chain"): void;
   /** Brings a cited window forward, at the cited run when it's one. */
   cite(target: CiteTarget): void;
 }
@@ -128,7 +128,7 @@ export class Assistant {
     // a reply's "Show in Controls" or "Show the steps", and its citations
     this.log.addEventListener("click", (e) => {
       const b = (e.target as HTMLElement).closest<HTMLElement>("[data-show]");
-      if (b) this.hooks.show(b.dataset.show!, b.dataset.place === "history" ? "history" : "suggested");
+      if (b) this.hooks.show(b.dataset.show!, b.dataset.place === "history" || b.dataset.place === "chain" ? b.dataset.place : "suggested");
       const c = (e.target as HTMLElement).closest<HTMLElement>("[data-cite]");
       const m = c && this.messages[Number(c.dataset.msg)];
       const target = m?.role === "assistant" ? m.reply.cites?.[c!.dataset.cite!] : undefined;
@@ -295,7 +295,7 @@ export class Assistant {
       el.insertAdjacentHTML(
         "beforeend",
         `<div class="chat-card"><p class="chat-card-title">${icon("script", 14)}<strong>${escapeHtml(p.title)}</strong></p>
-         <p class="chat-card-note">${p.steps} step${p.steps > 1 ? "s" : ""} waiting for your approval in ${escapeHtml(p.window)}. <button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="history">Show the steps</button></p></div>`,
+         <p class="chat-card-note">${p.runs && p.runs > 1 ? `A chain of ${p.runs} runs (${p.steps} steps)` : `${p.steps} step${p.steps > 1 ? "s" : ""}`} waiting for your approval in ${escapeHtml(p.window)}. ${p.runs && p.runs > 1 ? `<button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="chain">Show the chain</button> · ` : ""}<button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="history">Show the steps</button></p></div>`,
       );
     }
     if (reply.suggested) {
