@@ -1,6 +1,8 @@
 /** Line icons drawn on a 24×24 grid with the current text colour. */
 
 const PATHS: Record<string, string> = {
+  ship: '<path d="M3.5 15.5h17l-2.2 4H5.7Z"/><path d="M12 4v11.5"/><path d="M12 5.5 18 13h-6"/><path d="M12 8 7.5 13H12"/>',
+  book: '<path d="M5 5.5A1.5 1.5 0 0 1 6.5 4H19v14H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H19"/><path d="M9 8h6"/>',
   open: '<path d="M3 7.5V18a1.5 1.5 0 0 0 1.5 1.5h15A1.5 1.5 0 0 0 21 18V9.5A1.5 1.5 0 0 0 19.5 8H12l-2-2.5H4.5A1.5 1.5 0 0 0 3 7Z"/>',
   save: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
   undo: '<path d="M9 14 4.5 9.5 9 5"/><path d="M4.5 9.5H15a4.5 4.5 0 0 1 0 9h-3"/>',

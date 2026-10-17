@@ -1,26 +1,42 @@
 #!/bin/bash
 # openfoam: runs an OpenFOAM case for Pharos.
 #
+#   pharos_foam.sh mesh  CASE
 #   pharos_foam.sh solve CASE SPEED END_TIME
 #
-# Copies CASE (a case folder: system/, constant/, 0/) to /out/case, sets the
-# inlet speed (patch "inlet", if the case has one) and the end time, meshes
-# it with blockMesh unless it already has a mesh, and runs the solver its
-# controlDict names. Cell centres are written too, for rendering. Progress
-# goes to stdout as JSON lines; the solver's full log stays in the case.
+# Both copy CASE (a case folder: system/, constant/, 0/) to /out/case and
+# mesh it with blockMesh unless it already has a mesh. `mesh` stops there,
+# so the geometry can be looked at; `solve` also sets the inlet speed (patch
+# "inlet", if the case has one) and the end time, and runs the solver its
+# controlDict names, writing cell centres for rendering. Progress goes to
+# stdout as JSON lines; full logs stay in the case.
 # OpenFOAM's environment script uses unset variables: load it before strict mode
 source /usr/lib/openfoam/openfoam2512/etc/bashrc >/dev/null 2>&1 || true
 set -euo pipefail
 
 progress() { printf '{"progress": %s, "message": "%s"}\n' "$1" "$2"; }
 
-[ "${1:-}" = solve ] || { echo "usage: pharos_foam.sh solve CASE SPEED END_TIME" >&2; exit 2; }
-case_in=$2; speed=$3; end_time=$4
+mode=${1:-}
+case "$mode" in
+  mesh) case_in=$2 ;;
+  solve) case_in=$2; speed=$3; end_time=$4 ;;
+  *) echo "usage: pharos_foam.sh mesh CASE | solve CASE SPEED END_TIME" >&2; exit 2 ;;
+esac
 [ -d "$case_in/system" ] && [ -d "$case_in/constant" ] || { echo "$case_in is not an OpenFOAM case (needs system/ and constant/)" >&2; exit 2; }
 
 cp -r "$case_in" /out/case
 cd /out/case
 chmod -R u+w .
+
+if [ "$mode" = mesh ]; then
+  if [ ! -f constant/polyMesh/points ] && [ ! -f constant/polyMesh/points.gz ]; then
+    progress 0.1 "meshing"
+    blockMesh > log.blockMesh 2>&1 || { tail -20 log.blockMesh >&2; exit 1; }
+  fi
+  cells=$(checkMesh -constant 2>/dev/null | awk '/^ *cells:/{print $2; exit}')
+  progress 1.0 "${cells:-?} cells"
+  exit 0
+fi
 
 if [ -f 0/U ] && foamDictionary -entry boundaryField.inlet 0/U >/dev/null 2>&1; then
   foamDictionary -entry boundaryField.inlet.value -set "uniform ($speed 0 0)" 0/U >/dev/null 2>&1

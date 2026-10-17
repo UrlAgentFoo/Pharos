@@ -4047,3 +4047,35 @@ dialog.side::backdrop {
   color: var(--muted);
   font-size: 11px;
 }
+
+.dv-stage.has-model {
+  overflow: hidden;
+  background: #1e1d1b;
+}
+
+.dv-model {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.dv-model canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.dv-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(30, 29, 27, 0.6);
+  color: rgba(255, 255, 255, 0.8);
+  font: 11px/1.5 var(--mono);
+  pointer-events: none;
+}

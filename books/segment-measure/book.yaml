@@ -2,10 +2,10 @@
 id: segment-measure
 version: 0.1.0
 title: Segment and measure nuclei
-summary: Finds every nucleus (or cell) in a 2D or 3D image with Cellpose and measures each one - its volume, position and brightness - in a table.
+summary: Finds every nucleus (or cell) in a 2D or 3D image with Cellpose, measures each one - its volume, position and brightness - in a table, and shows them in 3D.
 tags: [microscopy, segmentation, measurement, nuclei, cells, counting]
 authors: [Pharos]
-ships: { bio-utils: ^0.1, cellpose: ^0.1 }
+ships: { bio-utils: ^0.1, cellpose: ^0.1, render: ^0.1 }
 inputs:
   - name: image
     description: A fluorescence image of nuclei or cells, 2D or 3D (time-lapses are measured frame by frame).
@@ -18,4 +18,5 @@ steps:
   - { id: convert, run: bio-utils.convert, in: { image: $image } }
   - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
   - { id: measure, run: bio-utils.measure, in: { labels: segment.masks, image: convert.zarr } }
-outputs: { masks: segment.masks, table: measure.table }
+  - { id: surface, run: render.labels-surface, in: { labels: segment.masks } }
+outputs: { masks: segment.masks, table: measure.table, model: surface.model }

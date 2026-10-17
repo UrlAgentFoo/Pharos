@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/book.schema.json
+id: case-geometry
+version: 0.1.0
+title: Look at an OpenFOAM case in 3D
+summary: Builds an OpenFOAM case's mesh without running it and shows its geometry - the domain, obstacles and walls - as a 3D model.
+tags: [cfd, openfoam, mesh, geometry, 3d, visualization]
+authors: [Pharos]
+ships: { openfoam: ^0.1, render: ^0.1 }
+inputs:
+  - name: case
+    description: An OpenFOAM case folder (system/, constant/, 0/).
+    accepts: { kind: sim-case, formats: [openfoam-case] }
+steps:
+  - { id: mesh, run: openfoam.mesh, in: { case: $case } }
+  - { id: model, run: render.case-model, in: { case: mesh.case } }
+outputs: { case: mesh.case, model: model.model }

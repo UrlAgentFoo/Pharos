@@ -19,6 +19,7 @@ import { parseCsv } from "./csv.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./run-dialog.js";
+import { ModelView } from "./model-view.js";
 import { type ViewState, Viewer, newViewState } from "./viewer.js";
 import type { DataDoc, DataStep } from "./workspace.js";
 
@@ -80,6 +81,7 @@ type Loaded =
   | { type: "image"; image: Image; view: ViewState }
   | { type: "table"; rows: string[][]; total: number }
   | { type: "video"; url: string }
+  | { type: "model"; ply: ArrayBuffer }
   | { type: "case"; summary: CaseSummary }
   | { type: "text"; text: string }
   | { type: "info" }
@@ -91,6 +93,7 @@ export class DataWindow {
   private readonly bar: HTMLElement;
   readonly drawer: HTMLElement;
   private viewer: Viewer | null = null;
+  private model: ModelView | null = null;
   private readonly loaded = new Map<string, Loaded | Promise<Loaded>>();
   private readonly artifacts = new Map<string, Artifact>();
   private shownKey = "";
@@ -202,6 +205,7 @@ export class DataWindow {
         const rows = parseCsv(text, 501);
         return { type: "table", rows, total: text.split("\n").filter((l) => l.trim()).length - 1 };
       }
+      if (a.kind === "mesh" && a.format === "ply") return { type: "model", ply: await s.content(this.doc.workspace, id) };
       if (a.format === "mp4") return { type: "video", url: URL.createObjectURL(new Blob([await s.content(this.doc.workspace, id)], { type: "video/mp4" })) };
       if (a.format === "openfoam-case") return { type: "case", summary: await s.caseSummary(this.doc.workspace, id) };
       if (a.format === "json") return { type: "text", text: new TextDecoder().decode(await s.content(this.doc.workspace, id)) };
@@ -212,6 +216,9 @@ export class DataWindow {
   }
 
   private showLoaded(entry: Loaded | null, a?: Artifact) {
+    this.model?.destroy();
+    this.model = null;
+    this.stage.classList.remove("has-model");
     if (!entry || entry.type !== "image") {
       this.viewer = null;
       this.stage.classList.remove("has-image");
@@ -250,6 +257,16 @@ export class DataWindow {
       case "video":
         this.stage.innerHTML = `<video class="dv-video" src="${entry.url}" controls autoplay loop muted playsinline></video>`;
         break;
+      case "model": {
+        this.stage.classList.add("has-model");
+        this.stage.innerHTML = `<div class="dv-model"></div><p class="dv-hint">Drag to turn · scroll to zoom · right-drag to move</p>`;
+        try {
+          this.model = new ModelView(this.stage.querySelector<HTMLElement>(".dv-model")!, entry.ply);
+        } catch (e) {
+          this.stage.innerHTML = `<div class="dv-card"><p class="eyebrow">Can't show this model</p><p>${escapeHtml(e instanceof Error ? e.message : String(e))}</p></div>`;
+        }
+        break;
+      }
       case "case": {
         const c = entry.summary;
         const times = c.times.filter((t) => t > 0);
@@ -420,6 +437,7 @@ export class DataWindow {
   }
 
   destroy() {
+    this.model?.destroy();
     for (const entry of this.loaded.values()) if (!(entry instanceof Promise) && entry.type === "video") URL.revokeObjectURL(entry.url);
   }
 }

@@ -20,7 +20,7 @@ export interface LibraryHooks {
   tools: { html(): string; wire(el: HTMLElement): void };
 }
 
-export type LibraryTab = "books" | "ships" | "tools";
+export type LibraryTab = "books" | "tools";
 
 type Action =
   | { use: CatalogueEntry }
@@ -60,12 +60,6 @@ export async function libraryPanel(server: LocalServer | null, hooks: LibraryHoo
   for (;;) {
     if (!server || tab === "tools") {
       const next = await toolsTab(hooks, !!server);
-      if (!next) return;
-      tab = next;
-      continue;
-    }
-    if (tab === "ships") {
-      const next = await shipsTab(server, hooks);
       if (!next) return;
       tab = next;
       continue;
@@ -176,7 +170,7 @@ function issuesDialog(issues: LibraryIssue[]) {
 // ------------------------------------------------------------ tabs
 
 function tabs(active: LibraryTab, server: boolean): string {
-  const items: [LibraryTab, string][] = server ? [["books", "Books"], ["ships", "Ships"], ["tools", "Built-in tools"]] : [["tools", "Built-in tools"]];
+  const items: [LibraryTab, string][] = server ? [["books", "Books"], ["tools", "Built-in tools"]] : [["tools", "Built-in tools"]];
   return `<nav class="lib-tabs" role="tablist">${items
     .map(([id, label]) => `<button role="tab" data-tab="${id}" aria-selected="${id === active}">${label}</button>`)
     .join("")}</nav>`;
@@ -184,49 +178,6 @@ function tabs(active: LibraryTab, server: boolean): string {
 
 function wireTabs(el: HTMLElement, go: (t: LibraryTab) => void) {
   el.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((b) => b.addEventListener("click", () => go(b.dataset.tab as LibraryTab)));
-}
-
-async function shipsTab(server: LocalServer, hooks: LibraryHooks): Promise<LibraryTab | null> {
-  for (;;) {
-    const entries = await server.ships();
-    const manifests = await Promise.all(entries.map((e) => server.ship(e.id, e.version).then((r) => r.manifest)));
-    const action = await showDialog<Action>(
-      `${tabs("ships", true)}
-       <p class="eyebrow">Ships</p>
-       <p class="muted small">Ships are the tools books run: container images with typed operations. They download (or build) the first time a book needs them; <strong>Ships and storage</strong> shows what's on this computer.</p>
-       <ul class="book-list">${entries
-         .map((e, i) => {
-           const m = manifests[i];
-           const ops = Object.entries(m.operations).map(([name, op]) => `<li><strong>${escapeHtml(name)}</strong> <small>${escapeHtml(op.summary)}</small></li>`).join("");
-           return `<li class="book-card">
-             <div class="book-top"><strong>${escapeHtml(e.id)}</strong><small class="trust trust-${e.trust}">${TRUST[e.trust]}</small></div>
-             <p>${escapeHtml(e.summary)}</p>
-             <p class="book-meta"><small>${escapeHtml(e.version)}${e.gpu !== "none" ? ` · GPU ${e.gpu}` : ""}${m.license ? ` · ${escapeHtml(m.license)}` : ""}</small></p>
-             <ul class="ship-ops">${ops}</ul>
-             <div class="job-actions"><button class="chip" data-test-ship="${escapeHtml(e.id)}" title="Runs each operation on its test data">Test</button></div></li>`;
-         })
-         .join("") || `<li class="muted">No ships installed yet.</li>`}</ul>
-       <footer><button class="primary" data-cancel>Close</button></footer>`,
-      (done, el) => {
-        el.classList.add("wide");
-        wireTabs(el, (t) => done({ tab: t }));
-        el.querySelectorAll<HTMLButtonElement>("[data-test-ship]").forEach((b) => b.addEventListener("click", () => done({ testShip: entries.find((e) => e.id === b.dataset.testShip)! })));
-      },
-      null,
-    );
-    document.getElementById("dialog")?.classList.remove("wide");
-    if (!action) return null;
-    if ("tab" in action) return action.tab;
-    if ("testShip" in action) {
-      hooks.notify(`Testing ${action.testShip.id}…`);
-      try {
-        const r = await server.testShip(action.testShip.id);
-        hooks.notify(r.passed ? `${action.testShip.id} passed and is now verified` : `${action.testShip.id} failed: ${r.cases.filter((c) => !c.passed).map((c) => `${c.name}: ${c.message}`).join("; ")}`);
-      } catch (e) {
-        hooks.notify(e instanceof Error ? e.message : String(e));
-      }
-    }
-  }
 }
 
 async function toolsTab(hooks: LibraryHooks, server: boolean): Promise<LibraryTab | null> {

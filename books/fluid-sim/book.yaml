@@ -2,7 +2,7 @@
 id: fluid-sim
 version: 0.1.0
 title: Simulate flow past an obstacle
-summary: Runs an OpenFOAM case (such as air or water flowing past an obstacle) at the speed you choose, and makes a video of the vortices or speed.
+summary: Runs an OpenFOAM case (such as air or water flowing past an obstacle) at the speed you choose, and makes a video of the vortices and a 3D model coloured by speed.
 tags: [cfd, simulation, fluid-dynamics, openfoam, vortices, flow]
 authors: [Pharos]
 ships: { openfoam: ^0.1, render: ^0.1 }
@@ -17,4 +17,5 @@ parameters:
 steps:
   - { id: solve, run: openfoam.solve, in: { case: $case } }
   - { id: render, run: render.flow-video, in: { case: solve.case } }
-outputs: { case: solve.case, video: render.video }
+  - { id: model, run: render.case-model, in: { case: solve.case } }
+outputs: { case: solve.case, video: render.video, model: model.model }

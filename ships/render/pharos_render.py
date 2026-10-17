@@ -6,6 +6,9 @@ render: videos of images, and of tracks drawn over them, for Pharos.
                → /out/video.mp4 with each track's recent path drawn over the projection
   flow-video   /in/case (a solved OpenFOAM case, ASCII fields, cell centres in 0/C)
                → /out/video.mp4 of vorticity or speed in the x-y plane, one frame per written time
+  case-model   /in/case (an OpenFOAM case with a mesh) → /out/model.ply, its surfaces as a 3D
+               model, coloured by speed at the last saved time once it has been solved
+  labels-surface /in/labels (OME-Zarr labels) → /out/model.ply, each object's surface in its own colour
 
 Progress goes to stdout as JSON lines.
 """
@@ -214,9 +217,111 @@ def cmd_flow(args):
     progress(1.0, f"{len(frames)} frames of {args.field}")
 
 
+# ---------------------------------------------------------------- 3D models
+
+
+def write_ply(path, mesh, rgb):
+    """A PLY with per-vertex colours, which the window's 3D viewer reads."""
+    import pyvista as pv
+
+    surface = mesh if isinstance(mesh, pv.PolyData) else mesh.extract_surface()
+    surface = surface.triangulate()
+    surface.point_data["RGB"] = rgb
+    surface.save(path, texture="RGB", binary=True)
+
+
+def cmd_case_model(args):
+    import pyvista as pv
+
+    case = args.case
+    if not os.path.isdir(os.path.join(case, "constant", "polyMesh")):
+        raise SystemExit("This case has no mesh yet. Mesh it first (openfoam › mesh), or run it (openfoam › solve), then make the model.")
+    # VTK's OpenFOAM reader wants a .foam file inside the case, and /in is read-only:
+    # look at the case through a folder of links instead of copying it
+    view = "/tmp/case"
+    os.makedirs(view, exist_ok=True)
+    for name in os.listdir(case):
+        os.symlink(os.path.join(case, name), os.path.join(view, name))
+    open(os.path.join(view, "case.foam"), "w").close()
+    progress(0.1, "reading the case")
+    reader = pv.POpenFOAMReader(os.path.join(view, "case.foam"))
+    times = [t for t in reader.time_values if t > 0]
+    solved = bool(times)
+    if solved:
+        reader.set_active_time_value(times[-1])
+    reader.cell_to_point_creation = True
+    data = reader.read()
+    internal = data["internalMesh"]
+    surface = internal.extract_surface()
+    progress(0.6, "colouring")
+    if solved and "U" in surface.point_data:
+        speed = np.linalg.norm(np.asarray(surface.point_data["U"]), axis=1)
+        top = np.percentile(speed, 99) or 1.0
+        rgb = sequential(speed / top)
+        what = f"speed at t = {times[-1]:g} s (yellow = up to {top:.2g} m/s)"
+    else:
+        rgb = np.tile(np.array([[190, 196, 205]], np.uint8), (surface.n_points, 1))
+        what = "geometry"
+    write_ply(args.out, surface, rgb)
+    progress(1.0, f"{surface.n_cells:,} faces, coloured by {what}")
+
+
+def label_colour(label):
+    """The same colour the Pharos viewer gives a label: golden-ratio hues."""
+    h = (label * 0.618033988749895) % 1
+    s, v = 0.65, 0.95
+
+    def f(n):
+        k = (n + h * 6) % 6
+        return round(255 * (v - v * s * max(0, min(k, 4 - k, 1))))
+
+    return (f(5), f(3), f(1))
+
+
+def cmd_labels_surface(args):
+    import pyvista as pv
+    from skimage.measure import marching_cubes
+
+    data, names, scale = read(args.labels)
+    if "c" in names:
+        raise SystemExit("labels must not have a channel axis")
+    if "t" in names:
+        data = data[min(args.frame, data.shape[0] - 1)]
+        names = names.replace("t", "")
+    if names == "yx":  # 2D labels: flat objects, one slice thick
+        data, names = data[None], "zyx"
+    if names != "zyx":
+        raise SystemExit(f"surfaces need y and x axes (and z for 3D); these labels have {names}")
+    spacing = tuple(scale.get(a, 1.0) for a in "zyx")
+    ids = [int(i) for i in np.unique(data) if i]
+    if not ids:
+        raise SystemExit("there are no objects in these labels")
+    parts = []
+    for n, label in enumerate(ids):
+        mask = np.pad(data == label, 1)
+        if mask.sum() < 4:
+            continue
+        verts, faces, _, _ = marching_cubes(mask.astype(np.float32), 0.5, spacing=spacing)
+        verts = (verts - np.array(spacing))[:, ::-1]  # undo the padding; x, y, z order for viewers
+        mesh = pv.PolyData(verts, np.hstack([np.full((len(faces), 1), 3), faces]).ravel())
+        mesh.point_data["RGB"] = np.tile(np.array([label_colour(label)], np.uint8), (mesh.n_points, 1))
+        parts.append(mesh)
+        progress(0.9 * (n + 1) / len(ids), f"object {n + 1} of {len(ids)}")
+    model = parts[0].merge(parts[1:]) if len(parts) > 1 else parts[0]
+    model.save(args.out, texture="RGB", binary=True)
+    progress(1.0, f"{len(parts)} objects")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="pharos_render")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("case-model")
+    p.add_argument("--case", required=True)
+    p.add_argument("--out", required=True)
+    p = sub.add_parser("labels-surface")
+    p.add_argument("--labels", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--frame", type=int, default=0)
     p = sub.add_parser("flow-video")
     p.add_argument("--case", required=True)
     p.add_argument("--out", required=True)
@@ -233,7 +338,7 @@ def main():
             p.add_argument("--tracks", required=True)
             p.add_argument("--tail", type=int, default=10, help="time points of path to draw behind each cell")
     args = ap.parse_args()
-    {"video": cmd_video, "tracks-video": cmd_tracks, "flow-video": cmd_flow}[args.cmd](args)
+    {"video": cmd_video, "tracks-video": cmd_tracks, "flow-video": cmd_flow, "case-model": cmd_case_model, "labels-surface": cmd_labels_surface}[args.cmd](args)
 
 
 if __name__ == "__main__":

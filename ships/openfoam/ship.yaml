@@ -9,6 +9,12 @@ homepage: https://www.openfoam.com
 tags: [cfd, simulation, fluid-dynamics]
 requires: { memory_gb: 4, network: none }
 operations:
+  mesh:
+    summary: Builds the case's mesh (blockMesh) without running it, so its geometry can be looked at.
+    command: /opt/pharos/pharos_foam.sh mesh {in.case}
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    outputs: [{ name: case, kind: sim-case, format: openfoam-case, path: /out/case }]
+    cache: { deterministic: true }
   solve:
     summary: Runs an OpenFOAM case folder with the given inlet speed and end time, meshing it with blockMesh if it has no mesh yet.
     command: /opt/pharos/pharos_foam.sh solve {in.case} {speed} {end_time}
