@@ -65,6 +65,7 @@ describe("token usage", () => {
     const meter = await TokenMeter.load(dir, () => "2026-10-17");
     meter.add(reply("claude-unknown-9", { input_tokens: 10, output_tokens: 2 }));
     expect(meter.view().today["claude-unknown-9"]).toMatchObject({ requests: 1, costUsd: 0, unpriced: 1 });
+    await meter.flushed(); // before the folder goes
   });
 
   it("drops what isn't a count from the file, and prices what was counted before prices were", async () => {

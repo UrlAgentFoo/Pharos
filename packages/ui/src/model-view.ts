@@ -2,12 +2,25 @@
  * A 3D model in a data window: a PLY mesh with per-vertex colours (an
  * OpenFOAM case's surfaces, segmented objects), lit softly and framed to
  * fit, or a PLY point cloud (a scene's sparse points from COLMAP) drawn as
- * coloured dots. Drag to orbit, scroll to zoom, right-drag to pan.
+ * coloured dots. Drag to orbit, scroll to zoom, right-drag to pan. A PLY
+ * can say which way is up (`comment up z`, for CAD parts and print
+ * toolpaths); otherwise meshes have y up, and point clouds COLMAP's y down.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
 import { scaledCopy } from "./viewer.js";
+
+/** The way up a PLY's header gives (`comment up z`, `comment up -y`), or null when it gives none. */
+export function upAxis(ply: ArrayBuffer): THREE.Vector3 | null {
+  const text = new TextDecoder().decode(new Uint8Array(ply, 0, Math.min(ply.byteLength, 4096)));
+  const end = text.indexOf("end_header");
+  const m = /^comment up ([+-]?)([xyz])\s*$/m.exec(end < 0 ? text : text.slice(0, end));
+  if (!m) return null;
+  const axis = new THREE.Vector3();
+  axis[m[2] as "x" | "y" | "z"] = m[1] === "-" ? -1 : 1;
+  return axis;
+}
 
 export class ModelView {
   private readonly renderer: THREE.WebGLRenderer;
@@ -31,12 +44,13 @@ export class ModelView {
     const coloured = !!geometry.getAttribute("color");
     // a PLY with no faces is a point cloud
     const points = !geometry.index;
+    const up = upAxis(ply);
     geometry.computeBoundingSphere();
     if (points) {
       const size = geometry.boundingSphere!.radius / 150;
       this.scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ size, vertexColors: coloured, color: coloured ? 0xffffff : 0xbfc4cc })));
-      // point clouds here come from COLMAP, whose world y points down
-      this.camera.up.set(0, -1, 0);
+      // point clouds that don't say come from COLMAP, whose world y points down
+      if (!up) this.camera.up.set(0, -1, 0);
     } else {
       geometry.computeVertexNormals();
       const mesh = new THREE.Mesh(
@@ -45,17 +59,24 @@ export class ModelView {
       );
       this.scene.add(mesh);
     }
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0x44403c, 1.6));
+    // lit and framed for a model with y up, turned to the model's own up when it gives one
+    const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up ?? new THREE.Vector3(0, 1, 0));
+    const sky = new THREE.HemisphereLight(0xffffff, 0x44403c, 1.6);
+    sky.position.set(0, 1, 0).applyQuaternion(turn);
+    this.scene.add(sky);
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
-    sun.position.set(1, 2, 3);
+    sun.position.set(1, 2, 3).applyQuaternion(turn);
     this.scene.add(sun);
 
-    // frame the model: look at its centre from a three-quarter view (for COLMAP's points, from behind its first camera)
+    if (up) this.camera.up.copy(up);
+    // frame the model: look at its centre from a three-quarter view, turned to its own up (for COLMAP's points, from behind its first camera)
     const { center, radius } = geometry.boundingSphere!;
     this.camera.near = radius / 100;
     this.camera.far = radius * 100;
-    const from = points ? new THREE.Vector3(0, -0.35, -1) : new THREE.Vector3(0.6, 0.5, 1.4);
-    this.camera.position.copy(center).add(from.normalize().multiplyScalar(points ? radius * 1.6 : radius * 2.6));
+    const colmap = points && !up;
+    // a part that says which way is up is seen from a little higher, so its top shows
+    const from = colmap ? new THREE.Vector3(0, -0.35, -1) : (up ? new THREE.Vector3(0.7, 0.9, 1.3) : new THREE.Vector3(0.6, 0.5, 1.4)).applyQuaternion(turn);
+    this.camera.position.copy(center).add(from.normalize().multiplyScalar(colmap ? radius * 1.6 : radius * 2.6));
     this.camera.updateProjectionMatrix();
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.copy(center);

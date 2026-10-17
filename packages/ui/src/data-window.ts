@@ -126,6 +126,7 @@ const KIND_ICON: Record<string, string> = {
   sfm: "fit",
   "sim-case": "plane",
   video: "layout",
+  cad: "cube",
 };
 
 /** The icon for a kind of data; kinds that ships bring get a plain file icon. */

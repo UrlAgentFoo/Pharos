@@ -105,6 +105,8 @@ const KIND_LABEL: Record<Artifact["kind"], string> = {
   sfm: "Cameras and sparse points",
   "sim-case": "Simulation case",
   video: "Video",
+  cad: "CAD part",
+  gcode: "G-code",
 };
 
 export const kindLabel = (a: Artifact) => KIND_LABEL[a.kind] ?? a.kind.replace(/-/g, " ");

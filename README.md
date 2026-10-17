@@ -47,7 +47,7 @@ API, for authors and automation.
 | `packages/catalogue` (`@pharos/catalogue`) | Data inspector, full-text catalogue of ships and books, book matching, and the MCP server. |
 | `packages/ui` (`@pharos/ui`) | The browser UI: Vite + TypeScript. |
 | `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: workspaces, library, plans, jobs, the assistant and authoring commands. |
-| `ships/`, `books/` | The ships (`image-ops` for everyday image processing, `bio-utils`, `cellpose`, `ultrack`, `space-time-field`, `geff`, `render`, `openfoam`, and `hello` for tests) and books (Cell imaging, Fluid flow) in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
+| `ships/`, `books/` | The ships (`image-ops` for everyday image processing, `bio-utils`, `cellpose`, `ultrack`, `space-time-field`, `geff`, `yolo`, `render`, `openfoam`, `colmap`, `mapanything`, `opensplat`, `media-ops`, `mesh-ops`, `cad`, `fea`, `slicer`, and `hello` for tests) and books (Cell imaging, Fluid flow, Object detection, 3D capture, Printed parts) in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
 
 ## Development
 

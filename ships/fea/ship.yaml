@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: fea
+version: 0.1.0
+image: pharos/fea:0.1.0    # built from this folder's Dockerfile (Debian bookworm: Gmsh 4.11, CalculiX 2.20)
+summary: Load-tests a part with finite elements (Gmsh meshes it, CalculiX works out the stresses) and says whether it holds, as a safety factor against the material's strength, with the part coloured by stress.
+citation: "Dhondt, The Finite Element Method for Three-Dimensional Thermomechanical Applications, Wiley 2004 (CalculiX); Geuzaine & Remacle, IJNME 79(11), 2009 (Gmsh). http://www.calculix.de"
+license: GPL-2.0-or-later
+homepage: http://www.calculix.de
+tags: [fea, finite-elements, stress, strength, safety-factor, engineering, mechanics, calculix, gmsh, 3d-printing]
+requires: { memory_gb: 4, network: none }
+formats:
+  step: { kind: cad, title: STEP model, extensions: [.step, .stp] }
+operations:
+  load-test:
+    summary: Holds one side of a part still, pushes evenly on another with the load you choose, and reports the peak stress against the material's strength (the safety factor) and how far the part bends, with the part coloured from blue (unstressed) to red (at its strength). A quick check of a design, not a certificate.
+    command: python3 /opt/pharos/pharos_fea.py --in {in.part} --out /out --load {load} --material {material} --fixed {fixed} --loaded {loaded} --target {target} --element-size {element_size}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: load, label: Load, type: number, unit: N, default: 100, min: 0.1, max: 1000000, description: "The force pushing on the loaded side: a weight in kg × 9.81 (15 kg is 147 N). A shelf on two brackets puts half its weight on each." }
+      - { name: material, label: Material, type: enum, options: [pla, petg, abs, nylon, aluminium, steel], default: pla, description: "What the part is made of: PLA, PETG, ABS and nylon are printed plastics (strength along their layers); aluminium 6061-T6 and S235 steel are metals." }
+      - { name: fixed, label: Held side, type: enum, options: [x-min, x-max, y-min, y-max, z-min, z-max], default: x-min, description: "The side of the part held still: for a bracket from the cad ship, its wall side (x-min)." }
+      - { name: loaded, label: Loaded side, type: enum, options: [x-min, x-max, y-min, y-max, z-min, z-max], default: z-max, description: "The side pushed on: for a bracket from the cad ship, the top of its arm (z-max), where a shelf rests." }
+      - { name: target, label: Safety factor wanted, type: number, default: 2, min: 1, max: 10, description: "How many times stronger than the load the part must be to pass: 2 for a shelf, 3 or more where a failure could hurt someone." }
+      - { name: element_size, label: Element size, type: number, unit: mm, default: 0, min: 0, max: 100, description: "How fine the mesh is; 0 picks one from the part's wall thickness." }
+    outputs:
+      - { name: stress, kind: mesh, format: ply, path: /out/stress.ply }
+      - { name: results, kind: table, format: csv, path: /out/results.csv }
+    cache: { deterministic: true }

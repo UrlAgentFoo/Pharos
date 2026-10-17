@@ -7,6 +7,15 @@
 # parameters, and the Suggested tab lays it out. `image` is the card's
 # picture (480 × 300; make_images.py draws them).
 # Paths are relative to this folder.
+- id: shelf-bracket
+  title: A shelf bracket
+  kind: 3D-printable part
+  description: A plain 3D-printable shelf bracket as a STEP file, 120 mm each way with a 4 mm plate. Load-test it, make it stronger, and get it ready to print.
+  files: [{ path: ../books/printed-parts/example/part.step, name: bracket.step }]
+  image: images/shelf-bracket.webp
+  prompt: Will this bracket hold a 15 kg shelf printed in PLA? If not, make it stronger and tell me how long it takes to print.
+  # what its window opens with (half of 15 kg on each of two brackets): a few seconds, then straight from the cache
+  run: { book: printed-parts, action: test, params: { load: 74 } }
 - id: nuclei-timelapse
   title: Cells moving over time
   kind: Microscopy time-lapse

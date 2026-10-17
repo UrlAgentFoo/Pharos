@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/book.schema.json
+id: printed-parts
+version: 0.1.0
+title: Printed parts
+summary: Tests whether a part holds its load with finite elements (where it's stressed, and a safety factor against the material's strength), redesigns a shelf bracket stronger at the same size, and slices a part for 3D printing with its print time, filament and cost.
+how_to_use: Open a part (a STEP file). See where it's stressed under load, make it stronger, and get it ready to print.
+tags: [3d-printing, engineering, strength, stress, safety-factor, fea, cad, design, slicing, brackets, shelves, manufacturing]
+authors: [Pharos]
+ships: { cad: ^0.1, fea: ^0.1, slicer: ^0.1 }
+# a part opens load-tested (quick, so it runs on its own), with the redesign and printing next in Controls
+opens_with: test
+actions:
+  test:
+    title: Load-test it
+    summary: Holds the part by its wall side, puts the load on its top, and shows where it's stressed and whether it holds (its safety factor), in a few seconds.
+    inputs:
+      - name: part
+        description: A solid part as a STEP file, in mm; for a bracket, its wall side at x-min and the top, where the load goes, at z-max.
+        accepts: { kind: cad, formats: [step] }
+    parameters:
+      - { name: load, label: Load, type: number, unit: N, default: 74, min: 0.1, max: 100000, description: "The weight on the part in kg × 9.81; a shelf on two brackets puts half on each, so a 15 kg shelf is 74 N per bracket.", sets: test.load }
+      - { name: material, label: Material, type: enum, options: [pla, petg, abs, nylon, aluminium, steel], default: pla, description: "What it's printed or made from.", sets: test.material }
+      - { name: target, label: Safety factor wanted, type: number, default: 2, min: 1, max: 10, description: "2 for a shelf; 3 or more where a failure could hurt someone.", sets: test.target }
+    controls:
+      - { title: Load, note: "Red is where the part reaches its material's strength; the safety factor is how many times the load it could take.", params: [load, material, target] }
+    steps:
+      - { id: test, run: fea.load-test, in: { part: $part } }
+    outputs: { stress: test.stress, results: test.results }
+    quick: true
+    next: [strengthen, print]
+  strengthen:
+    title: Make it stronger and ready to print
+    summary: Redesigns the bracket at the same size with the thickness, ribs and inside corner you choose, load-tests the new one, and slices it for printing on its side, so you see its stress, its safety factor, and its print time, filament and cost.
+    inputs:
+      - name: part
+        description: The bracket to redesign, as a STEP file; the new one keeps its overall size.
+        accepts: { kind: cad, formats: [step] }
+    parameters:
+      - { name: thickness, label: Thickness, type: number, unit: mm, default: 4, min: 1, max: 30, description: "The wall plate's and arm's thickness.", sets: design.thickness }
+      - { name: rib, label: Ribs, type: number, unit: mm, default: 2, min: 0, max: 40, description: "The triangular rib down each side; 0 leaves them off. Ribs stiffen a bracket far more than a thicker plate.", sets: design.rib }
+      - { name: fillet, label: Inside corner, type: number, unit: mm, default: 5, min: 0, max: 50, description: "The radius rounding the inside corner, where stress gathers.", sets: design.fillet }
+      - { name: load, label: Load, type: number, unit: N, default: 74, min: 0.1, max: 100000, description: "The weight on one bracket in kg × 9.81 (half a shelf's weight with two brackets).", sets: test.load }
+      - { name: material, label: Material, type: enum, options: [pla, petg, abs], default: pla, description: "The filament it's printed in.", sets: [test.material, slice.material] }
+      - { name: target, label: Safety factor wanted, type: number, default: 2, min: 1, max: 10, description: "2 for a shelf; 3 or more where a failure could hurt someone.", sets: test.target }
+      - { name: infill, label: Infill, type: number, unit: "%", default: 20, min: 0, max: 100, description: "How full the inside is printed.", sets: slice.infill }
+      - { name: price, label: Filament price, type: number, unit: per kg, default: 25, min: 0, max: 1000, description: "What a kilogram of filament costs you.", sets: slice.price }
+    controls:
+      - { title: Design, note: "Ribs help most, then thickness; a rounder inside corner spreads the stress.", params: [rib, thickness, fillet] }
+      - { title: Load, params: [load, material, target] }
+      - { title: Print, params: [infill, price] }
+    steps:
+      - { id: design, run: cad.bracket, in: { like: $part } }
+      - { id: test, run: fea.load-test, in: { part: design.solid } }
+      # on its side: the layers run along both arms, and it needs no supports
+      - { id: slice, run: slicer.slice, in: { model: design.model }, with: { up: y } }
+    outputs: { solid: design.solid, model: design.model, stress: test.stress, results: test.results, toolpath: slice.toolpath, print: slice.print, gcode: slice.gcode }
+    next: [print]
+  print:
+    title: Slice it for printing
+    summary: Lays the part on its side and slices it for a generic 0.4 mm-nozzle printer, showing the toolpath and the print time, filament and cost.
+    inputs:
+      - name: part
+        description: A solid part as a STEP file, in mm.
+        accepts: { kind: cad, formats: [step] }
+    parameters:
+      - { name: up, label: Up, type: enum, options: [y, z, x], default: y, description: "Which of the part's axes points up on the printer; y lays a bracket from the cad ship on its side.", sets: slice.up }
+      - { name: layer_height, label: Layer height, type: number, unit: mm, default: 0.2, min: 0.05, max: 0.32, description: "Thinner layers look smoother and take longer.", sets: slice.layer_height }
+      - { name: infill, label: Infill, type: number, unit: "%", default: 20, min: 0, max: 100, description: "How full the inside is printed.", sets: slice.infill }
+      - { name: walls, label: Walls, type: integer, default: 3, min: 1, max: 10, description: "Outlines per layer: more are stronger.", sets: slice.walls }
+      - { name: material, label: Filament, type: enum, options: [pla, petg, abs], default: pla, sets: slice.material }
+      - { name: price, label: Filament price, type: number, unit: per kg, default: 25, min: 0, max: 1000, description: "What a kilogram of filament costs you.", sets: slice.price }
+    controls:
+      - { title: Print, note: "The toolpath: outer walls orange, inner walls yellow, infill red, solid layers purple.", params: [layer_height, infill, walls, material, price, up] }
+    steps:
+      - { id: model, run: cad.view, in: { part: $part } }
+      - { id: slice, run: slicer.slice, in: { model: model.model } }
+    outputs: { toolpath: slice.toolpath, print: slice.print, gcode: slice.gcode }
+    next: [strengthen]

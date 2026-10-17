@@ -31,6 +31,7 @@ ANTHROPIC_API_KEY from the environment, or from a .env file in this folder.
 ${AUTHOR_HELP}
 Examples:
   pharos warm [-l <dir>] [-d <dir>]       run every example with a \`run:\` once, so it opens instantly
+              [--only <id> ...]           only these examples (their ids in examples.yaml)
 
 ${MCP_HELP}`;
 
@@ -56,7 +57,7 @@ function openBrowser(url: string) {
  * demo preparation and authors; it runs containers, so it's never automatic.
  */
 async function warm(argv: string[]) {
-  const { values } = parseArgs({ args: argv, options: { data: { type: "string", short: "d" }, library: { type: "string", short: "l", multiple: true } } });
+  const { values } = parseArgs({ args: argv, options: { data: { type: "string", short: "d" }, library: { type: "string", short: "l", multiple: true }, only: { type: "string", multiple: true } } });
   const server = await startServer({
     port: 0,
     uiDir: findUiDir(),
@@ -72,7 +73,10 @@ async function warm(argv: string[]) {
   };
   let failed = 0;
   try {
-    const examples = (await api<Example[]>("/api/examples")).filter((e) => e.run);
+    const all = await api<Example[]>("/api/examples");
+    const unknown = (values.only ?? []).filter((id) => !all.some((e) => e.id === id));
+    if (unknown.length) throw new Error(`no example ${unknown.join(", ")} in examples.yaml (there are ${all.map((e) => e.id).join(", ")})`);
+    const examples = all.filter((e) => e.run && (!values.only || values.only.includes(e.id)));
     if (!examples.length) console.log("No example says how to run it (a `run:` in examples.yaml).");
     for (const e of examples) {
       const started = Date.now();
