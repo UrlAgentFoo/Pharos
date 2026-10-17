@@ -30,6 +30,10 @@
   --glass-soft: rgba(251, 250, 247, 0.6);
   --scrim: rgba(238, 234, 227, 0.8);
   --backdrop: rgba(43, 42, 39, 0.18);
+  /* the beam rising behind the start screen's drop area: by day a soft shade, as light can't show on paper */
+  --beam: rgba(43, 42, 39, 0.08);
+  --beam-core: rgba(43, 42, 39, 0.17); /* its heart, low down, and the pool on the floor it rises from */
+  --beam-halo: rgba(243, 240, 235, 0.94); /* the ground under the drop area's text, hiding the cards behind */
   --warn-bg: #fbf3e6;
   --warn-text: #7a4a12;
   --warn-line: #c9862e;
@@ -67,6 +71,9 @@
   --glass-soft: rgba(33, 32, 29, 0.6);
   --scrim: rgba(18, 17, 16, 0.8);
   --backdrop: rgba(0, 0, 0, 0.45);
+  --beam: rgba(236, 232, 225, 0.09);
+  --beam-core: rgba(236, 232, 225, 0.26);
+  --beam-halo: rgba(25, 24, 22, 0.92);
   --warn-bg: #3a2c19;
   --warn-text: #f0c98d;
   --warn-line: #c9862e;
@@ -363,69 +370,6 @@ button:disabled {
   border-radius: 3px;
   background: none;
   cursor: pointer;
-}
-
-/* the settings dropdown: a switch row */
-.toggle-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
-  border-radius: 3px;
-  cursor: pointer;
-}
-
-.toggle-row:hover {
-  background: var(--hover);
-}
-
-.toggle-row > span:nth-child(2) {
-  flex: 1;
-}
-
-.toggle-row .icon {
-  color: var(--muted);
-}
-
-.switch {
-  position: relative;
-  width: 30px;
-  height: 18px;
-  border-radius: 999px;
-  background: var(--line-strong);
-  transition: background 0.15s;
-}
-
-.switch::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: var(--sheet);
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.15s;
-}
-
-.toggle-row input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.toggle-row input:checked + .switch {
-  background: var(--ink);
-}
-
-.toggle-row input:checked + .switch::after {
-  transform: translateX(12px);
-}
-
-.toggle-row input:focus-visible + .switch {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .pop-note {
@@ -4315,9 +4259,10 @@ dialog.side::backdrop {
   min-height: 30px;
 }
 
-/* the ring: everything under the top bar, seen in perspective and a little from above. The centre and the
-   cards share one 3D space, so a card at the front passes before the drop area and one at the back behind it;
-   examples.ts places each card on the ellipse and turns it */
+/* the ring: everything under the top bar, seen in perspective and a little from above. examples.ts places
+   each card on the ellipse, turns it, and seen through its own perspective from the one eye, and stacks the
+   cards by depth: a nearer card always covers a farther one, the front passes before the drop area and the
+   back behind it. (In one shared 3D space, cards whose planes cross at the sides would show through each other.) */
 .welcome:has(.ring-on) {
   padding-bottom: 16px;
   overflow: hidden;
@@ -4328,27 +4273,97 @@ dialog.side::backdrop {
   position: absolute;
   inset: 64px 0 16px;
   width: auto;
-  perspective: 1200px; /* PERSPECTIVE in examples.ts */
-  transform-style: preserve-3d;
 }
 
-/* the centre is compact in the ring, so the front cards can pass under it */
-.ring-on .welcome-centre {
+/* outside the ring the scene is no box at all */
+.ring-scene {
+  display: contents;
+}
+
+/* the ring's scene: a fixed size (SCENE_W wide in examples.ts, and as tall as it measures the ring), scaled
+   as a whole to fit the stage, so zooming the page makes the ring larger or smaller but never changes the
+   angle it's seen from */
+.ring-on .ring-scene {
   position: absolute;
   left: 50%;
   top: 50%;
+  display: block;
+  width: 1500px;
+  transform: translate(-50%, -50%) scale(var(--ring-scale, 1));
+}
+
+/* the centre stands a little above the ring's middle (--centre-y, from examples.ts), lit by a soft light
+   that shines up from the floor below it and veils the cards passing behind */
+.ring-on .welcome-centre {
+  position: absolute;
+  left: 50%;
+  top: var(--centre-y, 50%);
   width: max-content;
-  gap: 10px;
+  gap: 16px;
   transform: translate(-50%, -50%);
 }
 
-.ring-on .welcome-centre .display {
-  margin-bottom: 4px;
-  font-size: 44px;
+.ring-on .welcome-centre::before,
+.ring-on .welcome-centre::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
 }
 
-.ring-on .dropzone {
-  padding: 20px 24px;
+/* the beam: rising from the pool of light on the floor, already a little wide there, strongest at its heart
+   low down and spreading and fading as it goes up. Its foot fades into the pool, so the pool reads as a whole
+   ellipse; its sides are soft: the mask is a cone whose point is well below the floor */
+.ring-on .welcome-centre::before {
+  inset: -96px -160px -24px;
+  background:
+    radial-gradient(ellipse 18% 70% at 50% 82%, var(--beam-core), transparent),
+    linear-gradient(to top, var(--beam), var(--beam) 30%, transparent 95%);
+  -webkit-mask-image:
+    conic-gradient(from -32deg at 50% calc(100% + 340px), transparent, black 14deg, black 50deg, transparent 64deg, transparent),
+    linear-gradient(to top, transparent, black 16%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    conic-gradient(from -32deg at 50% calc(100% + 340px), transparent, black 14deg, black 50deg, transparent 64deg, transparent),
+    linear-gradient(to top, transparent, black 16%);
+  mask-composite: intersect;
+}
+
+/* the light on the floor it shines from */
+.ring-on .welcome-centre::after {
+  left: 50%;
+  bottom: -48px; /* FLOOR_BELOW in examples.ts */
+  width: 520px; /* twice FLOOR_HALF */
+  height: 56px;
+  margin-left: -260px;
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse 28% 42% at 50% 50%, var(--beam-core), transparent),
+    radial-gradient(closest-side, var(--beam), transparent);
+}
+
+.ring-on .welcome-centre .display {
+  margin-bottom: 8px;
+  font-size: 56px;
+}
+
+/* in the ring the drop area is open, with no box: a soft glow, fading at its edges, keeps its text clear of the cards behind */
+.ring-on .dropzone,
+.ring-on .dropzone:hover {
+  width: 520px;
+  padding: 16px 32px;
+  border-color: transparent;
+  background:
+    radial-gradient(closest-side, var(--beam) 55%, transparent),
+    radial-gradient(closest-side, var(--beam-halo) 55%, transparent);
+}
+
+.ring-on .dropzone-icon {
+  transition: border-color 0.15s;
+}
+
+.ring-on .dropzone:hover .dropzone-icon {
+  border-color: var(--ink);
 }
 
 .ring-on .examples,
@@ -4357,7 +4372,6 @@ dialog.side::backdrop {
   inset: 0;
   margin: 0;
   padding: 0;
-  transform-style: preserve-3d;
 }
 
 /* the list spans the stage but only its cards take clicks, so the drop area and its buttons under it stay usable */
@@ -4375,9 +4389,9 @@ dialog.side::backdrop {
 .ring-on .example {
   position: absolute;
   left: 50%;
-  top: 50%;
-  width: 168px;
-  margin: -72px 0 0 -84px;
+  top: var(--ring-y, 50%);
+  width: 228px;
+  margin: calc(var(--card-h, 200px) / -2) 0 0 -114px; /* centred on its place; examples.ts measures its height */
   box-shadow: var(--shadow);
 }
 
@@ -4393,8 +4407,9 @@ dialog.side::backdrop {
   transition: opacity 0.2s;
 }
 
+/* well veiled: with the ring seen nearly side on, the back passes behind the drop area's text */
 .ring-on .example.away::after {
-  opacity: 0.72;
+  opacity: 0.86;
 }
 
 .ring-on .example em,
@@ -4407,7 +4422,7 @@ dialog.side::backdrop {
 }
 
 .ring-on .example strong {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* the grid: every card under the drop area, with "Hide examples" at its foot (on a small screen, the grid alone) */

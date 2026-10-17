@@ -38,11 +38,21 @@ function storedTheme(): "light" | "dark" {
 }
 function applyTheme(theme: "light" | "dark") {
   document.documentElement.dataset.theme = theme;
+  syncThemeButton();
   try {
     localStorage.setItem(THEME_KEY, theme);
   } catch {
     /* not remembered: fine */
   }
+}
+/** The top bar's theme button shows where it takes you: a moon in light mode, a sun in dark. */
+function syncThemeButton() {
+  const b = document.getElementById("theme-button");
+  if (!b) return;
+  const label = document.documentElement.dataset.theme === "dark" ? "Switch to light mode" : "Switch to dark mode";
+  b.innerHTML = icon(document.documentElement.dataset.theme === "dark" ? "contrast" : "moon", 16);
+  b.setAttribute("aria-label", label);
+  b.title = label;
 }
 applyTheme(storedTheme()); // before anything renders
 
@@ -173,17 +183,15 @@ function buildToolbar() {
     </nav>
     <div class="tb-right">
       <button class="tb-text activity" data-action="activity" aria-haspopup="menu" title="What's running" hidden><span class="pg-spin" aria-hidden="true"></span><span class="activity-text"></span></button>
+      <button class="icon-btn" id="theme-button" data-action="dark-mode"></button>
       ${text("settings-menu", "settings", "Settings", { menu: true })}
     </div>`;
+  syncThemeButton();
 }
 
-/** The settings dropdown: appearance and the assistant. */
+/** The settings dropdown: the assistant, the library and storage (light and dark is the top bar's own button). */
 function settingsHtml() {
-  const dark = document.documentElement.dataset.theme === "dark";
-  return `<section>
-      <label class="toggle-row">${icon("contrast", 16)}<span>Dark mode</span><input type="checkbox" data-theme-toggle ${dark ? "checked" : ""}/><span class="switch" aria-hidden="true"></span></label>
-    </section>
-    <section>${itemHtml("settings")}${itemHtml("library")}${itemHtml("storage")}</section>
+  return `<section>${itemHtml("settings")}${itemHtml("library")}${itemHtml("storage")}</section>
     <p class="pop-note">${server ? `Connected to the local Pharos ${escapeHtml(server.info.version)} server` : "Not connected to the local server"}</p>`;
 }
 
@@ -229,11 +237,6 @@ function closePopover() {
 document.addEventListener("pointerdown", (e) => {
   const t = e.target as HTMLElement;
   if (!pop.hidden && !pop.contains(t) && !t.closest('[aria-haspopup="menu"], [data-win="menu"]')) closePopover();
-});
-
-pop.addEventListener("change", (e) => {
-  const input = e.target as HTMLInputElement;
-  if ("themeToggle" in input.dataset) setDark(input.checked);
 });
 
 pop.addEventListener("click", (e) => {
