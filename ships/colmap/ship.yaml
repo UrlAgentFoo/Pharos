@@ -31,7 +31,8 @@ operations:
     parameters:
       - { name: matcher, type: enum, options: [sequential, exhaustive], default: sequential, description: "sequential compares each photo with the ones just before and after it: fast, for video frames and photos taken in order. exhaustive compares every pair: slower, for photos in any order." }
       - { name: max_size, type: integer, unit: px, default: 1600, min: 320, max: 4096, description: "Photos with a longer side than this are scaled down first." }
+    # the point cloud first: it's what a window shows for this step
     outputs:
-      - { name: scene, kind: sfm, format: colmap, path: /out/scene }
       - { name: points, kind: mesh, format: ply, path: /out/points.ply }
+      - { name: scene, kind: sfm, format: colmap, path: /out/scene }
     cache: { deterministic: true }

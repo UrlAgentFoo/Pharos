@@ -56,7 +56,8 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
       const ply = await s.content(workspace, a.id);
       return isSplatPly(ply) ? { type: "splat", ply } : { type: "model", ply };
     }
-    if (a.format === "mp4") return { type: "video", url: await s.artifactLink(workspace, a.id) };
+    // MP4s, and phone videos as QuickTime .mov (H.264 or HEVC); the browser decodes what it can
+    if (a.kind === "video" && (a.format === "mp4" || a.format === "mov")) return { type: "video", url: await s.artifactLink(workspace, a.id) };
     if (a.format === "openfoam-case") return { type: "case", summary: await s.caseSummary(workspace, a.id) };
     if (a.format === "html") {
       const page = await s.content(workspace, a.id);
@@ -119,6 +120,13 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
     case "video": {
       host.innerHTML = `<video class="dv-video" src="${entry.url}" ${compact ? "" : "controls"} autoplay loop muted playsinline></video>`;
       const video = host.querySelector("video")!;
+      // a codec this browser can't decode (some HEVC or 10-bit HDR phone videos): say so, and how to get one it can
+      video.addEventListener("error", () => {
+        host.innerHTML = card(
+          "Can't play this video here",
+          `This browser can't decode ${escapeHtml(a.name ?? "it")} (${escapeHtml(a.format)}), but it's in the workspace and books can still use it. To watch it in Pharos, resize it with the media-ops ship (Suggest, then Resize video): the copy is an MP4 every browser plays.`,
+        );
+      }, { once: true });
       // the frame on screen now; the video is a blob of our own, so the canvas stays readable
       return { destroy() {}, snapshot: (max) => (video.readyState >= 2 && video.videoWidth ? scaledCopy(video, video.videoWidth, video.videoHeight, max) : null) };
     }

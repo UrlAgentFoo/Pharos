@@ -14,6 +14,10 @@ many positions, and the user wants it in 3D:
 - `splat_video` (the main action): "make a 3D model of this video", "Gaussian
   splat", "3D scan", "turn this into something I can fly through", "NeRF",
   "reconstruct the scene".
+- `quick_splat_video`: "quick look", "is my video good enough", "fast
+  preview"; about 15 s on a short clip (24 frames at 400 px, 500 steps at
+  1/4), soft but recognisable. Offer it first for a new video, then
+  `splat_video` for the sharp one.
 - `cameras_video`: "where was the camera", "check the video works for 3D",
   "show the point cloud"; a quicker check (minutes) before the long
   training. Its frames and cameras are reused by `splat_video` with the same

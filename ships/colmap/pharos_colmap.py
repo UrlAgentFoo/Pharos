@@ -28,15 +28,15 @@ def fail(message):
     sys.exit(1)
 
 
-def run(cmd, on_line=None):
-    """Runs a command, passing its output to stderr line by line (and to `on_line`)."""
+def run(cmd, on_line=None, failed=None):
+    """Runs a command, passing its output to stderr line by line (and to `on_line`); `failed` is what to say if it fails."""
     proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     for line in proc.stdout:
         sys.stderr.write(line)
         if on_line:
             on_line(line)
     if proc.wait() != 0:
-        fail(f"{os.path.basename(cmd[0])} {cmd[1] if len(cmd) > 1 else ''} failed (exit {proc.returncode}); see the log above")
+        fail(failed or f"{os.path.basename(cmd[0])} {cmd[1] if len(cmd) > 1 else ''} failed (exit {proc.returncode}); see the log above")
 
 
 def find_photos(folder):
@@ -144,13 +144,15 @@ def reconstruct(args):
             k = int(hit.group(1))
             progress(0.5 + 0.4 * min(k / n, 1.0), f"placed {k} of {n} photos")
 
-    run(["colmap", "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse, "--random_seed", "1"], on_map)
+    lost = ("COLMAP couldn't work out where the photos were taken. The camera has to move around a still scene (walk around it), "
+            "and each spot has to be seen in several sharp photos; a fixed camera, or things moving through the view, won't work. "
+            "Try a video that circles the subject slowly, or more frames.")
+    run(["colmap", "mapper", "--database_path", db, "--image_path", images, "--output_path", sparse, "--random_seed", "1"], on_map, failed=lost)
 
     # COLMAP may split the photos into several models when they don't all connect: keep the largest
     models = [os.path.join(sparse, d) for d in os.listdir(sparse) if os.path.isfile(os.path.join(sparse, d, "images.bin"))]
     if not models:
-        fail("COLMAP couldn't work out where the photos were taken. They need to overlap a lot (each spot seen in several photos), "
-             "be sharp, and show a scene that stays still; try more frames, or the exhaustive matching.")
+        fail(lost)
     best = max(models, key=lambda m: os.path.getsize(os.path.join(m, "images.bin")))
     shutil.copytree(best, os.path.join(scene, "sparse", "0"))
 

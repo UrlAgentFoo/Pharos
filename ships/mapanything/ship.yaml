@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: mapanything
+version: 0.1.0
+image: pharos/mapanything:0.1.0    # built from this folder's Dockerfile: MapAnything 1.1.4 and its Apache 2.0 model, for the CPU
+summary: Works out where each photo of a scene was taken, and dense 3D points, in one pass of a neural network (Meta's MapAnything) instead of matching features, written in COLMAP's format. Seconds on an NVIDIA GPU; on the CPU it is slow (about 25 s a photo on a laptop) and needs most of 8 GB of memory, so COLMAP is faster there.
+citation: "Keetha et al., MapAnything: Universal Feed-Forward Metric 3D Reconstruction, 2025. https://map-anything.github.io"
+license: Apache-2.0
+homepage: https://github.com/facebookresearch/map-anything
+tags: [3d, structure-from-motion, cameras, photogrammetry, deep-learning, feed-forward, gaussian-splatting]
+# the model alone is 4.9 GB in memory
+requires: { gpu: { vendor: nvidia, optional: true }, memory_gb: 7, network: none }
+operations:
+  reconstruct:
+    summary: Works out where each photo was taken and the scene's 3D points with MapAnything, as a COLMAP reconstruction (the photos at the model's resolution, about 518 px) and a coloured point cloud.
+    command: python /opt/pharos/pharos_mapanything.py reconstruct --photos {in.photos} --out /out/scene --points /out/points.ply --views {views} --points-max {points}
+    inputs: [{ name: photos, kind: photos, formats: [photo-set] }]
+    parameters:
+      - { name: views, type: integer, default: 32, min: 2, max: 200, description: "The most photos to use, spread evenly over the set: more cover the scene better and take longer (on the CPU, about 25 s each)." }
+      - { name: points, type: integer, default: 200000, min: 1000, max: 2000000, description: "The most 3D points to keep, for the point cloud and to start a splat from." }
+    # the point cloud first: it's what a window shows for this step
+    outputs:
+      - { name: points, kind: mesh, format: ply, path: /out/points.ply }
+      - { name: scene, kind: sfm, format: colmap, path: /out/scene }
+    cache: { deterministic: true }

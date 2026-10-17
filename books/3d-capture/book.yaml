@@ -31,6 +31,26 @@ actions:
       - { id: cameras, run: colmap.reconstruct, in: { photos: frames.photos }, with: { matcher: sequential } }
       - { id: train, run: opensplat.train, in: { scene: cameras.scene } }
     outputs: { splat: train.splat, points: cameras.points, cameras: cameras.scene, frames: frames.photos }
+  quick_splat_video:
+    title: Quick splat from a video
+    summary: A fast, soft Gaussian splat of the video - few, small frames and a short training (about 15 s for a short clip on a laptop) - to check a video works before the full splat.
+    inputs:
+      - name: video
+        description: A video filmed while moving slowly around an object or through a still scene.
+        accepts: { kind: video, formats: [mp4, mov] }
+    parameters:
+      - { name: frames, label: Frames, type: integer, default: 24, min: 10, max: 400, description: "How many frames to take, spread evenly over the video.", sets: frames.frames }
+      - { name: max_size, label: Largest frame side, type: integer, unit: px, default: 400, min: 320, max: 4096, description: "Frames are scaled down to this first: 400 px is about 10 times smaller than 4K.", sets: frames.max_size }
+      - { name: iterations, label: Training steps, type: integer, default: 500, min: 100, max: 30000, description: "More steps give a sharper scene and take longer.", sets: train.iterations }
+      - { name: downscale, label: Train at 1 / …, type: number, default: 4, min: 1, max: 8, description: "Trains on frames scaled down again by this factor.", sets: train.downscale }
+    controls:
+      - { title: Speed, note: "Small frames and a short training give a quick, soft look; Gaussian splat from a video makes the sharp one.", params: [frames, max_size, iterations, downscale] }
+    steps:
+      - { id: frames, run: colmap.frames, in: { video: $video } }
+      - { id: cameras, run: colmap.reconstruct, in: { photos: frames.photos }, with: { matcher: sequential } }
+      - { id: train, run: opensplat.train, in: { scene: cameras.scene }, with: { sh_degree: 1 } }
+    outputs: { splat: train.splat, points: cameras.points, cameras: cameras.scene, frames: frames.photos }
+    next: [splat_video]
   cameras_video:
     title: Place the cameras from a video
     summary: Takes frames from the video and works out where each was taken (COLMAP), showing the scene's sparse 3D points; a quicker check before training a splat.
