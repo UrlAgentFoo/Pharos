@@ -109,6 +109,8 @@ export interface Example {
   prompt: string;
   /** The names the files get in the workspace. */
   files: string[];
+  /** Whether it has a picture for its card, at `GET /api/examples/:id/image`. */
+  image?: boolean;
   /**
    * How to run it quickly: a book action and parameter values small enough
    * to finish in seconds (a short simulated time, say). Its files fill the
@@ -184,6 +186,8 @@ export interface ApiRoutes {
   "POST /api/plans": { req: PlanRequest; res: Plan };
   /** The assistant picks a book for the data (or improvises), proposing a plan to approve. */
   "GET /api/examples": { req: void; res: Example[] };
+  /** An example's picture (PNG, JPEG or WebP); 404 when it has none. */
+  "GET /api/examples/:id/image": { req: void; res: ArrayBuffer };
   /** Copies an example's files into the workspace, as if they'd been dropped in. */
   "POST /api/examples/:id/load": { req: { workspace: string }; res: Artifact[] };
   /**

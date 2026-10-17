@@ -11,7 +11,7 @@ import { AiError, type AiClientFactory, configDir, configView, defaultClientFact
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
-import { ExampleError, examplePlan, loadExample, loadExamples, publicExample } from "./examples.js";
+import { ExampleError, exampleImage, examplePlan, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
 import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
 import { Plans } from "./plans.js";
@@ -285,6 +285,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (prepare && req.method === "POST") {
           const plan = await examplePlan(libraryDirs, decodeURIComponent(prepare[1]), workspaces, plans, await library.get());
           return sendJson(res, 200, hasErrors(plan.problems) ? plan : (await plans.approve(plan.id)).plan);
+        }
+        const picture = url.pathname.match(/^\/api\/examples\/([^/]+)\/image$/);
+        if (picture && req.method === "GET") {
+          const { data, type } = await exampleImage(libraryDirs, decodeURIComponent(picture[1]));
+          return sendBytes(res, data, type);
         }
         const example = url.pathname.match(/^\/api\/examples\/([^/]+)\/load$/);
         if (example && req.method === "POST") {

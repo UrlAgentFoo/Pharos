@@ -102,10 +102,31 @@ describe("examples", () => {
     );
     const list = await (await api("/api/examples")).json();
     expect(list).toEqual([{ id: "table", title: "A table", kind: "Table", description: "One row.", prompt: "Count the rows.", files: ["rows.csv"] }]);
+    expect((await api("/api/examples/table/image")).status).toBe(404);
     const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
     const loaded = await (await api("/api/examples/table/load", json({ workspace: "ex" }))).json();
     expect(loaded).toEqual([expect.objectContaining({ name: "rows.csv", kind: "table" })]);
     expect((await api("/api/examples/gone/load", json({ workspace: "ex" }))).status).toBe(404);
+  });
+
+  it("serves an example's picture when its file exists and is an image", async () => {
+    await mkdir(join(lib, "examples", "images"), { recursive: true });
+    await writeFile(join(lib, "examples", "t.csv"), "a\n1\n");
+    await writeFile(join(lib, "examples", "images", "t.webp"), "RIFF....WEBP");
+    await writeFile(join(lib, "examples", "images", "t.svg"), "<svg/>");
+    await writeFile(
+      join(lib, "examples", "examples.yaml"),
+      "- { id: pic, title: Pictured, files: [{ path: t.csv }], image: images/t.webp }\n" +
+        "- { id: missing, title: Not drawn yet, files: [{ path: t.csv }], image: images/none.webp }\n" +
+        "- { id: svg, title: Not a picture format, files: [{ path: t.csv }], image: images/t.svg }\n",
+    );
+    const list: { id: string; image?: boolean }[] = await (await api("/api/examples")).json();
+    expect(list.map((e) => [e.id, e.image])).toEqual([["pic", true], ["missing", undefined], ["svg", undefined]]);
+    const r = await api("/api/examples/pic/image");
+    expect(r.headers.get("content-type")).toBe("image/webp");
+    expect(await r.text()).toBe("RIFF....WEBP");
+    expect((await api("/api/examples/missing/image")).status).toBe(404);
+    expect((await api("/api/examples/svg/image")).status).toBe(404);
   });
 });
 

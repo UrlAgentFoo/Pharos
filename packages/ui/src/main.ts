@@ -5,6 +5,7 @@ import { type AskReply, Assistant, type SearchHit } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
 import type { Suggestion } from "./data-window.js";
 import { alertDialog, browseDialog, confirmDialog, escapeHtml, isDialogOpen, promptDialog, showDialog } from "./dialogs.js";
+import { exampleCards, showPictures, wireExampleGallery } from "./examples.js";
 import { icon } from "./icons.js";
 import { formatShortcut, isMac, matchesShortcut } from "./keys.js";
 import { libraryPanel } from "./library-panel.js";
@@ -642,16 +643,6 @@ async function dropData(files: File[], folders: string[]) {
   if (added?.length) await dataFlow(workspace, added);
 }
 
-/** Example cards: what the data is, its name and the problem statement it comes with. */
-const exampleCards = (examples: Example[]) =>
-  examples
-    .map(
-      (e) => `<button class="example" data-example="${escapeHtml(e.id)}" title="${escapeHtml(e.description)}">
-        <small class="eyebrow">${escapeHtml(e.kind)}</small><strong>${escapeHtml(e.title)}</strong>
-        <em>“${escapeHtml(e.prompt)}”</em></button>`,
-    )
-    .join("");
-
 /** Loads an example into the workspace with its problem statement, as if it had been dropped in. */
 async function loadExample(s: LocalServer, e: Example) {
   const workspace = currentWorkspace();
@@ -665,7 +656,7 @@ async function showExamples(s: LocalServer) {
   const examples = await s.examples().catch(() => []);
   const list = $("example-list");
   list.innerHTML = exampleCards(examples);
-  $("examples").hidden = !examples.length;
+  $("examples-toggle").hidden = !examples.length;
   list.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) =>
     b.addEventListener("click", () => loadExample(s, examples.find((x) => x.id === b.dataset.example)!)),
   );
@@ -679,10 +670,11 @@ async function examplesDialog() {
   const picked = await showDialog<Example | null>(
     `<p class="eyebrow">Add data</p><h2>Example data</h2>
      <p class="muted small">Synthetic microscopy and simulation cases, each with a question to try. Hover a card for details.</p>
-     <div class="example-list">${exampleCards(examples) || `<p class="muted">No examples in the library.</p>`}</div>
+     <div class="example-list grid">${exampleCards(examples) || `<p class="muted">No examples in the library.</p>`}</div>
      <footer><button class="primary" data-cancel>Close</button></footer>`,
     (done, el) => {
       el.classList.add("wide");
+      showPictures(s, el);
       el.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) => b.addEventListener("click", () => done(examples.find((x) => x.id === b.dataset.example)!)));
     },
     null,
@@ -910,6 +902,9 @@ $("formats-toggle").addEventListener("click", () => {
   const f = $("formats");
   f.hidden = !f.hidden;
   $("formats-toggle").setAttribute("aria-expanded", String(!f.hidden));
+});
+wireExampleGallery(() => {
+  if (server) showPictures(server, $("example-list"));
 });
 
 $("dropzone-icon").innerHTML = icon("upload", 26);

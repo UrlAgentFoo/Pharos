@@ -254,6 +254,11 @@ export class LocalServer {
     return (await this.call("/api/examples")).json();
   }
 
+  /** An example's picture for its card (when `image` is set). */
+  async exampleImage(id: string): Promise<Blob> {
+    return (await this.call(`/api/examples/${encodeURIComponent(id)}/image`)).blob();
+  }
+
   /** Copies an example's files into the workspace. */
   async loadExample(id: string, workspace: string): Promise<Artifact[]> {
     return (await this.json(`/api/examples/${encodeURIComponent(id)}/load`, "POST", { workspace })) as Artifact[];

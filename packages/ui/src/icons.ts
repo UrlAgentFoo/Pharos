@@ -31,6 +31,8 @@ const PATHS: Record<string, string> = {
   eye: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3"/>',
   "eye-off": '<path d="M10 5.7A9.6 9.6 0 0 1 12 5.5c6 0 9.5 6.5 9.5 6.5a17 17 0 0 1-2.4 3.2M6.2 7.2C3.9 8.8 2.5 12 2.5 12S6 18.5 12 18.5c1.6 0 3-.4 4.2-1.1M4 4l16 16"/>',
   trash: '<path d="M4.5 7h15M9.5 7V5a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v2M6.5 7l1 12.5a1 1 0 0 0 1 .9h7a1 1 0 0 0 1-.9l1-12.5"/>',
+  "chevron-left": '<path d="m14.5 6-6 6 6 6"/>',
+  "chevron-right": '<path d="m9.5 6 6 6-6 6"/>',
   first: '<path d="M6 5v14M18 6 10 12l8 6Z"/>',
   last: '<path d="M18 5v14M6 6l8 6-8 6Z"/>',
   image: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="m20.5 16-5-5-9 8.5"/>',

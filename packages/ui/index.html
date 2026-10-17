@@ -44,10 +44,18 @@
           </ul>
           <p class="muted small">Folders (OpenFOAM cases, OME-Zarr) can't be dragged in yet: click the box above and choose the folder.</p>
         </div>
-        <div class="examples" id="examples" hidden>
-          <p class="eyebrow">Or start from an example</p>
+        <button class="tb-text examples-toggle" id="examples-toggle" aria-expanded="false" aria-controls="examples" hidden>View examples</button>
+        <section class="examples" id="examples" aria-labelledby="examples-title" hidden>
+          <header class="examples-head">
+            <p class="eyebrow" id="examples-title">Examples</p>
+            <p class="muted small">Synthetic data, each with a question to try. Pick one to open it.</p>
+            <span class="spacer"></span>
+            <button class="link" id="examples-more" aria-expanded="false" aria-controls="example-list">See more</button>
+            <button class="icon-btn" data-scroll="-1" aria-label="Previous examples" title="Previous examples"></button>
+            <button class="icon-btn" data-scroll="1" aria-label="Next examples" title="Next examples"></button>
+          </header>
           <div class="example-list" id="example-list"></div>
-        </div>
+        </section>
         <p class="welcome-hint" id="welcome-hint"></p>
       </div>
     </main>

@@ -3557,6 +3557,9 @@ dialog.side::backdrop {
 .welcome {
   place-content: safe center;
   overflow-y: auto;
+  /* scrolled to the end, or to a card Tab reached, the examples clear the ask box and project buttons in the bottom corners */
+  padding-bottom: 80px;
+  scroll-padding-bottom: 80px;
 }
 
 .problem {
@@ -3586,23 +3589,73 @@ dialog.side::backdrop {
   width: min(560px, calc(100vw - 32px));
 }
 
+/* examples wait behind "View examples"; the caret turns when they show */
+.examples-toggle .caret {
+  transition: transform 0.15s;
+}
+
+.examples-toggle[aria-expanded="true"] .caret {
+  transform: rotate(180deg);
+}
+
 .examples {
   width: min(920px, calc(100vw - 32px));
+  text-align: left;
 }
 
-/* ten or so examples: compact cards, five to a row; the description is the hover title */
+.examples-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.examples-head p {
+  margin: 0;
+}
+
+/* one row of cards that scrolls sideways and snaps to them; the padding keeps focus rings in view */
 .example-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-  gap: 10px;
-  margin-top: 6px;
+  grid-auto-flow: column;
+  grid-auto-columns: 208px;
+  gap: 12px;
+  margin: 0 -4px;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding: 0 4px;
+  scrollbar-width: none;
 }
 
+.example-list > * {
+  scroll-snap-align: start;
+}
+
+/* a soft right edge while more cards wait there (the left edge always starts a card, as they snap) */
+.example-list.more-after {
+  mask-image: linear-gradient(to right, black calc(100% - 48px), transparent);
+}
+
+/* "See more", and the Example data… dialog: every card, in a grid */
+.example-list.grid {
+  grid-auto-flow: row;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  overflow: visible;
+}
+
+#dialog .example-list.grid {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* the description is the hover title; the picture's alt is empty, as the card's text names it */
 .example {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   background: var(--sheet);
@@ -3616,6 +3669,42 @@ dialog.side::backdrop {
   border-color: var(--ink);
 }
 
+.example-pic {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--well);
+  color: var(--muted);
+}
+
+.example-pic img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.3s;
+}
+
+.example-pic img.loaded {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .example:hover .example-pic img {
+    transform: scale(1.03);
+  }
+}
+
+.example-text {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
 .example small.eyebrow {
   margin: 0;
 }
@@ -3624,12 +3713,8 @@ dialog.side::backdrop {
   font-size: 14px;
 }
 
-.example span {
-  color: var(--muted);
-}
-
 .example em {
-  color: var(--ink);
+  color: var(--muted);
   font-style: italic;
 }
 

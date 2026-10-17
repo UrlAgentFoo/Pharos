@@ -4,7 +4,7 @@
  * optionally how to run it quickly (a book action with small parameters).
  */
 import { readFile, stat } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { parse } from "yaml";
 import { type Artifact, type Example, type Params, type Plan, bookAction } from "@pharos/contracts";
 import type { Library } from "@pharos/books";
@@ -16,7 +16,11 @@ export const EXAMPLES_WORKSPACE = "examples";
 
 interface ExampleSource extends Example {
   paths: { path: string; name: string }[];
+  imagePath?: string;
 }
+
+/** The picture formats an example's card can show. */
+const IMAGE_TYPES: Record<string, string> = { ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp" };
 
 export class ExampleError extends Error {
   constructor(
@@ -43,6 +47,8 @@ export async function loadExamples(dirs: string[]): Promise<ExampleSource[]> {
       );
       const present = await Promise.all(paths.map((p) => stat(p.path).then(() => true, () => false)));
       if (!paths.length || present.includes(false)) continue;
+      const image = typeof item.image === "string" ? resolve(dirname(file), item.image) : undefined;
+      const imagePath = image && IMAGE_TYPES[extname(image).toLowerCase()] && (await stat(image).then((s) => s.isFile(), () => false)) ? image : undefined;
       out.push({
         id: item.id,
         title: String(item.title ?? item.id),
@@ -50,8 +56,10 @@ export async function loadExamples(dirs: string[]): Promise<ExampleSource[]> {
         description: String(item.description ?? ""),
         prompt: String(item.prompt ?? ""),
         files: paths.map((p) => p.name),
+        ...(imagePath ? { image: true } : {}),
         ...(run(item.run) ? { run: run(item.run)! } : {}),
         paths,
+        ...(imagePath ? { imagePath } : {}),
       });
     }
   }
@@ -69,7 +77,15 @@ function run(raw: unknown): Example["run"] | undefined {
   };
 }
 
-export const publicExample = ({ paths: _paths, ...e }: ExampleSource): Example => e;
+export const publicExample = ({ paths: _paths, imagePath: _image, ...e }: ExampleSource): Example => e;
+
+/** An example's picture for its card, and its media type. */
+export async function exampleImage(dirs: string[], id: string): Promise<{ data: Buffer; type: string }> {
+  const example = (await loadExamples(dirs)).find((e) => e.id === id);
+  if (!example) throw new ExampleError(404, `no example "${id}"`);
+  if (!example.imagePath) throw new ExampleError(404, `example "${id}" has no picture`);
+  return { data: await readFile(example.imagePath), type: IMAGE_TYPES[extname(example.imagePath).toLowerCase()] };
+}
 
 export async function loadExample(dirs: string[], id: string, workspaces: WorkspaceStore, workspace: string): Promise<Artifact[]> {
   const example = (await loadExamples(dirs)).find((e) => e.id === id);

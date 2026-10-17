@@ -2,13 +2,15 @@
 # they'd been dropped in, and suggests a problem statement for the assistant.
 # `run` says how to run it quickly: a book action with parameters small enough to
 # finish in seconds (a short simulated time); `pharos warm` runs them all once, so
-# opening an example later comes straight from the cache.
+# opening an example later comes straight from the cache. `image` is the card's
+# picture (480 × 300; make_images.py draws them).
 # Paths are relative to this folder.
 - id: nuclei-timelapse
   title: Cells moving over time
   kind: Microscopy time-lapse
   description: A 3D fluorescence time-lapse of 14 nuclei drifting over 10 frames (synthetic, 96 × 96 × 12 voxels).
   files: [{ path: data/nuclei-timelapse.tif }]
+  image: images/nuclei-timelapse.webp
   prompt: Track the nuclei over time and make a video of how they move.
   run: { book: cell-imaging, action: track, params: { diameter: 24, max_distance: 15 } }
 - id: nuclei-stack
@@ -16,6 +18,7 @@
   kind: Microscopy z-stack
   description: A 3D fluorescence stack of 10 nuclei (synthetic, 64 × 64 × 12 voxels, 0.5 µm pixels).
   files: [{ path: data/nuclei-stack.tif }]
+  image: images/nuclei-stack.webp
   prompt: Count the nuclei and measure their volume.
   run: { book: cell-imaging, action: measure, params: { diameter: 24 } }
 - id: cylinder-flow
@@ -23,6 +26,7 @@
   kind: OpenFOAM case
   description: A 2D OpenFOAM case of fluid flowing past a square obstacle; it sheds a vortex street.
   files: [{ path: ../books/fluid-flow/example/case, name: cylinder-flow }]
+  image: images/cylinder-flow.webp
   prompt: Simulate the flow at 1.5 m/s and show the vortices.
   run: { book: fluid-flow, action: simulate, params: { speed: 1.5, end_time: 20 } }
 - id: crowded-nuclei
@@ -30,6 +34,7 @@
   kind: Microscopy image (2D)
   description: One 2D image of 48 nuclei of mixed sizes, some touching, lit unevenly (synthetic, 256 × 256 pixels, 0.65 µm).
   files: [{ path: data/crowded-nuclei.tif }]
+  image: images/crowded-nuclei.webp
   prompt: Count the nuclei and measure their area and brightness.
   run: { book: cell-imaging, action: measure, params: { diameter: 30 } }
 - id: crawling-cells
@@ -37,6 +42,7 @@
   kind: Microscopy time-lapse (2D)
   description: A 2D time-lapse of 16 nuclei wandering over 30 frames, one per minute (synthetic, 160 × 160 pixels).
   files: [{ path: data/crawling-cells.tif }]
+  image: images/crawling-cells.webp
   prompt: Track each nucleus and make a video of the tracks.
   run: { book: cell-imaging, action: track, params: { diameter: 24, max_distance: 10 } }
 - id: organoid
@@ -44,6 +50,7 @@
   kind: Microscopy z-stack
   description: A hollow ball of 60 nuclei, like an organoid or early embryo (synthetic, 128 × 128 × 32 voxels).
   files: [{ path: data/organoid.tif }]
+  image: images/organoid.webp
   prompt: Segment the nuclei, show them in 3D and measure their volume.
   run: { book: cell-imaging, action: measure, params: { diameter: 22 } }
 - id: nuclei-zarr
@@ -51,6 +58,7 @@
   kind: OME-Zarr stack
   description: A 3D stack of 18 nuclei in the OME-Zarr format used by big-image tools (synthetic, 96 × 96 × 16 voxels).
   files: [{ path: data/nuclei.zarr }]
+  image: images/nuclei-zarr.webp
   prompt: Count the nuclei and measure their volume.
   run: { book: cell-imaging, action: measure, params: { diameter: 24 } }
 - id: backward-step
@@ -58,6 +66,7 @@
   kind: OpenFOAM case
   description: A 2D channel that suddenly widens; the flow separates at the step and reattaches further down.
   files: [{ path: cases/backward-step, name: backward-step }]
+  image: images/backward-step.webp
   prompt: Simulate the flow at 1 m/s and show where it recirculates behind the step.
   run: { book: fluid-flow, action: simulate, params: { speed: 1, end_time: 10 } }
 - id: tandem-blocks
@@ -65,6 +74,7 @@
   kind: OpenFOAM case
   description: A 2D case with two square obstacles one behind the other; the first one's vortices hit the second.
   files: [{ path: cases/tandem-blocks, name: tandem-blocks }]
+  image: images/tandem-blocks.webp
   prompt: Simulate the flow at 1 m/s and show the vortices between the blocks.
   run: { book: fluid-flow, action: simulate, params: { speed: 1, end_time: 20 } }
 - id: slot-jet
@@ -72,5 +82,6 @@
   kind: OpenFOAM case
   description: A 2D wall with a narrow opening; the fluid squeezes through as a fast jet.
   files: [{ path: cases/slot-jet, name: slot-jet }]
+  image: images/slot-jet.webp
   prompt: Show me the geometry in 3D, then simulate the jet at 1 m/s.
   run: { book: fluid-flow, action: geometry }
