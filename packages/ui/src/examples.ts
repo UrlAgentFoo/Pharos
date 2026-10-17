@@ -41,10 +41,29 @@ export function showPictures(s: LocalServer, root: ParentNode) {
 
 /** The most cards in the ring; "See all examples" shows the rest. */
 const RING_MAX = 14;
-/** The ring's perspective, in px: `perspective` on .welcome-stage.ring-on in the stylesheet. */
+/** How far the eye is from the ring's middle, in px: each card is seen through `perspective()` from there. */
 const PERSPECTIVE = 1200;
-/** How near the front of the ring comes, in px (the back goes much further off). */
+/**
+ * The ring's scene is SCENE_W px wide, and as tall as the ring needs (measured in `measure`). The ring is laid
+ * out in it, never in the window, and the scene is scaled as a whole to fit: zooming the page then makes the
+ * ring larger or smaller without changing the angle it's seen from.
+ */
+const SCENE_W = 1500;
+/** Below this scale the cards are too small to read, and the grid shows instead. */
+const MIN_SCALE = 0.45;
+/** How near the front of the ring comes, and how far off the back goes, in px. */
 const NEAR = 200;
+const FAR = 760;
+/** How much the back of the ring rises, against how far the front falls: the ring is seen nearly side on. */
+const BACK_RISE = 0.45;
+/** How far the light on the floor under the centre reaches below it, and half its width (`.ring-on .welcome-centre::after`). */
+const FLOOR_BELOW = 48;
+const FLOOR_HALF = 260;
+/** How far the centre stands above the ring's middle: the front cards then clear it with a flatter ring. */
+const LIFT = 64;
+/** The clear space between the light on the floor and the tops of the front cards, and around the scene's edges. */
+const GAP = 20;
+const EDGE = 48;
 /** One turn of the ring, in seconds, while nothing holds it. */
 const TURN_SECONDS = 90;
 
@@ -72,47 +91,85 @@ export function wireExampleGallery(onShow: () => void) {
   const ringCards = () => cards().slice(0, RING_MAX);
   const grid = () => stage.classList.contains("grid-on");
   const welcome = document.getElementById("welcome")!;
+  const scene = document.getElementById("ring-scene")!;
   const centre = stage.querySelector<HTMLElement>(".welcome-centre")!;
-  /** How far down the front of the ring may sit: low enough to pass under the centre, high enough to stay on screen. */
-  const ringDepth = (h: number, cardH: number) => {
-    const grow = PERSPECTIVE / (PERSPECTIVE - NEAR);
-    return { least: (centre.offsetHeight / 2 + 16) / grow + cardH / 2, most: (h / 2 - 48) / grow - cardH / 2 };
+  /** The ring's size and the scene's height, measured in ring mode; `place` and `scale` use them. */
+  let geo = { rx: 0, ry: 0, sceneH: 820 };
+  /** How much perspective enlarges something at depth `z`. */
+  const grow = (z: number) => PERSPECTIVE / (PERSPECTIVE - z);
+  /** The ring's depth behind or before the centre at angle `t` (90° is the front). */
+  const depth = (t: number) => Math.sin(t) * (Math.sin(t) > 0 ? NEAR : FAR);
+  /** How far below the ring's middle a card sits at angle `t` (above it, at the back). */
+  const drop = (t: number, ry: number) => Math.sin(t) * (Math.sin(t) > 0 ? ry : ry * BACK_RISE);
+
+  /**
+   * The ring as tall as it must be for every front card that passes under the light on the floor to clear
+   * it by GAP, and the scene as tall as the ring and the centre need, with the ring's middle where they fit.
+   */
+  const measure = () => {
+    const card = ringCards()[0];
+    const cardW = card?.offsetWidth || 228;
+    const cardH = card?.offsetHeight || 200;
+    const rx = SCENE_W / 2 - cardW / 2 - 20;
+    const clear = centre.offsetHeight / 2 - LIFT + FLOOR_BELOW + GAP;
+    let ry = 0;
+    for (let k = 1; k < 90; k++) {
+      const t = (k / 90) * Math.PI;
+      const g = grow(depth(t));
+      // a card wholly to one side of the light can rise past it
+      if (g * (Math.abs(Math.cos(t) * rx) - cardW / 2) < FLOOR_HALF) ry = Math.max(ry, (clear / g + cardH / 2) / Math.sin(t));
+    }
+    // how far the ring (and the centre with its backdrop) reach above and below the ring's middle
+    let above = centre.offsetHeight / 2 + LIFT + 64;
+    let below = 0;
+    for (let k = 0; k < 180; k++) {
+      const t = (k / 180) * 2 * Math.PI;
+      const g = grow(depth(t));
+      above = Math.max(above, g * (cardH / 2 - drop(t, ry)));
+      below = Math.max(below, g * (cardH / 2 + drop(t, ry)));
+    }
+    const top = above + EDGE / 2;
+    geo = { rx, ry, sceneH: Math.ceil(top + below + EDGE) };
+    scene.style.height = `${geo.sceneH}px`;
+    scene.style.setProperty("--ring-y", `${top.toFixed(1)}px`);
+    scene.style.setProperty("--centre-y", `${(top - LIFT).toFixed(1)}px`);
+    scene.style.setProperty("--card-h", `${cardH}px`);
   };
-  // room for a ring, measured in ring mode (the centre and the cards are smaller there): wide enough, and
-  // tall enough for the front of the ring to pass under the centre and stay on screen
-  const fits = () => {
-    if (welcome.clientWidth < 900) return false;
-    const d = ringDepth(stage.clientHeight, cards()[0]?.offsetHeight || 150);
-    return d.most >= d.least;
-  };
+  /** The scene's scale that fits the stage; never above 1, so zooming the page in makes the ring larger. */
+  const scale = () => Math.min(1, stage.clientWidth / SCENE_W, stage.clientHeight / geo.sceneH);
   const ring = () => stage.classList.contains("ring-on");
 
   /**
-   * Each card at its place on the ellipse, turned to face outwards like a card on a carousel: the
-   * front at the bottom and nearest, facing you; the sides edge-on; the back at the top, showing its
-   * reverse (mirrored, under a veil), so the front stays clear.
+   * Each card at its place on the ellipse, turned to face outwards like a card on a carousel: square on
+   * at the front and the back (where it shows its reverse, mirrored, under a veil, so the front stays
+   * clear), and edge-on at the ring's leftmost and rightmost points on screen. The turn is measured from
+   * the line between your eye and the card, so it reads that way through the perspective too.
    */
   const place = () => {
     const shown = ringCards();
     if (!shown.length) return;
-    const w = stage.clientWidth;
-    const h = stage.clientHeight;
-    const cardH = shown[0].offsetHeight || 150;
-    // wide, and much deeper behind than in front: the back of the ring feels far off, the front stays its size
-    const rx = Math.min(w / 2 - 110, 820);
-    const near = NEAR;
-    const far = 760;
-    // perspective enlarges a near card's place as well as its size: as low as the front cards can go
-    // and still clear the bottom (and its hint); they pass under the drop area, never over it
-    const ry = ringDepth(h, cardH).most;
+    const { rx, ry } = geo;
+    // the leftmost and rightmost points on screen are a little in front of the ring's sides, where
+    // cos t / (PERSPECTIVE - NEAR sin t) is largest
+    const side = Math.asin(NEAR / PERSPECTIVE);
     const step = (2 * Math.PI) / shown.length;
     shown.forEach((card, i) => {
-      const t = angle + i * step;
-      // facing outwards: at the front (t = 90°) square on, at the back turned half round
-      const turn = Math.PI / 2 - t;
-      const z = Math.sin(t) * (Math.sin(t) > 0 ? near : far);
-      card.style.transform = `translate3d(${(Math.cos(t) * rx).toFixed(1)}px, ${(Math.sin(t) * ry).toFixed(1)}px, ${z.toFixed(1)}px) rotateY(${turn.toFixed(4)}rad)`;
-      card.classList.toggle("away", Math.cos(turn) < 0);
+      // t from the right-hand side, round through the front and the left, to the back and round again
+      const tau = 2 * Math.PI;
+      const t = ((((angle + i * step - side) % tau) + tau) % tau) + side;
+      // how far round the card has turned from facing you: 0 at the front, 90° at the sides, 180° at the back
+      const facing =
+        t <= Math.PI - side
+          ? ((Math.PI / 2 - t) / (Math.PI / 2 - side)) * (Math.PI / 2)
+          : -Math.PI / 2 - ((t - (Math.PI - side)) / (Math.PI + 2 * side)) * Math.PI;
+      const x = Math.cos(t) * rx;
+      const z = depth(t);
+      // the turn that faces the card to your eye, then turned round from there
+      const turn = Math.atan2(-x, PERSPECTIVE - z) + facing;
+      // each card stands at the ring's middle before it moves, so its own perspective sees it from the one eye there
+      card.style.transform = `perspective(${PERSPECTIVE}px) translate3d(${x.toFixed(1)}px, ${drop(t, ry).toFixed(1)}px, ${z.toFixed(1)}px) rotateY(${turn.toFixed(4)}rad)`;
+      card.style.zIndex = String(Math.round(z));
+      card.classList.toggle("away", Math.cos(facing) < 0);
     });
   };
 
@@ -140,7 +197,9 @@ export function wireExampleGallery(onShow: () => void) {
     // try the ring, then keep it only if it fits (all before the next paint, so nothing flickers)
     stage.classList.add("ring-on");
     list.classList.remove("grid");
-    const asRing = n > 0 && !grid() && fits();
+    measure();
+    const asRing = n > 0 && !grid() && scale() >= MIN_SCALE;
+    scene.style.setProperty("--ring-scale", scale().toFixed(4));
     stage.classList.toggle("ring-on", asRing);
     stage.classList.toggle("flat", n > 0 && !grid() && !asRing);
     list.classList.toggle("grid", !asRing);
@@ -148,6 +207,7 @@ export function wireExampleGallery(onShow: () => void) {
       c.classList.toggle("beyond-ring", asRing && i >= RING_MAX);
       if (!asRing) {
         c.style.transform = "";
+        c.style.zIndex = "";
         c.classList.remove("away");
       }
     });

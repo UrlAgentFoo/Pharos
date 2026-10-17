@@ -28,24 +28,27 @@
         <!-- the drop area in the middle of a ring of example cards, which turns slowly; "See all examples"
              lays the cards out in a grid under the drop area instead, with "Hide examples" at its foot -->
         <div class="welcome-stage" id="welcome-stage">
-          <div class="welcome-centre">
-            <h1 class="display">Drop your data.</h1>
-            <p class="chat-warn" id="no-server" hidden>Pharos runs its tools on this computer through its local server. Start it with <code>npx pharos-lab</code> and open the address it prints.</p>
-            <button class="dropzone" data-action="add-data">
-              <span class="dropzone-icon" id="dropzone-icon"></span>
-              <span class="dropzone-title">Drag and drop files here</span>
-              <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, videos, tables · or click to choose</span>
-            </button>
-            <div class="examples-actions">
-              <button class="icon-btn" data-turn="-1" aria-label="Turn the examples back" title="Turn the examples back" hidden></button>
-              <button class="tb-text" id="examples-more" aria-expanded="false" aria-controls="example-list" hidden>See all examples</button>
-              <button class="icon-btn" data-turn="1" aria-label="Turn the examples on" title="Turn the examples on" hidden></button>
+          <!-- in the ring, one fixed-size scene scaled as a whole to fit, so zooming changes its size, never the view -->
+          <div class="ring-scene" id="ring-scene">
+            <div class="welcome-centre">
+              <h1 class="display">Drop your data.</h1>
+              <p class="chat-warn" id="no-server" hidden>Pharos runs its tools on this computer through its local server. Start it with <code>npx pharos-lab</code> and open the address it prints.</p>
+              <button class="dropzone" data-action="add-data">
+                <span class="dropzone-icon" id="dropzone-icon"></span>
+                <span class="dropzone-title">Drag your files here to begin</span>
+                <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, videos, tables · or click to choose</span>
+              </button>
+              <div class="examples-actions">
+                <button class="icon-btn" data-turn="-1" aria-label="Turn the examples back" title="Turn the examples back" hidden></button>
+                <button class="tb-text" id="examples-more" aria-expanded="false" aria-controls="example-list" hidden>See all examples</button>
+                <button class="icon-btn" data-turn="1" aria-label="Turn the examples on" title="Turn the examples on" hidden></button>
+              </div>
             </div>
+            <section class="examples" id="examples" aria-label="Examples to try">
+              <div class="example-list" id="example-list"></div>
+              <button class="tb-text examples-hide" id="examples-toggle" aria-controls="example-list" hidden>Hide examples</button>
+            </section>
           </div>
-          <section class="examples" id="examples" aria-label="Examples to try">
-            <div class="example-list" id="example-list"></div>
-            <button class="tb-text examples-hide" id="examples-toggle" aria-controls="example-list" hidden>Hide examples</button>
-          </section>
         </div>
       </div>
 
