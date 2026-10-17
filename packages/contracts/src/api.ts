@@ -190,6 +190,16 @@ export interface ApiRoutes {
 
   "GET /api/workspaces": { req: void; res: WorkspaceInfo[] };
   "POST /api/workspaces": { req: { name: string }; res: WorkspaceInfo };
+  /** Saves a project (the UI's project.json) as one .pharos file with the data it uses; `results` adds what its steps made. */
+  "POST /api/projects/export": {
+    req: { project: Record<string, unknown>; path: string; results?: boolean; overwrite?: boolean };
+    res: { path: string; bytes: number; objects: number; missing: string[] };
+  };
+  /** Opens a .pharos file: its data goes back into the windows' workspaces, each checked against its hash. */
+  "POST /api/projects/import": {
+    req: { path: string };
+    res: { project: Record<string, unknown>; imported: number; reused: number; missing: string[] };
+  };
   "GET /api/workspaces/:name/artifacts": { req: void; res: Artifact[] };
   "POST /api/workspaces/:name/artifacts": { req: { path: string; name?: string }; res: Artifact };
   /** Raw file bytes as the body; `?name=<file name>` gives the name and, from its extension, the kind. */
@@ -206,16 +216,6 @@ export interface ApiRoutes {
   /** The file behind a media link; honours Range requests. */
   "GET /api/media/:link": { req: void; res: ArrayBuffer };
   /** An image or labels artifact as TIFF for the viewer (TIFF as is; OME-Zarr uncompressed or zstd converted). */
-  /** Saves a project (the UI's project.json) as one .pharos file with the data it uses; `results` adds what its steps made. */
-  "POST /api/projects/export": {
-    req: { project: Record<string, unknown>; path: string; results?: boolean; overwrite?: boolean };
-    res: { path: string; bytes: number; objects: number; missing: string[] };
-  };
-  /** Opens a .pharos file: its data goes back into the windows' workspaces, each checked against its hash. */
-  "POST /api/projects/import": {
-    req: { path: string };
-    res: { project: Record<string, unknown>; imported: number; reused: number; missing: string[] };
-  };
   "GET /api/workspaces/:name/artifacts/:id/image": { req: void; res: ArrayBuffer };
   /** An OpenFOAM case's solver, mesh size, patches, saved times and inlet speed. */
   "GET /api/workspaces/:name/artifacts/:id/case": { req: void; res: CaseSummary };

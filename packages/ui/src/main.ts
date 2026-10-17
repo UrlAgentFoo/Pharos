@@ -380,7 +380,6 @@ function gatherProject(): ProjectFile {
   return { format: "pharos-project", version: 2, saved: new Date().toISOString(), name: assistant.projectName, docs };
 }
 
-async function saveProject() {
 /** Marks the session as saved now. */
 function savedNow() {
   lastSaved = new Date();
@@ -393,6 +392,7 @@ function savedNow() {
  * Save project…: one file with the windows, their histories and the data
  * they use (and the results, unless left out), so it opens on any computer.
  */
+async function saveProject() {
   const s = server;
   const project = gatherProject();
   if (!s) {
@@ -431,7 +431,6 @@ function savedNow() {
     if (!(await confirmDialog("Replace file?", `${choice.path} already exists. Replace it?`, "Replace"))) return;
     saved = await run(label, () => s.exportProject(project, choice.path, choice.results, true));
   }
-}
   if (!saved) return;
   lastSaveDir = choice.path.slice(0, choice.path.lastIndexOf(sep)) || sep;
   notify(`Saved ${choice.path} · ${formatSize(saved.bytes)}`);
@@ -450,12 +449,13 @@ async function projectSizes(s: LocalServer, project: ProjectFile): Promise<{ dat
   }
   const sizes = await Promise.all([...results].map(([id, w]) => s.artifact(w, id).then((a) => a.sizeBytes ?? 0, () => 0)));
   return { data: [...data.values()].reduce((a, b) => a + b, 0), results: sizes.reduce((a, b) => a + b, 0) };
+}
 
 function pickProject() {
-  const input = $<HTMLInputElement>("project-input");
   const s = server;
   // with the local server, the file is read on disk, so a project with gigabytes of data opens without the page holding it
   if (s) return void openProjectFile(s);
+  const input = $<HTMLInputElement>("project-input");
   input.value = "";
   input.onchange = async () => {
     const f = input.files?.[0];
@@ -475,7 +475,6 @@ async function openProject(bytes: Uint8Array, filename: string) {
   updateDesk();
 }
 
-/** Replaces the session with a project's windows, each showing its data and history as saved. */
 /** Open project… through the local server: its data goes back into the workspaces, each checked against its hash. */
 async function openProjectFile(s: LocalServer) {
   const path = await browseDialog(s, { title: "Open project", pickFolder: false, start: lastSaveDir, accept: (e) => !e.isDir && e.name.toLowerCase().endsWith(PROJECT_EXT), empty: "No Pharos projects (.pharos) here" });
@@ -505,13 +504,14 @@ async function findArtifact(s: LocalServer, workspace: string, id: string): Prom
   return null;
 }
 
+/** Replaces the session with a project's windows, each showing its data and history as saved. */
 async function restoreProject(project: ProjectFile) {
   for (const d of [...ws.docs]) ws.close(d.id);
   assistant.setProjectName(project.name);
   assistant.reset();
   const missing: string[] = [];
-  for (const pd of project.docs) {
   let remade = 0;
+  for (const pd of project.docs) {
     // the data, found by its hash; without it the window can't be shown
     const source = server ? await findArtifact(server, pd.workspace, pd.source.id) : null;
     if (!source) {
