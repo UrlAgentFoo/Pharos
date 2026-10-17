@@ -19,12 +19,13 @@ import { type ViewState, Viewer, newViewState, scaledCopy, setRanges } from "./v
 export type Loaded =
   | { type: "image"; image: Image; view: ViewState }
   | { type: "table"; rows: string[][]; total: number }
+  /** A media link the video streams from: nothing of it is held in the page. */
   | { type: "video"; url: string }
   | { type: "model"; ply: ArrayBuffer }
   | { type: "splat"; ply: ArrayBuffer }
   | { type: "case"; summary: CaseSummary }
   | { type: "text"; text: string }
-  | { type: "page"; url: string }
+  | { type: "page"; url: string; bytes: number }
   | { type: "info" }
   | { type: "error"; message: string };
 
@@ -55,9 +56,12 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
       const ply = await s.content(workspace, a.id);
       return isSplatPly(ply) ? { type: "splat", ply } : { type: "model", ply };
     }
-    if (a.format === "mp4") return { type: "video", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "video/mp4" })) };
+    if (a.format === "mp4") return { type: "video", url: await s.artifactLink(workspace, a.id) };
     if (a.format === "openfoam-case") return { type: "case", summary: await s.caseSummary(workspace, a.id) };
-    if (a.format === "html") return { type: "page", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "text/html" })) };
+    if (a.format === "html") {
+      const page = await s.content(workspace, a.id);
+      return { type: "page", url: URL.createObjectURL(new Blob([page], { type: "text/html" })), bytes: page.byteLength };
+    }
     if (a.format === "json") return { type: "text", text: new TextDecoder().decode(await s.content(workspace, a.id)) };
     return { type: "info" };
   } catch (e) {
@@ -65,9 +69,9 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
   }
 }
 
-/** Frees what a loaded entry holds outside the page (video blobs). */
+/** Frees what a loaded entry holds outside the page (a page's blob). */
 export function releaseView(entry: Loaded) {
-  if (entry.type === "video" || entry.type === "page") URL.revokeObjectURL(entry.url);
+  if (entry.type === "page") URL.revokeObjectURL(entry.url);
 }
 
 /**

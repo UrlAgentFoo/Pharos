@@ -2613,6 +2613,55 @@ dialog footer .quiet-danger {
   color: var(--danger);
 }
 
+/* the assistant's token usage, in its settings: counts in columns, the cached share under the input */
+.usage {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.usage-table {
+  width: 100%;
+  margin: 6px 0 8px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 4px 0;
+  text-align: right;
+  font-weight: 400;
+}
+
+.usage-table thead th {
+  width: 30%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.usage-table tbody th {
+  text-align: left;
+}
+
+.usage-table tbody tr + tr:not(.sub) {
+  border-top: 1px solid var(--line);
+}
+
+.usage-table .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.usage-table .sub th {
+  padding: 0 0 4px 12px;
+}
+
+.usage-table .sub td {
+  padding: 0 0 4px;
+}
+
 .field {
   display: grid;
   gap: 4px;
@@ -3678,6 +3727,17 @@ dialog.side::backdrop {
 
 .ws-pick [data-picked] {
   flex: 1;
+}
+
+/* what the workspace takes on disk, then where it lives */
+.ws-usage {
+  margin: 8px 0 2px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-where {
+  overflow-wrap: anywhere;
 }
 
 .ws-row input[type="checkbox"] {

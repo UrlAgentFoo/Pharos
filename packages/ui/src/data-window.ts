@@ -22,6 +22,7 @@ import type { Artifact, ParamSpec, Params } from "@pharos/contracts";
 import type { Image } from "@pharos/core";
 import type { LocalServer } from "./api.js";
 import { type Loaded, type Mounted, loadView, mountView, releaseView } from "./data-views.js";
+import { forgetView, holdView, touchView } from "./view-memory.js";
 import { thumbnailElement } from "./viewer.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
@@ -157,6 +158,8 @@ export class DataWindow {
   private readonly viewed = new Map<string, string>();
   private readonly artifacts = new Map<string, Artifact>();
   private shownKey = "";
+  /** The artifact the stage shows: its loaded data stays in memory however full the budget is. */
+  private onStage: string | null = null;
   private drawerKey = "";
   /** The history marker is being dragged: the strip isn't redrawn under the pointer. */
   private scrubbing = false;
@@ -269,8 +272,13 @@ export class DataWindow {
     else void this.renderDrawer();
   }
 
-  /** An artifact's viewer data, loaded once per window. */
+  /**
+   * An artifact's viewer data, loaded once per window and kept while memory
+   * allows: every window's views share one budget, and one not shown lately
+   * goes when that's full, to load again from the server's copy if needed.
+   */
   private async entry(id: string): Promise<Loaded> {
+    const key = `${this.doc.id}/${id}`;
     let entry = this.loaded.get(id);
     if (!entry) {
       entry = this.artifact(id).then((a) => loadView(this.hooks.server()!, this.doc.workspace, a));
@@ -278,9 +286,16 @@ export class DataWindow {
     }
     if (entry instanceof Promise) {
       const done = await entry;
+      if (this.loaded.get(id) !== entry) return done; // the window closed while it loaded
       this.loaded.set(id, done);
+      holdView(key, done, () => this.onStage === id, () => {
+        if (this.loaded.get(id) !== done) return;
+        this.loaded.delete(id);
+        releaseView(done);
+      });
       return done;
     }
+    touchView(key);
     return entry;
   }
 
@@ -346,6 +361,8 @@ export class DataWindow {
     }
     const showId = this.viewed.get(artifactId) ?? artifactId;
     if (!(this.loaded.get(showId) && !(this.loaded.get(showId) instanceof Promise))) this.stage.innerHTML = `<p class="dv-loading">Loading…</p>`;
+    // what the stage is about to show counts as on screen while it loads, so the budget can't drop it on arrival
+    this.onStage = showId;
     const entry = await this.entry(showId);
     if (this.shownKey !== key) return; // the selection moved on while loading
     const artifact = await this.artifact(showId);
@@ -390,6 +407,7 @@ export class DataWindow {
   private unmount() {
     this.mounted?.destroy();
     this.mounted = null;
+    this.onStage = null;
     this.stage.classList.remove("has-image", "has-model");
   }
 
@@ -740,6 +758,10 @@ export class DataWindow {
 
   destroy() {
     this.unmount();
-    for (const entry of this.loaded.values()) if (!(entry instanceof Promise)) releaseView(entry);
+    for (const [id, entry] of this.loaded) {
+      forgetView(`${this.doc.id}/${id}`);
+      if (!(entry instanceof Promise)) releaseView(entry);
+    }
+    this.loaded.clear();
   }
 }

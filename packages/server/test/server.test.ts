@@ -210,6 +210,26 @@ describe("workspaces", () => {
     expect(img.shape).toMatchObject({ width: 8, height: 8 });
   });
 
+  it("streams a file through a media link, in byte ranges, without the token", async () => {
+    const bytes = "0123456789abcdefghij";
+    const clip = await (await api("/api/workspaces/demo/artifacts/upload?name=clip.mp4", { method: "PUT", body: bytes })).json();
+    const { url } = await (await api(`/api/workspaces/demo/artifacts/${clip.id}/link`, { method: "POST" })).json();
+    expect(url).toMatch(/^\/api\/media\/[\w-]{20,}$/);
+    const whole = await fetch(`${server.url}${url}`);
+    expect(whole.headers.get("content-type")).toBe("video/mp4");
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    expect(await whole.text()).toBe(bytes);
+    const part = await fetch(`${server.url}${url}`, { headers: { range: "bytes=5-9" } });
+    expect(part.status).toBe(206);
+    expect(part.headers.get("content-range")).toBe("bytes 5-9/20");
+    expect(await part.text()).toBe("56789");
+    expect(await (await fetch(`${server.url}${url}`, { headers: { range: "bytes=-3" } })).text()).toBe("hij");
+    expect((await fetch(`${server.url}${url}`, { headers: { range: "bytes=40-" } })).status).toBe(416);
+    // only links the server made, and only for reading
+    expect((await fetch(`${server.url}/api/media/not-a-link`)).status).toBe(404);
+    expect((await fetch(`${server.url}${url}`, { method: "POST" })).status).toBe(401);
+  });
+
   it("rejects bad names, unknown file types and missing workspaces", async () => {
     expect((await api("/api/workspaces", json({ name: "../escape" }))).status).toBe(400);
     expect((await api("/api/workspaces/demo/artifacts/upload?name=notes.docx", { method: "PUT", body: "x" })).status).toBe(415);

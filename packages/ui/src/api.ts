@@ -20,6 +20,23 @@ export interface AiConfig {
   keyHint?: string;
   /** The `.env` file the key comes from, when it does. */
   keyFile?: string;
+  /** The assistant's tokens by model, as the server counted them. */
+  usage?: TokenUsage;
+}
+
+export interface TokenCount {
+  requests: number;
+  /** Every input token, the cached ones included. */
+  input: number;
+  cachedInput: number;
+  output: number;
+}
+
+export interface TokenUsage {
+  /** The first day counted (YYYY-MM-DD), or null before any request. */
+  since: string | null;
+  today: Record<string, TokenCount>;
+  total: Record<string, TokenCount>;
 }
 
 export interface DirEntry {
@@ -147,6 +164,11 @@ export class LocalServer {
 
   async content(workspace: string, id: string): Promise<ArrayBuffer> {
     return (await this.call(`${artifactsPath(workspace)}/${id}/content`)).arrayBuffer();
+  }
+
+  /** A media link for an artifact's file, which a <video> streams from disk without the token header. */
+  async artifactLink(workspace: string, id: string): Promise<string> {
+    return ((await (await this.call(`${artifactsPath(workspace)}/${id}/link`, { method: "POST" })).json()) as { url: string }).url;
   }
 
   // ---------------------------------------------------------- ships, jobs and storage

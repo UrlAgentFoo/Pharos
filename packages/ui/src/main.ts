@@ -5,6 +5,7 @@ import { type AskReply, Assistant, type SearchHit, UNTITLED } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
 import { alertDialog, browseDialog, confirmDialog, escapeHtml, isDialogOpen, promptDialog, showDialog } from "./dialogs.js";
 import { exampleCards, showPictures, wireExampleGallery } from "./examples.js";
+import { diskUsage, formatSize, homePath } from "./format.js";
 import { icon } from "./icons.js";
 import { formatShortcut, isMac, matchesShortcut } from "./keys.js";
 import { libraryPanel } from "./library-panel.js";
@@ -16,6 +17,7 @@ import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
 import { type DataDoc, Workspace, blockAt, timeBlocks } from "./workspace.js";
 import { SuggestedControls } from "./suggested-controls.js";
+import { localDay, tokenUsageHtml } from "./token-usage.js";
 import { WindowSummary } from "./window-summary.js";
 import { currentWorkspace, formatTitle, isSupported, setFormats, workspacePanel } from "./workspace-panel.js";
 
@@ -476,9 +478,26 @@ async function restoreSession() {
   }
 }
 
+/** What clearing keeps: the data and results of the project's workspaces, with how much and where. */
+async function keptOnDisk(): Promise<string> {
+  const fallback = "Your data on disk, the workspace and the library are kept.";
+  const s = server;
+  if (!s) return fallback;
+  const names = [...new Set(ws.docs.map((d) => d.workspace))];
+  if (!names.length) names.push(currentWorkspace());
+  try {
+    const [all, lists] = await Promise.all([s.workspaces(), Promise.all(names.map((n) => s.artifacts(n)))]);
+    const size = formatSize(diskUsage(lists.flat()).total);
+    const where = names.length === 1 ? homePath(all.find((w) => w.name === names[0])?.path ?? names[0], s.info.home) : `the ${names.join(" and ")} workspaces`;
+    return `Your data and results stay on this computer (${size} in ${where}), and so does the library.`;
+  } catch {
+    return fallback;
+  }
+}
+
 /** A new, empty project: windows and the conversation go; data on disk and the library stay. */
 async function clearProject() {
-  if (!(await confirmDialog("New project", "Close every window and clear the conversation? Your data on disk, the workspace and the library are kept.", "Clear"))) return;
+  if (!(await confirmDialog("New project", `Close every window and clear the conversation? ${await keptOnDisk()}`, "Clear"))) return;
   for (const d of [...ws.docs]) ws.close(d.id);
   assistant.setProjectName("");
   assistant.reset();
@@ -815,10 +834,11 @@ async function settingsDialog() {
   const body = !server
     ? `<footer><button class="primary" data-cancel>Close</button></footer>`
     : `<form method="dialog">
-        <p class="muted">Say what you want to find out about your data; the assistant picks a recipe and proposes its steps in the window. Nothing runs until you approve. It sees what the data is (size, type, axes), never its contents.</p>
+        <p class="muted">Say what you want to find out about your data; the assistant picks a book and proposes its steps in the window. Nothing runs until you approve. It sees what the data is (size, type, axes), never its contents.</p>
         <label class="field">Model<select name="model">${cfg!.models.map((m) => `<option value="${m.id}"${m.id === cfg!.model ? " selected" : ""}>${escapeHtml(`${m.label} (${m.note})`)}</option>`).join("")}</select></label>
         <label class="field">Anthropic API key <input name="key" type="password" autocomplete="off" spellcheck="false" placeholder="${escapeHtml(keyStatus)}" /></label>
         <p class="muted small">Stored on this computer in <code>~/.config/pharos/settings.json</code>, readable only by you, and used only by the local server. The key is never sent to this page. Requests are billed to the key's Anthropic account.</p>
+        ${tokenUsageHtml(cfg!.usage, cfg!.models, localDay())}
         <p class="error" hidden></p>
         <footer>${cfg!.keySource === "settings" ? `<button type="button" class="danger" data-remove>Remove saved key</button><span class="spacer"></span>` : ""}<button type="button" data-cancel>Cancel</button><button class="primary">Save</button></footer>
       </form>`;

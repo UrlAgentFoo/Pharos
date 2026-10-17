@@ -9,6 +9,7 @@ import { type Artifact, type FormatInfo, sniffFormat } from "@pharos/contracts";
 import { kindIcon } from "./data-window.js";
 import type { DirEntry, LocalServer } from "./api.js";
 import { browseDialog, escapeHtml, formatSize, promptDialog, showDialog } from "./dialogs.js";
+import { diskUsage, diskUsageText, homePath } from "./format.js";
 import { icon } from "./icons.js";
 import { kindLabel } from "./viewers.js";
 
@@ -71,7 +72,8 @@ export async function workspacePanel(
   await server.createWorkspace(name);
   for (;;) {
     const [all, artifacts] = await Promise.all([server.workspaces(), server.artifacts(name)]);
-    const result = await showPanel(name, all.map((w) => w.name), artifacts, (next) => {
+    const where = homePath(all.find((w) => w.name === name)?.path ?? "", server.info.home);
+    const result = await showPanel(name, all.map((w) => w.name), where, artifacts, (next) => {
       name = next;
       setCurrent(name);
     }, server, opts.notify);
@@ -106,6 +108,7 @@ export async function workspacePanel(
 function showPanel(
   name: string,
   names: string[],
+  where: string,
   artifacts: Artifact[],
   choose: (n: string) => void,
   server: LocalServer,
@@ -128,7 +131,8 @@ function showPanel(
      <div class="ws-pick"><span class="muted small" data-picked>Tick data to find books for it, or to ask the assistant.</span>
        <button class="chip" data-find disabled>${icon("search", 13)} Find books</button>
        <button class="chip" data-ask disabled>${icon("sparkle", 13)} Ask the assistant…</button></div>
-     <p class="muted small">Stored on this computer. Data you add is copied in, so the original files are never changed.</p>
+     <p class="ws-usage small">${escapeHtml(diskUsageText(diskUsage(artifacts)))}</p>
+     <p class="muted small">Stored on this computer${where ? ` in <span class="ws-where">${escapeHtml(where)}</span>` : ""}. Data you add is copied in, so the original files are never changed.</p>
      <footer><button data-path>${icon("open", 15)} Add from this computer…</button><button data-upload>${icon("upload", 15)} Upload…</button><button class="primary" data-cancel>Close</button></footer>`,
     (done, el) => {
       el.querySelector<HTMLSelectElement>("[data-ws]")!.addEventListener("change", (e) => {

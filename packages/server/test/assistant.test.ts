@@ -38,7 +38,7 @@ const fakeAi = (): AiClient =>
         create: async (body: Record<string, unknown>) => {
           requests.push(JSON.parse(JSON.stringify(body)));
           const content = replies.shift() ?? [{ type: "text", text: "(no reply scripted)" }];
-          return { model: body.model, stop_reason: content.some((b) => (b as { type: string }).type === "tool_use") ? "tool_use" : "end_turn", content };
+          return { model: body.model, stop_reason: content.some((b) => (b as { type: string }).type === "tool_use") ? "tool_use" : "end_turn", content, usage: { input_tokens: 10, output_tokens: 2 } };
         },
       },
     },
@@ -166,5 +166,14 @@ describe("assistant planning", () => {
     ]);
     expect(messages[2].role).toBe("user");
     expect(String(messages[2].content)).toContain("Message: what can you do?");
+  });
+
+  it("counts the tokens of every reply, for Settings to show", async () => {
+    const config = await (await fetch(`${server.url}/api/ai/config`, { headers: { "x-pharos-token": TOKEN } })).json();
+    const counts = Object.values(config.usage.total) as { requests: number; input: number; output: number }[];
+    expect(counts.reduce((n, c) => n + c.requests, 0)).toBe(requests.length);
+    expect(counts.reduce((n, c) => n + c.output, 0)).toBe(2 * requests.length);
+    expect(config.usage.today).toEqual(config.usage.total);
+    expect(JSON.stringify(config)).not.toMatch(/sk-ant/);
   });
 });

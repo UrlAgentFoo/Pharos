@@ -9,6 +9,7 @@ import { Library, type TrustLookup, hasErrors, resolveBook } from "@pharos/books
 import type { ChatTurn, ControlsLayout, Step } from "@pharos/contracts";
 import { layoutControls } from "./controls.js";
 import { AiError, type AiClientFactory, apiKeyFor, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
+import { TokenMeter, metered } from "./token-usage.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
@@ -77,7 +78,11 @@ const FORMAT_MIME: Record<string, string> = {
   csv: "text/csv; charset=utf-8",
   json: "application/json",
   mp4: "video/mp4",
+  mov: "video/quicktime", // declared by the colmap ship
 };
+
+/** Media links kept at once; each window asks for one per video it shows. */
+const MAX_MEDIA_LINKS = 1000;
 
 /** Default data folder: $PHAROS_HOME, or ~/Pharos. */
 export function defaultDataDir(): string {
@@ -90,7 +95,10 @@ const MAX_FILE_BODY = 4 * 1024 ** 3;
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = opts.token ?? newToken();
   const settingsDir = opts.configDir ?? configDir();
+  const tokens = await TokenMeter.load(settingsDir);
   const makeClient = opts.aiClient ?? defaultClientFactory;
+  /** Media links (a secret each) → the file each serves and its type. */
+  const mediaLinks = new Map<string, { path: string; type: string }>();
   /** The assistant's Controls layouts, by book version, action, artifact, request and model. */
   const controlLayouts = new Map<string, Promise<{ layout: ControlsLayout; model?: string }>>();
   const dataDir = opts.dataDir ?? defaultDataDir();
@@ -121,6 +129,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (!isAllowedOrigin(req.headers.origin, port)) throw new HttpError(403, "cross-origin request refused");
 
     const url = new URL(req.url ?? "/", `http://${req.headers.host}`);
+    // a media link is its own secret: a <video> can't send the token header, and the link serves just its one file
+    if (url.pathname.startsWith("/api/media/") && (req.method === "GET" || req.method === "HEAD")) {
+      res.setHeader("Cache-Control", "no-store");
+      return serveMedia(req, res, decodeURIComponent(url.pathname.slice("/api/media/".length)));
+    }
     if (url.pathname.startsWith("/api/")) {
       if (!tokenMatches(req, token)) throw new HttpError(401, "missing or invalid token");
       res.setHeader("Cache-Control", "no-store");
@@ -181,11 +194,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, { path: file, bytes: body.length });
       }
       case "GET /api/ai/config":
-        return sendJson(res, 200, configView(await loadSettings(settingsDir), opts.envFile));
+        return sendJson(res, 200, { ...configView(await loadSettings(settingsDir), opts.envFile), usage: tokens.view() });
       case "PUT /api/ai/config": {
         const next = updateSettings(await loadSettings(settingsDir), await readJson(req));
         await saveSettings(settingsDir, next);
-        return sendJson(res, 200, configView(next, opts.envFile));
+        return sendJson(res, 200, { ...configView(next, opts.envFile), usage: tokens.view() });
       }
       case "GET /api/workspaces":
         return sendJson(res, 200, await workspaces.list());
@@ -262,7 +275,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const settings = await loadSettings(settingsDir);
         let client;
         try {
-          client = makeClient(apiKeyFor(settings, opts.envFile));
+          client = metered(makeClient(apiKeyFor(settings, opts.envFile)), tokens);
         } catch {
           throw new HttpError(400, "No API key configured. Add one in Settings.");
         }
@@ -283,7 +296,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         if (!laid) {
           let client;
           try {
-            client = makeClient(apiKeyFor(settings, opts.envFile));
+            client = metered(makeClient(apiKeyFor(settings, opts.envFile)), tokens);
           } catch {
             throw new HttpError(400, "No API key configured. Add one in Settings.");
           }
@@ -430,11 +443,44 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   }
 
   /** Routes under /api/workspaces/:name/artifacts. */
+  /** One file behind a media link, in the byte ranges a player asks for, so a video streams from disk rather than loading whole. */
+  async function serveMedia(req: IncomingMessage, res: ServerResponse, link: string) {
+    const media = mediaLinks.get(link);
+    if (!media) throw new HttpError(404, "this media link has expired; show the result again");
+    const size = (await stat(media.path)).size;
+    const range = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range ?? ""));
+    if (range && (range[1] || range[2])) {
+      // "bytes=-500" is the last 500 bytes
+      const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+      if (start >= size || start > end) {
+        res.writeHead(416, { "Content-Range": `bytes */${size}` });
+        return void res.end();
+      }
+      res.writeHead(206, { "Content-Type": media.type, "Content-Length": end - start + 1, "Content-Range": `bytes ${start}-${end}/${size}`, "Accept-Ranges": "bytes" });
+      if (req.method === "HEAD") return void res.end();
+      createReadStream(media.path, { start, end }).pipe(res);
+      return;
+    }
+    res.writeHead(200, { "Content-Type": media.type, "Content-Length": size, "Accept-Ranges": "bytes" });
+    if (req.method === "HEAD") return void res.end();
+    createReadStream(media.path).pipe(res);
+  }
+
   async function workspaceApi(req: IncomingMessage, res: ServerResponse, url: URL, route: string) {
-    const m = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/artifacts(?:\/([^/]+)(\/content|\/image|\/case)?)?$/);
+    const m = url.pathname.match(/^\/api\/workspaces\/([^/]+)\/artifacts(?:\/([^/]+)(\/content|\/image|\/case|\/link)?)?$/);
     if (!m) throw new HttpError(404, `no route ${route}`);
     const name = decodeURIComponent(m[1]);
     const [id, content] = [m[2], m[3] === "/content"];
+    if (req.method === "POST" && id && m[3] === "/link") {
+      const a = await workspaces.get(name, id);
+      if (!(await stat(a.uri)).isFile()) throw new HttpError(400, `${a.name ?? a.id} is a folder (${a.format}); only files have media links`);
+      const link = newToken();
+      mediaLinks.set(link, { path: a.uri, type: FORMAT_MIME[a.format] ?? "application/octet-stream" });
+      // links last while the server runs; the oldest go once there are many
+      while (mediaLinks.size > MAX_MEDIA_LINKS) mediaLinks.delete(mediaLinks.keys().next().value!);
+      return sendJson(res, 200, { url: `/api/media/${link}` });
+    }
     if (req.method === "GET" && id && m[3] === "/image") {
       const tiff = await imageAsTiff(await workspaces.get(name, id));
       return sendBytes(res, Buffer.from(tiff.buffer, tiff.byteOffset, tiff.byteLength), "image/tiff");

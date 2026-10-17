@@ -197,6 +197,14 @@ export interface ApiRoutes {
   "GET /api/workspaces/:name/artifacts/:id": { req: void; res: Artifact };
   /** The artifact's bytes (files only; folders such as OME-Zarr answer 400). */
   "GET /api/workspaces/:name/artifacts/:id/content": { req: void; res: ArrayBuffer };
+  /**
+   * A media link for an artifact's file: `/api/media/<secret>`, which a
+   * <video> can stream (in byte ranges) without the token header. It serves
+   * only that file, for as long as the server runs.
+   */
+  "POST /api/workspaces/:name/artifacts/:id/link": { req: void; res: { url: string } };
+  /** The file behind a media link; honours Range requests. */
+  "GET /api/media/:link": { req: void; res: ArrayBuffer };
   /** An image or labels artifact as TIFF for the viewer (TIFF as is; OME-Zarr uncompressed or zstd converted). */
   "GET /api/workspaces/:name/artifacts/:id/image": { req: void; res: ArrayBuffer };
   /** An OpenFOAM case's solver, mesh size, patches, saved times and inlet speed. */

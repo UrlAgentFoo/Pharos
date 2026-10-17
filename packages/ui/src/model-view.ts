@@ -16,6 +16,7 @@ export class ModelView {
   private readonly controls: OrbitControls;
   private readonly resize: ResizeObserver;
   private frame = 0;
+  private drawing = false;
 
   constructor(
     private readonly host: HTMLElement,
@@ -64,13 +65,27 @@ export class ModelView {
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(host);
     this.fit();
-    const tick = () => {
-      this.controls.update();
-      this.renderer.render(this.scene, this.camera);
-      this.frame = requestAnimationFrame(tick);
-    };
-    tick();
+    this.controls.addEventListener("change", this.redraw);
+    this.redraw();
   }
+
+  /**
+   * Draws on the next frame, then keeps drawing only while the camera still
+   * moves (a drag, a scroll, or the easing after one): an idle view costs
+   * nothing, however many windows show one.
+   */
+  private redraw = () => {
+    if (this.drawing) return;
+    this.drawing = true;
+    this.frame = requestAnimationFrame(this.step);
+  };
+
+  private step = () => {
+    this.drawing = false;
+    const moving = this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    if (moving) this.redraw();
+  };
 
   /** The model as it's framed now (for the minimised-window shelf); drawn fresh, as WebGL keeps no frame between renders. */
   snapshot(max: number): HTMLCanvasElement | null {
@@ -86,11 +101,13 @@ export class ModelView {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.redraw();
   }
 
   destroy() {
     cancelAnimationFrame(this.frame);
     this.resize.disconnect();
+    this.controls.removeEventListener("change", this.redraw);
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();

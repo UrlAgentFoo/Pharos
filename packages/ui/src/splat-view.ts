@@ -204,6 +204,7 @@ export class SplatView {
   private readonly keys: Uint16Array;
   private lastView = new THREE.Matrix4();
   private frame = 0;
+  private drawing = false;
   readonly count: number;
 
   constructor(
@@ -286,14 +287,28 @@ export class SplatView {
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(host);
     this.fit();
-    const tick = () => {
-      this.controls.update();
-      this.sortIfMoved();
-      this.renderer.render(this.scene, this.camera);
-      this.frame = requestAnimationFrame(tick);
-    };
-    tick();
+    this.controls.addEventListener("change", this.redraw);
+    this.redraw();
   }
+
+  /**
+   * Draws on the next frame, then keeps drawing only while the camera still
+   * moves (a drag, a scroll, or the easing after one): an idle view costs
+   * nothing, however many windows show one.
+   */
+  private redraw = () => {
+    if (this.drawing) return;
+    this.drawing = true;
+    this.frame = requestAnimationFrame(this.step);
+  };
+
+  private step = () => {
+    this.drawing = false;
+    const moving = this.controls.update();
+    this.sortIfMoved();
+    this.renderer.render(this.scene, this.camera);
+    if (moving) this.redraw();
+  };
 
   /** Sorts the Gaussians back to front when the camera has moved. */
   private sortIfMoved() {
@@ -349,11 +364,13 @@ export class SplatView {
     this.material.uniforms.uViewport.value.copy(size);
     const p = this.camera.projectionMatrix.elements;
     this.material.uniforms.uFocal.value.set((p[0] * size.x) / 2, (p[5] * size.y) / 2);
+    this.redraw();
   }
 
   destroy() {
     cancelAnimationFrame(this.frame);
     this.resize.disconnect();
+    this.controls.removeEventListener("change", this.redraw);
     this.controls.dispose();
     for (const t of this.textures) t.dispose();
     this.material.dispose();
