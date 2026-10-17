@@ -14,6 +14,8 @@ summary must show a time axis (`t` in its axes, more than one time point).
 - Very fast-moving or very dense cells where nuclei overlap from frame to
   frame: tracking will be unreliable; say so.
 - Brightfield without a fluorescent nuclear marker.
+- The user also has ground-truth tracks (a `.geff`) and wants a score: use
+  **Track nuclei and score against ground truth**.
 
 ## Parameters
 

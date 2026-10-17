@@ -69,7 +69,8 @@ export interface DataDoc {
   output?: string;
   /** Why the assistant proposed these steps, when it did. */
   rationale?: string;
-  ui: { controls: boolean; history: "full" | "slim" };
+  /** As for images, plus which view fills the body: the history's selected step, or every result as a grid. */
+  ui: { controls: boolean; history: "full" | "slim"; mode?: "history" | "results" };
 }
 
 /** Images that share controls, for example the same field in several conditions. */

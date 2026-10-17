@@ -16,7 +16,7 @@ const DEFAULT_WORKSPACE = "default";
 
 /** Names the server knows how to store; mirrors the server's sniffing. */
 const SUPPORTED = /\.(ome\.tiff?|tiff?|czi|nd2|lif|csv|parquet|ply|vtk|vtu|vtp|mp4)$/i;
-export const isSupported = (e: Pick<DirEntry, "name" | "isDir">) => (e.isDir ? /\.zarr$/i.test(e.name) : SUPPORTED.test(e.name));
+export const isSupported = (e: Pick<DirEntry, "name" | "isDir">) => (e.isDir ? /\.(zarr|geff)$/i.test(e.name) : SUPPORTED.test(e.name));
 
 const KIND_ICON: Record<Artifact["kind"], string> = {
   volume: "image",

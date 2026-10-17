@@ -25,6 +25,7 @@ export const FORMATS = [
   "vtk",
   "mp4",
   "openfoam-case",
+  "geff",
 ] as const;
 export type Format = (typeof FORMATS)[number];
 export const FormatSchema = Type.Union(FORMATS.map((f) => Type.Literal(f)));

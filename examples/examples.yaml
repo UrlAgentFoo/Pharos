@@ -19,3 +19,45 @@
   description: A 2D OpenFOAM case of fluid flowing past a square obstacle; it sheds a vortex street.
   files: [{ path: ../books/fluid-sim/example/case, name: cylinder-flow }]
   prompt: Simulate the flow at 1.5 m/s and show the vortices.
+- id: crowded-nuclei
+  title: A crowded field of nuclei
+  kind: Microscopy image (2D)
+  description: One 2D image of 48 nuclei of mixed sizes, some touching, lit unevenly (synthetic, 256 × 256 pixels, 0.65 µm).
+  files: [{ path: data/crowded-nuclei.tif }]
+  prompt: Count the nuclei and measure their area and brightness.
+- id: crawling-cells
+  title: Cells crawling in 2D
+  kind: Microscopy time-lapse (2D)
+  description: A 2D time-lapse of 16 nuclei wandering over 30 frames, one per minute (synthetic, 160 × 160 pixels).
+  files: [{ path: data/crawling-cells.tif }]
+  prompt: Track each nucleus and make a video of the tracks.
+- id: organoid
+  title: An organoid in 3D
+  kind: Microscopy z-stack
+  description: A hollow ball of 60 nuclei, like an organoid or early embryo (synthetic, 128 × 128 × 32 voxels).
+  files: [{ path: data/organoid.tif }]
+  prompt: Segment the nuclei, show them in 3D and measure their volume.
+- id: nuclei-zarr
+  title: Nuclei saved as OME-Zarr
+  kind: OME-Zarr stack
+  description: A 3D stack of 18 nuclei in the OME-Zarr format used by big-image tools (synthetic, 96 × 96 × 16 voxels).
+  files: [{ path: data/nuclei.zarr }]
+  prompt: Count the nuclei and measure their volume.
+- id: backward-step
+  title: Flow over a step
+  kind: OpenFOAM case
+  description: A 2D channel that suddenly widens; the flow separates at the step and reattaches further down.
+  files: [{ path: cases/backward-step, name: backward-step }]
+  prompt: Simulate the flow at 1 m/s and show where it recirculates behind the step.
+- id: tandem-blocks
+  title: Two blocks in a row
+  kind: OpenFOAM case
+  description: A 2D case with two square obstacles one behind the other; the first one's vortices hit the second.
+  files: [{ path: cases/tandem-blocks, name: tandem-blocks }]
+  prompt: Simulate the flow at 1 m/s and show the vortices between the blocks.
+- id: slot-jet
+  title: A jet through a slot
+  kind: OpenFOAM case
+  description: A 2D wall with a narrow opening; the fluid squeezes through as a fast jet.
+  files: [{ path: cases/slot-jet, name: slot-jet }]
+  prompt: Show me the geometry in 3D, then simulate the jet at 1 m/s.

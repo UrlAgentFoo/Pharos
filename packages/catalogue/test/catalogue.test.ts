@@ -1,12 +1,13 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PassThrough } from "node:stream";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Library } from "@pharos/books";
 import type { DataSummary } from "@pharos/contracts";
 import { createImage, writeTiff } from "@pharos/core";
-import { CatalogueIndex, type MatchableBook, McpServer, acceptProblems, ftsQuery, inspect, matchBooks } from "@pharos/catalogue";
+import { CatalogueIndex, type MatchableBook, McpServer, acceptProblems, ftsQuery, inspect, matchBooks, sniff } from "@pharos/catalogue";
 
 let root: string;
 let lib: Library;
@@ -148,6 +149,13 @@ describe("inspect", () => {
     await writeFile(join(z, ".zattrs"), JSON.stringify({ multiscales: [{ axes: [{ name: "t" }, { name: "c" }, { name: "z" }, { name: "y" }, { name: "x", unit: "micrometer" }], datasets: [{ path: "0", coordinateTransformations: [{ type: "scale", scale: [1, 1, 2, 0.3, 0.3] }] }] }] }));
     await writeFile(join(z, "0", ".zarray"), JSON.stringify({ shape: [10, 1, 20, 256, 256], dtype: "<u2" }));
     expect(await inspect({ uri: z, kind: "volume", format: "ome-zarr" })).toMatchObject({ axes: "tzyx", shape: [10, 20, 256, 256], dtype: "uint16", channels: 1, timepoints: 10, voxelSize: { x: 0.3, z: 2, unit: "µm" } });
+  });
+
+  it("reads a v3 OME-Zarr with capitalised axes and its GEFF ground truth, as the Biohub challenge ships them", async () => {
+    const example = fileURLToPath(new URL("../../../books/score-tracking/example/", import.meta.url));
+    expect(sniff("44b6_e28840c6.geff", true)).toEqual({ kind: "tracks", format: "geff" });
+    expect(await inspect({ uri: join(example, "movie.zarr"), kind: "volume", format: "ome-zarr" })).toMatchObject({ axes: "tzyx", shape: [12, 24, 96, 96], dtype: "uint16", timepoints: 12, voxelSize: { x: 0.40625, z: 1.625, unit: "µm" } });
+    expect(await inspect({ uri: join(example, "truth.geff"), kind: "tracks", format: "geff" })).toMatchObject({ axes: "tzyx", columns: ["t", "z", "y", "x"], rows: 72, timepoints: 12 });
   });
 
   it("reads a CSV's columns and rows, and falls back to kind and size for the rest", async () => {

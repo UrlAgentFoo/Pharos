@@ -233,6 +233,10 @@
                         {
                           "const": "openfoam-case",
                           "type": "string"
+                        },
+                        {
+                          "const": "geff",
+                          "type": "string"
                         }
                       ]
                     }
@@ -440,6 +444,10 @@
                       },
                       {
                         "const": "openfoam-case",
+                        "type": "string"
+                      },
+                      {
+                        "const": "geff",
                         "type": "string"
                       }
                     ]

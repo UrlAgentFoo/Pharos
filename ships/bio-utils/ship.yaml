@@ -8,9 +8,9 @@ tags: [microscopy, conversion, measurement]
 requires: { memory_gb: 4, network: none }
 operations:
   convert:
-    summary: Converts TIFF, OME-TIFF, Zeiss CZI, Nikon ND2 and Leica LIF images to OME-Zarr, with axes in t, c, z, y, x order.
+    summary: Converts TIFF, OME-TIFF, Zeiss CZI, Nikon ND2 and Leica LIF images to OME-Zarr, with axes in t, c, z, y, x order; rewrites other OME-Zarr the same way.
     command: python /opt/pharos/pharos_bio.py convert --in {in.image} --out /out/image.zarr
-    inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, czi, nd2, lif] }]
+    inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, czi, nd2, lif, ome-zarr] }]
     outputs: [{ name: zarr, kind: volume, format: ome-zarr, path: /out/image.zarr }]
     cache: { deterministic: true }
   inspect:

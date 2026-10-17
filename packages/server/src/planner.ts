@@ -256,5 +256,7 @@ export async function planWithAssistant(
     // one repair: the model sees exactly what the check found
     messages.push({ role: "user", content: [{ type: "tool_result", tool_use_id: call.id, is_error: true, content: `Pharos checked this plan and found problems:\n${errors}\nPropose a corrected plan.` }] });
   }
+  // a plan that still doesn't type-check never reaches a window (e.g. a microscopy book on a simulation case)
+  if (plan && problemsText(plan)) return { plan: null, message: `The assistant couldn't make a plan that fits this data:\n${problemsText(plan)}`, matches: ctx.matches, model: served };
   return { plan, message, matches: ctx.matches, model: served };
 }

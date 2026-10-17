@@ -1,0 +1,6 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Flow past two blocks in a row: a small 2D case for Pharos (Re = 100 at 1 m/s).
+\*---------------------------------------------------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; object turbulenceProperties; }
+
+simulationType laminar;

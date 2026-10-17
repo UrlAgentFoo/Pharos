@@ -3,7 +3,8 @@
  * type, channels, time points, voxel size; columns and rows for tables)
  * without loading its data. This summary is all the assistant ever sees.
  *
- * TIFF (ImageJ and OME), OME-Zarr (v2 and v3) and CSV are read here.
+ * TIFF (ImageJ and OME), OME-Zarr (v2 and v3), GEFF track graphs and CSV
+ * are read here.
  * Other formats report their kind, format and size; a converter ship's
  * `inspect` operation can fill in the rest.
  */
@@ -20,6 +21,7 @@ export function sniff(name: string, isDir: boolean, entries: string[] = []): { k
   const n = name.toLowerCase();
   if (isDir) {
     if (n.endsWith(".zarr")) return { kind: "volume", format: "ome-zarr" };
+    if (n.endsWith(".geff")) return { kind: "tracks", format: "geff" };
     if (entries.includes("system") && entries.includes("constant")) return { kind: "sim-case", format: "openfoam-case" };
     return null;
   }
@@ -50,6 +52,7 @@ export async function inspect(artifact: Pick<Artifact, "uri" | "kind" | "format"
   try {
     if (artifact.format === "tiff" || artifact.format === "ome-tiff") return { ...base, ...(await inspectTiff(artifact.uri)) };
     if (artifact.format === "ome-zarr") return { ...base, ...(await inspectZarr(artifact.uri)) };
+    if (artifact.format === "geff") return { ...base, ...(await inspectGeff(artifact.uri)) };
     if (artifact.format === "csv") return { ...base, ...(await inspectCsv(artifact.uri)) };
   } catch {
     // unreadable metadata: the kind and size are still worth reporting
@@ -119,7 +122,8 @@ async function inspectZarr(path: string): Promise<Partial<DataSummary>> {
   const attrs = (v3 ? ((v3.attributes as Record<string, unknown>)?.ome ?? v3.attributes) : await readJson(join(path, ".zattrs"))) as Record<string, unknown> | null;
   const ms = (attrs?.multiscales as { axes?: (string | { name: string })[]; datasets: { path: string; coordinateTransformations?: { type: string; scale?: number[] }[] }[] }[] | undefined)?.[0];
   if (!ms) return {};
-  const names = (ms.axes ?? ["t", "c", "z", "y", "x"]).map((a) => (typeof a === "string" ? a : a.name)).join("");
+  // some writers name axes in capitals (T, Z, Y, X)
+  const names = (ms.axes ?? ["t", "c", "z", "y", "x"]).map((a) => (typeof a === "string" ? a : a.name).toLowerCase()).join("");
   const level0 = ms.datasets[0];
   const array = v3 ? await readJson(join(path, level0.path, "zarr.json")) : await readJson(join(path, level0.path, ".zarray"));
   const fullShape = (array?.shape as number[] | undefined) ?? [];
@@ -137,6 +141,24 @@ async function inspectZarr(path: string): Promise<Partial<DataSummary>> {
     ...(scale && at("x") >= 0
       ? { voxelSize: { x: scale[at("x")], y: scale[at("y")], ...(at("z") >= 0 ? { z: scale[at("z")] } : {}), unit: (unitOf ?? "micrometer").replace("micrometer", "µm") } }
       : {}),
+  };
+}
+
+/** A GEFF graph (a zarr group of nodes and edges): its axes, node count and node properties, from metadata alone. */
+async function inspectGeff(path: string): Promise<Partial<DataSummary>> {
+  const v3 = await readJson(join(path, "zarr.json"));
+  const geff = ((v3?.attributes as Record<string, unknown> | undefined) ?? (await readJson(join(path, ".zattrs"))))?.geff as
+    | { axes?: { name: string; type?: string; min?: number | null; max?: number | null }[]; node_props_metadata?: Record<string, unknown> }
+    | undefined;
+  if (!geff) return {};
+  const ids = (await readJson(join(path, "nodes", "ids", "zarr.json"))) ?? (await readJson(join(path, "nodes", "ids", ".zarray")));
+  const axes = (geff.axes ?? []).map((a) => a.name.toLowerCase()).join("");
+  const time = geff.axes?.find((a) => a.type === "time");
+  return {
+    ...(/^[tczyx]+$/.test(axes) ? { axes } : {}),
+    columns: Object.keys(geff.node_props_metadata ?? {}),
+    ...(Array.isArray(ids?.shape) ? { rows: (ids.shape as number[])[0] } : {}),
+    ...(time && typeof time.min === "number" && typeof time.max === "number" ? { timepoints: time.max - time.min + 1 } : {}),
   };
 }
 

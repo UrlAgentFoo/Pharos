@@ -22,7 +22,7 @@ import { type LibraryTab, libraryPanel } from "./library-panel.js";
 import { DataProcesses } from "./data-processes.js";
 import type { Suggestion } from "./data-window.js";
 import { statusChip, storageDialog } from "./storage.js";
-import type { Artifact, SystemStatus } from "@pharos/contracts";
+import type { Artifact, Example, SystemStatus } from "@pharos/contracts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -159,6 +159,7 @@ const appActions: AppAction[] = [
   act({ id: "add-data", title: "Add data…", menu: ["File"], icon: "add", keywords: ["import", "files", "folder", "upload", "dataset", "openfoam", "microscopy"], description: "Add files or a folder to the workspace and find books for them", enabled: () => true, run: () => addData() }),
   act({ id: "clear-project", title: "New project (clear)", menu: ["File"], icon: "new", keywords: ["clear", "reset", "new", "empty", "start over"], description: "Closes every window and clears notes and results; your data on disk is kept", enabled: () => true, run: () => clearProject() }),
   act({ id: "storage", title: "Ships…", menu: ["View"], icon: "ship", keywords: ["docker", "gpu", "disk", "download", "remove", "cache", "status", "test", "storage", "containers", "tools"], description: "The tools books run: what's here, Docker, GPU, disk and the cache", enabled: () => !!server, run: () => openStorage() }),
+  act({ id: "examples", title: "Example data…", menu: ["File"], icon: "flask", keywords: ["demo", "sample", "example", "openfoam", "microscopy", "try"], description: "Synthetic microscopy and simulation data to try", enabled: () => !!server, run: () => examplesDialog() }),
   act({ id: "open-local", title: "Open from this computer…", menu: ["File"], icon: "upload", keywords: ["upload", "browse"], enabled: () => true, run: () => openFromComputer() }),
   act({ id: "sample", title: "Open sample image", menu: ["File"], icon: "image", keywords: ["demo", "example", "2d"], enabled: () => true, run: () => openSample(false) }),
   act({ id: "sample-3d", title: "Open 3D sample", menu: ["File"], icon: "cube", keywords: ["demo", "example", "volume", "stack", "z"], enabled: () => true, run: () => openSample(true) }),
@@ -211,7 +212,7 @@ async function runAction(id: string, from?: HTMLElement) {
   await ready;
   if (id === "palette") return overview.open();
   const anchor = from?.getBoundingClientRect();
-  if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "workspace", "open", "open-local", "sample", "sample-3d"]));
+  if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "examples", "workspace", "open", "open-local", "sample", "sample-3d"]));
   if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]));
   if (id === "group-menu" && anchor) return togglePopover(id, anchor, groupHtml);
   if (id === "settings-menu" && anchor) return togglePopover(id, anchor, settingsHtml);
@@ -1121,27 +1122,53 @@ async function dropData(files: File[], folders: string[]) {
   if (added?.length) await dataFlow(workspace, added);
 }
 
+/** Example cards: what the data is, its name and the problem statement it comes with. */
+const exampleCards = (examples: Example[]) =>
+  examples
+    .map(
+      (e) => `<button class="example" data-example="${escapeHtml(e.id)}" title="${escapeHtml(e.description)}">
+        <small class="eyebrow">${escapeHtml(e.kind)}</small><strong>${escapeHtml(e.title)}</strong>
+        <em>“${escapeHtml(e.prompt)}”</em></button>`,
+    )
+    .join("");
+
+/** Loads an example into the workspace with its problem statement, as if it had been dropped in. */
+async function loadExample(s: LocalServer, e: Example) {
+  const workspace = currentWorkspace();
+  const added = await run(`Loading ${e.title}`, () => s.loadExample(e.id, workspace));
+  if (!added) return;
+  $<HTMLTextAreaElement>("problem").value = e.prompt;
+  await dataFlow(workspace, added);
+}
+
 async function showExamples(s: LocalServer) {
   const examples = await s.examples().catch(() => []);
   const list = $("example-list");
-  list.innerHTML = examples
-    .map(
-      (e) => `<button class="example" data-example="${escapeHtml(e.id)}">
-        <small class="eyebrow">${escapeHtml(e.kind)}</small><strong>${escapeHtml(e.title)}</strong>
-        <span>${escapeHtml(e.description)}</span><em>“${escapeHtml(e.prompt)}”</em></button>`,
-    )
-    .join("");
+  list.innerHTML = exampleCards(examples);
   $("examples").hidden = !examples.length;
   list.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) =>
-    b.addEventListener("click", async () => {
-      const e = examples.find((x) => x.id === b.dataset.example)!;
-      const workspace = currentWorkspace();
-      const added = await run(`Loading ${e.title}`, () => s.loadExample(e.id, workspace));
-      if (!added) return;
-      $<HTMLTextAreaElement>("problem").value = e.prompt;
-      await dataFlow(workspace, added);
-    }),
+    b.addEventListener("click", () => loadExample(s, examples.find((x) => x.id === b.dataset.example)!)),
   );
+}
+
+/** Example data, from the Add data menu once the start screen has gone. */
+async function examplesDialog() {
+  const s = server;
+  if (!s) return;
+  const examples = await s.examples().catch(() => []);
+  const picked = await showDialog<Example | null>(
+    `<p class="eyebrow">Add data</p><h2>Example data</h2>
+     <p class="muted small">Synthetic microscopy and simulation cases, each with a question to try. Hover a card for details.</p>
+     <div class="example-list">${exampleCards(examples) || `<p class="muted">No examples in the library.</p>`}</div>
+     <footer><button class="primary" data-cancel>Close</button></footer>`,
+    (done, el) => {
+      el.classList.add("wide");
+      el.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) => b.addEventListener("click", () => done(examples.find((x) => x.id === b.dataset.example)!)));
+    },
+    null,
+  );
+  document.getElementById("dialog")?.classList.remove("wide");
+  if (picked) await loadExample(s, picked);
 }
 
 /** A new, empty project: windows, notes and results go; data on disk and the library stay. */
@@ -1342,7 +1369,6 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     server: () => server,
     notify,
     select: (doc, marker, output) => processes.select(doc, marker, output),
-    addProcess: (doc, anchor) => void dataMenu(doc, anchor),
     approve: (doc) => processes.approve(doc),
     rerun: (doc) => processes.rerun(doc),
     cancel: (doc) => processes.cancel(doc),

@@ -202,9 +202,13 @@ export class WindowManager {
       w.el.classList.toggle("history-slim", doc.ui.history === "slim");
       w.el.querySelector(".win-title-text")!.textContent = doc.name;
       w.el.setAttribute("aria-label", doc.name);
-      const toggle = w.el.querySelector("[data-win=\"controls\"]")!;
-      toggle.textContent = doc.ui.controls ? "Hide controls" : "Show controls";
-      toggle.setAttribute("aria-pressed", String(doc.ui.controls));
+      const results = doc.ui.mode === "results";
+      const mode = w.el.querySelector("[data-win=\"mode\"]")!;
+      mode.textContent = results ? "View history" : "View results";
+      mode.setAttribute("aria-pressed", String(results));
+      const side = w.el.querySelector("[data-win=\"controls\"]")!;
+      side.setAttribute("aria-pressed", String(doc.ui.controls));
+      side.setAttribute("title", doc.ui.controls ? "Hide the side panel" : "Show the side panel");
       w.view.render();
     }
   }
@@ -225,10 +229,11 @@ export class WindowManager {
           <div class="win-name"><span class="win-kind">${icon(KIND_ICON[doc.source.kind], 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
         </div>
         <div class="win-center">
-          <button class="win-ctl-toggle" data-win="controls"></button>
+          <button class="win-ctl-toggle" data-win="mode" title="Switch between the history and a grid of every result"></button>
         </div>
         <div class="win-right">
-          <button class="win-icon" data-win="menu" title="Processes and more" aria-label="Processes and more">${icon("more", 16)}</button>
+          <button class="win-icon" data-win="controls" aria-label="Side panel">${icon("panel", 16)}</button>
+          <button class="win-icon" data-win="menu" title="Add a process" aria-label="Add a process">${icon("more", 16)}</button>
           <button class="win-icon" data-win="min" title="Minimise (⇧⌘M)" aria-label="Minimise window">${icon("minimize", 15)}</button>
           <button class="win-icon win-zoom" data-win="zoom" title="Expand" aria-label="Expand window">${icon("expand", 15)}</button>
         </div>
@@ -250,6 +255,10 @@ export class WindowManager {
     this.place(w, w.rect);
     this.wireFrame(w, (what, anchor) => {
       if (what === "menu") this.hooks.dataMenu(doc, anchor);
+      if (what === "mode") {
+        doc.ui.mode = doc.ui.mode === "results" ? "history" : "results";
+        this.ws.touch();
+      }
       if (what === "controls") {
         doc.ui.controls = !doc.ui.controls;
         this.ws.touch();

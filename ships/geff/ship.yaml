@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: geff
+version: 0.1.0
+image: pharos/geff:0.1.0    # built from this folder's Dockerfile
+summary: Reads GEFF track graphs (the zarr format tracking tools and challenges share ground truth in) and scores tracks against them.
+license: MIT
+homepage: https://liveimagetrackingtools.org/geff
+tags: [tracking, ground-truth, evaluation, conversion]
+requires: { memory_gb: 2, network: none }
+operations:
+  convert:
+    summary: Converts a GEFF track graph to a track table - one row per cell per time point, with divisions as parent tracks.
+    command: python /opt/pharos/pharos_geff.py convert --in {in.graph} --out /out/tracks.csv
+    inputs: [{ name: graph, kind: tracks, formats: [geff] }]
+    outputs: [{ name: tracks, kind: tracks, format: csv, path: /out/tracks.csv }]
+    cache: { deterministic: true }
+  score:
+    summary: Scores tracks against ground-truth tracks (GEFF) with the Biohub tracking challenge's metric - edge Jaccard with a node-count penalty, nodes matched within a distance - for the first half, the second half and the whole movie.
+    command: python /opt/pharos/pharos_geff.py score --tracks {in.tracks} --truth {in.truth} --out /out/score.csv --max-distance {max_distance} --split {split}
+    inputs:
+      - { name: tracks, kind: tracks, formats: [csv] }
+      - { name: truth, kind: tracks, formats: [geff] }
+    parameters:
+      - { name: max_distance, type: number, unit: µm, default: 7, min: 0, max: 100, description: "How close a tracked cell must be to a ground-truth cell to count as it." }
+      - { name: split, type: integer, default: 50, min: 0, description: "Time point that divides the first half (for tuning) from the second (held out); 0 halves the movie." }
+    outputs: [{ name: score, kind: table, format: csv, path: /out/score.csv }]
+    cache: { deterministic: true }

@@ -42,7 +42,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "openAsImage" | "addProcess"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "openAsImage"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -78,7 +78,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   stepSpec(run: string): StepSpec | undefined {
     const [ship, op] = run.split(".");
     const o = this.ships.get(ship)?.operations[op];
-    return o && { title: `${ship} › ${op}`, summary: o.summary, params: o.parameters ?? [] };
+    return o && { title: `${ship} › ${op}`, summary: o.summary, params: o.parameters ?? [], makes: o.outputs?.[0]?.kind };
   }
 
   // ---------------------------------------------------------- what can be applied
@@ -384,6 +384,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
    * dataset this window can hold.
    */
   async fromPlan(plan: Plan, source: Artifact): Promise<DataDoc> {
+    const errors = (plan.problems ?? []).filter((p) => p.severity === "error");
+    if (errors.length) throw new Error(`This plan doesn't fit the data: ${errors.map((p) => p.message).join("; ")}`);
     await this.loadShips();
     const doc = this.ws.openData(source, plan.workspace);
     const book = plan.book ? (await this.server.book(plan.book.id, plan.book.version)).manifest : undefined;
