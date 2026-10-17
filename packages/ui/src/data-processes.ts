@@ -13,11 +13,12 @@
  */
 import { type Artifact, type BookAction, type BookCard, type BookManifest, type BookMatch, type ControlWhen, type DataSummary, type Job, type ParamSpec, type Params, type Plan, type ServerEvent, type ShipManifest, type Step, bookAction } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
-import type { DataWindowHooks, NextAction, RunControls, StepSpec, Suggestion } from "./data-window.js";
-import { escapeHtml, showDialog } from "./dialogs.js";
+import type { DataWindowHooks, NextAction, RunControls, StepSpec, SuggestedSubject, Suggestion } from "./data-window.js";
+import { escapeHtml, formatSize, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import { type Phase, heardFrom } from "./progress.js";
+import { LARGE_BYTES, downsizers } from "./large-data.js";
 import { type DataDoc, type DataStep, type Workspace, blockAt, newBlock, timeBlocks } from "./workspace.js";
 
 export interface ProcessHooks {
@@ -38,7 +39,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -127,10 +128,35 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     ];
   }
 
+  // ---------------------------------------------------------- large data: make it smaller first
+
+  /** When `artifact` is large enough to slow everything after it, and something can make it smaller: why, and how. */
+  async largeData(artifact: Artifact): Promise<{ note: string; ops: Suggestion[] } | null> {
+    const limit = LARGE_BYTES[artifact.kind];
+    const size = artifact.sizeBytes ?? 0;
+    if (!limit || size < limit) return null;
+    await this.loadShips();
+    const ops = downsizers(this.ships.values(), artifact).map((s) => ({ ...s, trust: this.trust.get(s.id.split(".")[0]) ?? "imported" }));
+    if (!ops.length) return null;
+    const what = { video: "video", photos: "photo set", mesh: "model", splat: "splat" }[artifact.kind] ?? "data";
+    return { note: `This ${what} is ${formatSize(size)}. Making it smaller first makes every run after it faster.`, ops };
+  }
+
+  /** The Controls' "make it smaller first", for a window's data: its note, and the first way to do it. */
+  async smallerFirst(doc: DataDoc, artifact: Artifact): Promise<{ note: string; title: string; apply(): void } | null> {
+    const large = await this.largeData(artifact).catch(() => null);
+    if (!large) return null;
+    const op = large.ops[0];
+    return { note: large.note, title: op.id.split(".")[1].replace(/[-_]+/g, " "), apply: () => void this.apply(doc, op) };
+  }
+
   /** The Suggested menu in a window's history bar: what takes the data on view, books first. The ⋯ menu has every tool. */
   async suggestHtml(doc: DataDoc): Promise<string> {
     const shown = (await this.hooks.shownArtifact(doc)) ?? doc.source;
-    const list = await this.suggestions(doc, shown).catch(() => [] as Suggestion[]);
+    const large = await this.largeData(shown).catch(() => null);
+    const smaller = large?.ops ?? [];
+    const rest = (await this.suggestions(doc, shown).catch(() => [] as Suggestion[])).filter((s) => !smaller.some((x) => x.id === s.id));
+    const list = [...smaller, ...rest];
     this.lastMenu = { doc, list };
     const head = `<h4>${doc.marker > 0 ? "Next, with this result" : "Suggested for this data"}</h4>`;
     if (!list.length) return `<section>${head}<p class="pop-note">Nothing in the library takes ${escapeHtml(shown.name ?? shown.kind)} yet.</p></section>`;
@@ -138,7 +164,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
       const title = s.type === "book" ? s.title : s.id.split(".")[1].replace(/[-_]+/g, " ");
       return `<button data-dp="apply:${i}" role="menuitem" title="${escapeHtml(s.summary)}">${icon(s.type === "book" ? "script" : "plug", 16)}<span>${escapeHtml(title)}</span><small>${escapeHtml(s.type === "book" ? s.book : s.id.split(".")[0])}</small></button>`;
     };
-    return `<section>${head}${list.map(row).join("")}</section>`;
+    // large data: making it smaller comes first, with why
+    const first = smaller.length ? `<section><h4>Make it smaller first</h4><p class="pop-note">${escapeHtml(large!.note)}</p>${smaller.map((s, i) => row(s, i)).join("")}</section>` : "";
+    return `${first}${rest.length ? `<section>${head}${rest.map((s, i) => row(s, i + smaller.length)).join("")}</section>` : ""}`;
   }
 
   /** The ⋯ menu of a data window: recipes, then every tool for what's on view (by ship), then window actions. */
@@ -299,9 +327,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     if (!params) return;
     const step: DataStep = { id: this.uniqueId(doc, opName.replace(/-/g, "_")), run: tool, in: wires, with: params, status: "stale", block: newBlock() };
     doc.steps.push(step);
-    doc.marker = doc.steps.length;
-    doc.output = undefined;
-    this.ws.touch();
+    // the window stays on what it shows, with the run's progress over it, and moves to the run once it's done
+    this.follow(doc);
     await this.run(doc);
   }
 
@@ -312,9 +339,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const values = await this.paramsDialog(action.title, action.summary ?? book.how_to_use ?? book.summary, action.parameters ?? [], {}, book.title, action.steps.map((s) => s.run));
     if (!values) return;
     this.appendBook(doc, book, action.name, values, "stale");
-    doc.marker = doc.steps.length;
-    doc.output = undefined;
-    this.ws.touch();
+    // the window stays on what it shows, with the run's progress over it, and moves to the run once it's done
+    this.follow(doc);
     await this.run(doc);
   }
 
@@ -392,7 +418,29 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   /** Marks the steps still waiting as `status` (after a failure or cancel). */
   private settle(doc: DataDoc, status: "failed" | "cancelled", message: string) {
     for (const step of doc.steps) if (step.status === "queued" || step.status === "running") Object.assign(step, { status, error: status === "failed" ? message : undefined, live: undefined });
+    this.arrive(doc);
     this.ws.touch();
+  }
+
+  /** Windows waiting for a new run (by its id) to finish before moving to it. */
+  private following = new WeakMap<DataDoc, string>();
+
+  /** The run just added to `doc`: the window moves to it once it's done, so the timeline only gains finished runs. */
+  private follow(doc: DataDoc) {
+    const block = doc.steps[doc.steps.length - 1]?.block;
+    if (block) this.following.set(doc, block);
+  }
+
+  /** Moves a window to the run it follows once that run has stopped: its last result, or the step that didn't finish. */
+  private arrive(doc: DataDoc) {
+    const id = this.following.get(doc);
+    if (!id) return;
+    const steps = doc.steps.flatMap((s, i) => (s.block === id ? [[s, i] as const] : []));
+    if (steps.some(([s]) => s.status === "queued" || s.status === "running")) return;
+    this.following.delete(doc);
+    if (!steps.length) return;
+    doc.marker = (steps.find(([s]) => s.status !== "done") ?? steps[steps.length - 1])[1] + 1;
+    doc.output = undefined;
   }
 
   handle(e: ServerEvent) {
@@ -436,6 +484,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
         lastOutput: changed ? Date.now() : (prev?.lastOutput ?? since),
       };
     } else step.live = undefined;
+    this.arrive(doc);
     this.ws.touch();
   }
 
@@ -556,6 +605,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   }
 
   approve(doc: DataDoc) {
+    const proposed = doc.steps.find((s) => s.status === "proposed");
+    if (proposed?.block) this.following.set(doc, proposed.block);
     for (const s of doc.steps) if (s.status === "proposed") s.status = "stale";
     void this.run(doc);
   }
@@ -718,9 +769,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     } catch (e) {
       return this.hooks.notify(e instanceof Error ? e.message : String(e));
     }
-    doc.marker = doc.steps.length;
-    doc.output = undefined;
-    this.ws.touch();
+    // the window stays on what it shows, with the run's progress over it, and moves to the run once it's done
+    this.follow(doc);
     await this.run(doc);
   }
 
@@ -742,40 +792,53 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
       } catch {
         continue; // nothing in the window it can take after all
       }
-      doc.marker = doc.steps.length;
-      doc.output = undefined;
-      this.ws.touch();
-      if (ready) await this.run(doc);
+      if (ready) {
+        this.follow(doc);
+        await this.run(doc);
+      } else {
+        doc.marker = doc.steps.length;
+        doc.output = undefined;
+        this.ws.touch();
+      }
       return;
     }
   }
 
-  /** Sets a book run's parameters into its steps; the changed steps and what uses them run again. */
+  /**
+   * Apply and run: the book run starting at `first`, again with new settings,
+   * as a new run after the last. The run it came from stays in the history as
+   * it was, and the new one reads the same inputs. Settings the form didn't
+   * show keep the run's values.
+   */
   async updateRun(doc: DataDoc, first: number, values: Params) {
     const run = await this.bookRun(doc, first).catch(() => null);
-    if (!run) return;
-    const changed = new Set<number>();
-    for (const p of run.action.parameters ?? []) {
-      if (!(p.name in values)) continue;
-      for (const target of Array.isArray(p.sets) ? p.sets : [p.sets]) {
-        const i = run.at(target);
-        const name = target.split(".")[1];
-        if (doc.steps[i] && doc.steps[i].with[name] !== values[p.name]) {
-          doc.steps[i].with = { ...doc.steps[i].with, [name]: values[p.name] };
-          changed.add(i);
-        }
-      }
-    }
-    if (!changed.size) return this.hooks.notify("Nothing changed: these are the settings it ran with.");
-    for (const index of changed) for (const i of this.dependents(doc, index)) if (doc.steps[i].status !== "proposed") Object.assign(doc.steps[i], { status: "stale", jobId: undefined });
-    this.ws.touch();
-    void this.run(doc);
+    const block = timeBlocks(doc).find((b) => b.first === first);
+    if (!run || !block) return;
+    const current = (await this.runControls(doc, first))?.values ?? {};
+    const next = { ...current, ...values };
+    if ((run.action.parameters ?? []).every((p) => next[p.name] === current[p.name])) return this.hooks.notify("Nothing changed: these are the settings it ran with.");
+    this.appendCopy(doc, block, (_s, i) => bookStepParams(run.action.steps[i], run.action, next));
   }
 
+  /** Apply and run for a step of one operation: it again with new settings, as a new run after the last. */
   updateStep(doc: DataDoc, index: number, params: Params) {
-    doc.steps[index].with = params;
-    // forget the old job, so a restored window doesn't mistake its result for this change's
-    for (const i of this.dependents(doc, index)) if (doc.steps[i].status !== "proposed") Object.assign(doc.steps[i], { status: "stale", jobId: undefined });
+    if (JSON.stringify(params) === JSON.stringify(doc.steps[index].with)) return this.hooks.notify("Nothing changed: these are the settings it ran with.");
+    this.appendCopy(doc, { first: index, last: index }, () => params);
+  }
+
+  /** Copies steps `first`..`last` to the end of the history as one new run, reading what they read, with `params`; then runs it. */
+  private appendCopy(doc: DataDoc, span: { first: number; last: number }, params: (step: DataStep, i: number) => Params) {
+    const old = doc.steps.slice(span.first, span.last + 1);
+    const rename = new Map<string, string>();
+    for (const s of old) rename.set(s.id, this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id));
+    const block = newBlock();
+    old.forEach((s, i) => {
+      // wires inside the run follow the copies; wires to the data or earlier runs stay as they were
+      const wires = Object.fromEntries(Object.entries(s.in).map(([port, w]) => [port, rename.has(w.split(".")[0]) ? `${rename.get(w.split(".")[0])}.${w.split(".")[1]}` : w]));
+      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: params(s, i), ...(s.book ? { book: s.book } : {}), block, status: "stale" });
+    });
+    doc.marker = doc.steps.length;
+    doc.output = undefined;
     this.ws.touch();
     void this.run(doc);
   }
@@ -849,6 +912,70 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     doc.marker = 0;
     this.ws.touch();
     return doc;
+  }
+
+  // ---------------------------------------------------------- the Controls' Suggested tab
+
+  /**
+   * The assistant's answer to a request, as a suggestion: a book action waits
+   * in the window's Controls (Suggested tab) with its values, off the history
+   * until it's run. A plan of single operations still lands as proposed steps.
+   */
+  async suggest(plan: Plan, source: Artifact, request: string): Promise<DataDoc> {
+    if (!plan.book) return this.fromPlan(plan, source);
+    const errors = (plan.problems ?? []).filter((p) => p.severity === "error");
+    if (errors.length) throw new Error(`This plan doesn't fit the data: ${errors.map((p) => p.message).join("; ")}`);
+    const book = await this.manifest(plan.book.id);
+    const action = bookAction(book, plan.book.action);
+    if (!action) throw new Error(`${book.title} has no action "${plan.book.action}"`);
+    const doc = this.ws.open(source, plan.workspace);
+    doc.suggestion = { book: { id: book.id, title: book.title }, action: action.name, values: { ...plan.parameters }, rationale: plan.rationale, request };
+    doc.ui.controlsTab = "suggested";
+    this.ws.activate(doc.id);
+    this.ws.touch();
+    return doc;
+  }
+
+  /**
+   * What the Suggested tab lays out: what the assistant suggested in the chat,
+   * else the book run on view (its settings, to re-run), else the first action
+   * that fits what's on view.
+   */
+  async suggestedSubject(doc: DataDoc): Promise<SuggestedSubject | null> {
+    await this.loadShips();
+    const specsOf = (a: BookAction) => (a.parameters ?? []).map(({ sets: _sets, ...spec }) => spec as ParamSpec);
+    if (doc.suggestion) {
+      const book = await this.manifest(doc.suggestion.book.id).catch(() => null);
+      const a = book && bookAction(book, doc.suggestion.action);
+      if (a) {
+        const specs = specsOf(a);
+        const defaults = Object.fromEntries(specs.flatMap((p) => (p.default === undefined ? [] : [[p.name, p.default]])));
+        return { kind: "suggestion", book: doc.suggestion.book, action: a.name, title: a.title, specs, values: { ...defaults, ...doc.suggestion.values }, chosen: doc.suggestion.values, rationale: doc.suggestion.rationale, request: doc.suggestion.request };
+      }
+    }
+    const step = doc.marker > 0 ? doc.steps[doc.marker - 1] : null;
+    const block = timeBlocks(doc)[blockAt(timeBlocks(doc), doc.marker)];
+    if (step?.book && block) {
+      const run = await this.runControls(doc, block.first);
+      const book = run && (await this.manifest(step.book.id).catch(() => null));
+      const a = book && bookAction(book, step.book.action);
+      if (run && a) return { kind: "run", book: { id: book!.id, title: book!.title }, action: a.name, title: a.title, specs: run.sections.flatMap((sec) => sec.params), values: run.values, first: block.first };
+    }
+    const next = (await this.nextActions(doc))[0];
+    return next ? { kind: "next", book: next.book, action: next.action, title: next.title, specs: next.sections.flatMap((sec) => sec.params), values: next.values } : null;
+  }
+
+  /** Runs the Suggested tab's action with its values: a re-run of the run on view, or a new run. */
+  runSuggested(doc: DataDoc, subject: SuggestedSubject, values: Params) {
+    if (subject.kind === "run" && subject.first !== undefined) return void this.updateRun(doc, subject.first, values);
+    if (subject.kind === "suggestion") doc.suggestion = undefined;
+    void this.runNext(doc, subject.book.id, subject.action, values);
+  }
+
+  /** Lets the assistant's suggestion go, without running it. */
+  dismissSuggestion(doc: DataDoc) {
+    doc.suggestion = undefined;
+    this.ws.touch();
   }
 
   /** Runs one of a book's actions in an open data window (from the library). */

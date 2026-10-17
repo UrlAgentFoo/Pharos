@@ -1,12 +1,12 @@
 /**
  * The top of the left column while a window is active: what that window
- * holds and what it takes to run it. Its data in one line; the actions
- * that fit it (each opens its settings, and runs in the window once you
- * confirm them); its books (the ones its history uses, or before anything
- * is added, the ones that fit) and the ships they run, each ticked once
- * ready or with what's left to download. Its run log comes first: every run
- * with its status and log, the one on view marked as the window's blue
- * marker shows. It follows the active window and keeps up as ships download.
+ * holds and what it takes to run it. Its data in one line; its books (the
+ * ones its history uses, or before anything is added, the ones that fit)
+ * and the ships they run, each ticked once ready or with what's left to
+ * download. What to run lives in the window's Controls. Its steps come first: the one on
+ * view ("Step 2/5"), with its status and log, and the rest behind See all,
+ * the one on view marked as the window's blue marker shows. It follows the
+ * active window and keeps up as ships download.
  */
 import type { BookCard, BookMatch, CatalogueEntry, DataSummary, ServerEvent } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
@@ -25,8 +25,6 @@ export interface SummaryHooks {
   formatTitle(format: string): string;
   /** Starts getting a book's missing ships; the button that asks says how much they are. */
   getReady(book: CatalogueEntry): void;
-  /** Runs a book action in the window, after its settings dialog. */
-  useBook(doc: DataDoc, book: string, action: string): void;
   /** Shows the window's data as of step `marker` (0 = the data itself). */
   select(doc: DataDoc, marker: number): void;
   showLog(jobId: string): void;
@@ -43,9 +41,8 @@ interface Fit {
   matches: BookMatch[];
 }
 
-/** Books to list when nothing has been added yet, and actions to offer. */
+/** Books to list when nothing has been added yet. */
 const FITTING = 3;
-const ACTIONS = 6;
 
 const tick = `<span class="ws-tick" role="img" aria-label="Ready">${icon("check", 16)}</span>`;
 
@@ -55,6 +52,8 @@ export class WindowSummary {
   private fits = new Map<string, Fit>();
   private fitsLoading = new Set<string>();
   private doc: DataDoc | null = null;
+  /** Windows whose Step section lists every step, not just the one on view. */
+  private runsOpen = new Set<string>();
   private place = "";
   private html = "";
 
@@ -71,8 +70,13 @@ export class WindowSummary {
       if (marker !== undefined && this.doc) return hooks.select(this.doc, Number(marker));
       const log = target.closest<HTMLButtonElement>("[data-log]")?.dataset.log;
       if (log) return hooks.showLog(log);
-      const use = target.closest<HTMLButtonElement>("[data-use]")?.dataset.use;
-      if (use && this.doc) hooks.useBook(this.doc, ...(use.split(" ") as [string, string]));
+      if (target.closest("[data-runs]") && this.doc) {
+        const id = this.doc.id;
+        if (!this.runsOpen.delete(id)) this.runsOpen.add(id);
+        this.render();
+        // the redraw replaced the button; keep keyboard focus on it
+        return this.el.querySelector<HTMLButtonElement>("[data-runs]")?.focus();
+      }
     });
   }
 
@@ -147,20 +151,6 @@ export class WindowSummary {
       : fit!.matches.slice(0, FITTING).map((m) => ({ id: m.book.id, actions: m.actions.slice(0, 2) }));
     const ships = doc.steps.length ? new Set(doc.steps.map((st) => st.run.split(".")[0])) : new Set(books.flatMap((b) => lib.cards.get(b.id)?.ships.map((x) => x.id) ?? []));
 
-    // every action that fits the data, from any book: its settings first, then it runs in the window
-    const fitting = (fit?.matches ?? []).flatMap((m) => m.actions.map((name) => ({ book: m.book, name, title: lib.cards.get(m.book.id)?.actions.find((a) => a.name === name)?.title ?? name })));
-    const actionsHtml = `<section><p class="ws-head"><span class="eyebrow">Available actions</span></p>${
-      fitting.length
-        ? `<ul class="ws-list">${fitting
-            .slice(0, ACTIONS)
-            .map(
-              (a) =>
-                `<li><button class="ws-action" data-use="${escapeHtml(`${a.book.id} ${a.name}`)}" title="Choose its settings, then run it in this window">${icon("script", 16)}<span>${escapeHtml(a.title)}</span><small>${escapeHtml(a.book.title)}</small></button></li>`,
-            )
-            .join("")}</ul>`
-        : `<p class="ws-note">${fit ? "No book in the library fits this data yet; the window's ⋯ menu lists every ship operation that takes it." : "Finding what fits…"}</p>`
-    }</section>`;
-
     const bookRows = books.map((b) => {
       const card = lib.cards.get(b.id);
       const title = card?.entry.title ?? b.id;
@@ -180,14 +170,16 @@ export class WindowSummary {
     });
     const ready = [...ships].filter((id) => this.shipState(id).ready).length;
 
-    // with no history yet, the books are the fitting ones, already offered as actions
+    // with no history yet, the books are the ones that fit; when none does, say where to look instead
     const booksHtml = books.length
       ? `<section><p class="ws-head"><span class="eyebrow">${doc.steps.length ? "Books" : "Books for this data"}</span><small>${books.length}</small></p><ul class="ws-list">${bookRows.join("")}</ul></section>`
-      : "";
+      : doc.steps.length
+        ? ""
+        : `<section><p class="ws-head"><span class="eyebrow">Books for this data</span></p><p class="ws-note">No book in the library fits this data yet; the window's ⋯ menu lists every ship operation that takes it.</p></section>`;
     const shipsHtml = ships.size
       ? `<section><p class="ws-head"><span class="eyebrow">Ships</span><small>${ready === ships.size ? "all ready" : `${ready} of ${ships.size} ready`}</small></p><ul class="ws-list">${shipRows.join("")}</ul></section>`
       : "";
-    return `${head}${runLog(doc)}${actionsHtml}${booksHtml}${shipsHtml}`;
+    return `${head}${runLog(doc, this.runsOpen.has(doc.id))}${booksHtml}${shipsHtml}`;
   }
 
   /** Ready, downloading, or what's left to download. */
@@ -218,11 +210,15 @@ export class WindowSummary {
 
 const RUN_STATUS: Record<string, string> = { done: "done", running: "running", queued: "waiting", failed: "failed", proposed: "proposed", stale: "changed", cancelled: "cancelled" };
 
-/** The window's runs, oldest first, each with its status and log; the one on view is marked, as the window's blue marker shows. */
-function runLog(doc: DataDoc): string {
+/**
+ * The window's step on view (a run of one book action or ship operation),
+ * with its status and log, under "Step 2/5" and See all; `all` lists every
+ * step, oldest first, the one on view marked as the window's blue marker shows.
+ */
+function runLog(doc: DataDoc, all: boolean): string {
   const blocks = timeBlocks(doc);
   const k = blockAt(blocks, doc.marker);
-  if (!blocks.length) return `<section><p class="ws-head"><span class="eyebrow">Run log</span></p><p class="ws-note">No runs yet: add one with Suggested in the window, or ask the assistant.</p></section>`;
+  if (!blocks.length) return `<section><p class="ws-head"><span class="eyebrow">Step</span></p><p class="ws-note">No steps yet: add one with Suggested in the window, or ask the assistant.</p></section>`;
   const row = (on: boolean, marker: number, name: string, note: string, job?: string) =>
     `<li class="ws-run${on ? " on" : ""}"><button class="ws-run-go" data-marker="${marker}"${on ? ' aria-current="step"' : ""}><span class="ws-name">${escapeHtml(name)}<small>${escapeHtml(note)}</small></span></button>${job ? `<button class="link-btn" data-log="${escapeHtml(job)}">Log</button>` : ""}</li>`;
   const rows = blocks.map((b, i) => {
@@ -230,10 +226,15 @@ function runLog(doc: DataDoc): string {
     const n = steps.length;
     // the log worth reading: the step that failed, else the last that ran
     const job = (steps.find((s) => s.status === "failed") ?? [...steps].reverse().find((s) => s.jobId))?.jobId;
-    const showing = i === k && n > 1 && doc.marker - 1 < b.last ? `showing step ${doc.marker - b.first}: ${stepTitle(doc.steps[doc.marker - 1])}` : "";
+    // a result picked from the window's Results, rather than the run's main one (its last step's first output)
+    const st = doc.steps[doc.marker - 1];
+    const out = st ? (doc.output ?? Object.keys(st.outputs ?? {})[0]) : undefined;
+    const picked = i === k && st && (doc.marker - 1 !== b.last || out !== Object.keys(st.outputs ?? {})[0]);
+    const showing = picked ? `showing result: ${stepTitle(st)}${out ? ` › ${out}` : ""}` : "";
     const note = [RUN_STATUS[b.status], n > 1 ? `${n} steps` : "", steps.every((s) => s.cached) ? "cached" : "", showing].filter(Boolean).join(" · ");
     return row(i === k, b.last + 1, b.title, note, job);
   });
-  return `<section class="ws-runs"><p class="ws-head"><span class="eyebrow">Run log</span><small>${k < 0 ? "at the start" : `run ${k + 1} of ${blocks.length}`}</small></p>
-    <ol class="ws-list">${row(k < 0, 0, "The data itself", "before any run")}${rows.join("")}</ol></section>`;
+  const list = [row(k < 0, 0, "The data itself", "before any step"), ...rows];
+  return `<section class="ws-runs"><p class="ws-head"><span class="eyebrow">Step ${k + 1}/${blocks.length}</span><button class="link-btn" data-runs aria-expanded="${all}" aria-controls="ws-run-list">${all ? "See less" : "See all"}</button></p>
+    <ol class="ws-list" id="ws-run-list">${all ? list.join("") : list[k + 1]}</ol></section>`;
 }

@@ -1,14 +1,16 @@
 /**
- * The assistant, in the left column: the project's name ("Ask Pharos" until
- * it has one), then the conversation. You say what you want to find out
- * about the active window's data; the assistant picks a recipe (book) that
- * fits and proposes its steps in that window's history, and nothing runs
- * until you approve them there.
+ * The assistant, in the left column: a chat panel whose top is the active
+ * window (or, with none active, the project's name), then the conversation.
+ * Say hello, ask about the data, or say what you want to find out: the
+ * assistant answers, and when asked to do something picks a book that fits
+ * and proposes its steps in that window's history, where nothing runs until
+ * you approve them. Each message goes with the conversation so far.
  *
- * Its input sits in the bottom-left corner and doubles as search: as you
- * type, matching actions and windows show above it (arrows pick one, Enter
- * runs it); Enter with nothing picked sends the text to the assistant.
+ * Its input is the panel's foot, and doubles as search: as you type,
+ * matching actions and windows show above it (arrows pick one, Enter runs
+ * it); Enter with nothing picked sends the text to the assistant.
  */
+import type { ChatTurn } from "@pharos/contracts";
 import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { formatShortcut } from "./keys.js";
@@ -17,6 +19,8 @@ import { formatShortcut } from "./keys.js";
 export interface AskReply {
   text: string;
   proposed?: { window: string; steps: number; title: string };
+  /** A book action it suggests, waiting in that window's Controls (Suggested tab). */
+  suggested?: { window: string; title: string };
 }
 
 /** Something the input's search can run: an action or a window. */
@@ -34,7 +38,8 @@ export interface AssistantHooks {
   unavailable(): string | null;
   /** The name of the window the assistant would work on, or null when none is open. */
   target(): string | null;
-  ask(message: string): Promise<AskReply>;
+  /** The assistant's answer to `message`, given the conversation before it. */
+  ask(message: string, history: ChatTurn[]): Promise<AskReply>;
   /** Actions and windows matching `query`, best first. */
   search(query: string): SearchHit[];
   /** The project was renamed. */
@@ -49,6 +54,7 @@ const ASK = "Ask Pharos";
 
 export class Assistant {
   private readonly log: HTMLElement;
+  private readonly column: HTMLElement;
   private readonly title: HTMLElement;
   private readonly status: HTMLElement;
   private readonly input: HTMLTextAreaElement;
@@ -69,6 +75,7 @@ export class Assistant {
       <p class="eyebrow assistant-status"></p>
       <h1 class="display assistant-title" tabindex="0" title="Click to name the project" spellcheck="false"></h1>
       <div class="assistant-log" aria-live="polite"></div>`;
+    this.column = column;
     this.log = column.querySelector(".assistant-log")!;
     this.title = column.querySelector(".assistant-title")!;
     this.status = column.querySelector(".assistant-status")!;
@@ -210,6 +217,8 @@ export class Assistant {
     if (!message || this.busy) return;
     this.clearInput();
     const why = this.hooks.unavailable() ?? (this.hooks.target() ? null : "Open your data first (Add data, or an example): the assistant works on the active window.");
+    // what was said before this message (notes are Pharos's, not the conversation's)
+    const history = this.messages.flatMap((m): ChatTurn[] => (m.role === "user" ? [{ role: "user", text: m.text }] : m.role === "assistant" && m.reply.text ? [{ role: "assistant", text: m.reply.text }] : []));
     this.messages.push({ role: "user", text: message });
     if (why) {
       this.messages.push({ role: "note", text: why, error: true });
@@ -219,7 +228,7 @@ export class Assistant {
     this.busy = true;
     this.render();
     try {
-      this.messages.push({ role: "assistant", reply: await this.hooks.ask(message) });
+      this.messages.push({ role: "assistant", reply: await this.hooks.ask(message, history) });
     } catch (e) {
       this.messages.push({ role: "note", text: e instanceof Error ? e.message : String(e), error: true });
     } finally {
@@ -235,8 +244,9 @@ export class Assistant {
     const why = !this.messages.length && this.hooks.unavailable();
     if (why) log.innerHTML = `<div class="assistant-intro"><p class="chat-warn">${escapeHtml(why)}</p></div>`;
     for (const m of this.messages) log.append(this.messageEl(m));
-    if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Choosing a recipe…</p></div>`);
-    log.scrollTop = log.scrollHeight;
+    if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Thinking…</p></div>`);
+    // the panel scrolls as one, the window's summary at its top: keep the latest message in view
+    if (this.messages.length || this.busy) this.column.scrollTop = this.column.scrollHeight;
   }
 
   private messageEl(m: Message): HTMLElement {
@@ -260,6 +270,14 @@ export class Assistant {
         "beforeend",
         `<div class="chat-card"><p>${icon("script", 15)} <strong>${escapeHtml(p.title)}</strong>: ${p.steps} step${p.steps > 1 ? "s" : ""} proposed in <strong>${escapeHtml(p.window)}</strong>.</p>
          <p class="small muted">Check them in the window's history, then Approve to run them.</p></div>`,
+      );
+    }
+    if (reply.suggested) {
+      const p = reply.suggested;
+      el.insertAdjacentHTML(
+        "beforeend",
+        `<div class="chat-card"><p>${icon("sparkle", 15)} <strong>${escapeHtml(p.title)}</strong>: suggested in <strong>${escapeHtml(p.window)}</strong>'s Controls.</p>
+         <p class="small muted">Check its settings there, then run it. Nothing runs until you do.</p></div>`,
       );
     }
     return el;

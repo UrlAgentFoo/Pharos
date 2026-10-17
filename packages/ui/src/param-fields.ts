@@ -6,10 +6,9 @@ import { escapeHtml } from "./dialogs.js";
 export function manifestParamFields(specs: ParamSpec[], values: Params): string {
   return specs
     .map((s) => {
-      const label = escapeHtml(s.label ?? s.name.replace(/_/g, " "));
+      const label = `<span class="field-label">${escapeHtml(s.label ?? s.name.replace(/_/g, " "))}</span>`;
       const hint = s.description ? ` title="${escapeHtml(s.description)}"` : "";
       const v = values[s.name] ?? s.default;
-      const unit = s.unit ? ` <small>${escapeHtml(s.unit)}</small>` : "";
       if (s.type === "boolean") return `<label class="check"${hint}><input type="checkbox" name="${s.name}" ${v ? "checked" : ""}/> ${label}</label>`;
       if (s.type === "enum") {
         const opts = (s.options ?? []).map((o) => `<option ${o === v ? "selected" : ""}>${escapeHtml(o)}</option>`).join("");
@@ -17,7 +16,8 @@ export function manifestParamFields(specs: ParamSpec[], values: Params): string 
       }
       const num = s.type === "number" || s.type === "integer";
       const attrs = num ? ` type="number" step="${s.type === "integer" ? 1 : "any"}"${s.min !== undefined ? ` min="${s.min}"` : ""}${s.max !== undefined ? ` max="${s.max}"` : ""}` : "";
-      return `<label class="field"${hint}>${label}${unit}<input name="${s.name}"${attrs} value="${v === undefined ? "" : escapeHtml(String(v))}" ${v === undefined ? "required" : ""}/></label>`;
+      // the unit sits at the end of the box, so the label above stays just the name
+      return `<label class="field"${hint}>${label}<span class="field-box"><input name="${s.name}"${attrs} value="${v === undefined ? "" : escapeHtml(String(v))}" ${v === undefined ? "required" : ""}/>${s.unit ? `<span class="field-unit">${escapeHtml(s.unit)}</span>` : ""}</span></label>`;
     })
     .join("");
 }

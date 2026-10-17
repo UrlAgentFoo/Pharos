@@ -101,6 +101,8 @@ const KIND_LABEL: Record<Artifact["kind"], string> = {
   table: "Table",
   mesh: "Mesh",
   splat: "Gaussian splat",
+  photos: "Photo set",
+  sfm: "Cameras and sparse points",
   "sim-case": "Simulation case",
   video: "Video",
 };

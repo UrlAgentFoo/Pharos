@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Everything Pharos
  * does goes through it; without one the page can only say how to start it.
  */
-import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, ChatTurn, ControlsLayout, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -16,8 +16,10 @@ export interface ServerInfo {
 export interface AiConfig {
   models: readonly { id: string; label: string; note: string }[];
   model: string;
-  keySource: "settings" | "environment" | null;
+  keySource: "settings" | "environment" | "file" | null;
   keyHint?: string;
+  /** The `.env` file the key comes from, when it does. */
+  keyFile?: string;
 }
 
 export interface DirEntry {
@@ -268,8 +270,14 @@ export class LocalServer {
     return (await this.json("/api/plans", "POST", { workspace, from: "book", book, action, inputs, parameters })) as Plan;
   }
 
-  async assistantPlan(workspace: string, text: string, artifacts: string[]): Promise<AssistantPlan> {
-    return (await this.json("/api/assistant/plan", "POST", { workspace, text, artifacts })) as AssistantPlan;
+  /** The assistant's layout of a book action's Controls for an artifact (the Suggested tab). */
+  async controlsLayout(workspace: string, artifact: string, book: string, action: string, request?: string): Promise<{ layout: ControlsLayout; model?: string }> {
+    return (await this.json("/api/assistant/controls", "POST", { workspace, artifact, book, action, request })) as { layout: ControlsLayout; model?: string };
+  }
+
+  /** The assistant's answer to a message, with the conversation so far; a plan when asked to do something. */
+  async assistantPlan(workspace: string, text: string, artifacts: string[], history: ChatTurn[] = []): Promise<AssistantPlan> {
+    return (await this.json("/api/assistant/plan", "POST", { workspace, text, artifacts, history })) as AssistantPlan;
   }
 
   async plan(id: string): Promise<Plan> {

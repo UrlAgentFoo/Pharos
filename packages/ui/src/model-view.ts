@@ -1,7 +1,8 @@
 /**
  * A 3D model in a data window: a PLY mesh with per-vertex colours (an
  * OpenFOAM case's surfaces, segmented objects), lit softly and framed to
- * fit. Drag to orbit, scroll to zoom, right-drag to pan.
+ * fit, or a PLY point cloud (a scene's sparse points from COLMAP) drawn as
+ * coloured dots. Drag to orbit, scroll to zoom, right-drag to pan.
  */
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
@@ -26,24 +27,34 @@ export class ModelView {
     host.append(this.renderer.domElement);
 
     const geometry = new PLYLoader().parse(ply);
-    geometry.computeVertexNormals();
     const coloured = !!geometry.getAttribute("color");
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({ vertexColors: coloured, color: coloured ? 0xffffff : 0xbfc4cc, roughness: 0.75, metalness: 0.05, side: THREE.DoubleSide }),
-    );
-    this.scene.add(mesh);
+    // a PLY with no faces is a point cloud
+    const points = !geometry.index;
+    geometry.computeBoundingSphere();
+    if (points) {
+      const size = geometry.boundingSphere!.radius / 150;
+      this.scene.add(new THREE.Points(geometry, new THREE.PointsMaterial({ size, vertexColors: coloured, color: coloured ? 0xffffff : 0xbfc4cc })));
+      // point clouds here come from COLMAP, whose world y points down
+      this.camera.up.set(0, -1, 0);
+    } else {
+      geometry.computeVertexNormals();
+      const mesh = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({ vertexColors: coloured, color: coloured ? 0xffffff : 0xbfc4cc, roughness: 0.75, metalness: 0.05, side: THREE.DoubleSide }),
+      );
+      this.scene.add(mesh);
+    }
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0x44403c, 1.6));
     const sun = new THREE.DirectionalLight(0xffffff, 1.4);
     sun.position.set(1, 2, 3);
     this.scene.add(sun);
 
-    // frame the model: look at its centre from a three-quarter view
-    geometry.computeBoundingSphere();
+    // frame the model: look at its centre from a three-quarter view (for COLMAP's points, from behind its first camera)
     const { center, radius } = geometry.boundingSphere!;
     this.camera.near = radius / 100;
     this.camera.far = radius * 100;
-    this.camera.position.copy(center).add(new THREE.Vector3(0.6, 0.5, 1.4).normalize().multiplyScalar(radius * 2.6));
+    const from = points ? new THREE.Vector3(0, -0.35, -1) : new THREE.Vector3(0.6, 0.5, 1.4);
+    this.camera.position.copy(center).add(from.normalize().multiplyScalar(points ? radius * 1.6 : radius * 2.6));
     this.camera.updateProjectionMatrix();
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.target.copy(center);

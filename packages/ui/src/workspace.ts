@@ -50,8 +50,14 @@ export interface DataDoc {
   output?: string;
   /** Why the assistant proposed these steps, when it did. */
   rationale?: string;
-  /** Side panel open, history line full or slim, and the Controls' results section open. */
-  ui: { controls: boolean; history: "full" | "slim"; results?: boolean };
+  /**
+   * A book action the assistant suggests running here (asked for in the chat):
+   * it waits in the Controls' Suggested tab, not in the history, until it's
+   * run or dismissed.
+   */
+  suggestion?: { book: { id: string; title: string }; action: string; values: Params; rationale?: string; request?: string };
+  /** Side panel open, history line full or slim, the Controls' results section open, and which Controls tab shows. */
+  ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested" };
 }
 
 let nextDoc = 0;
@@ -166,6 +172,12 @@ export function timeBlocks(doc: DataDoc): TimeBlock[] {
     b.status = blockStatus(steps);
   }
   return out;
+}
+
+/** A run that has started but not yet finished once: it joins the timeline when it's done (unless it's already on view). */
+export function underWay(doc: DataDoc, b: TimeBlock): boolean {
+  const onView = doc.marker - 1 >= b.first && doc.marker - 1 <= b.last;
+  return (b.status === "queued" || b.status === "running") && !onView && doc.steps.slice(b.first, b.last + 1).some((s) => !s.outputs);
 }
 
 /** The run that holds step `marker` (1-based); -1 for the data itself. */

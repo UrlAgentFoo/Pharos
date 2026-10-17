@@ -14,8 +14,9 @@
  *   it re-runs from there), or for the dataset itself, what it is.
  * - Suggested, beside Fork, lists the books and operations that take what's
  *   on view, so each result can feed the next run.
- * - Under the controls, a folded Results section holds what the run on view
- *   made, step by step; click one to show it.
+ * - Under the controls, a folded Results section lists what the run on view
+ *   made, step by step; click one to show it in the window, with a bar to
+ *   close it again.
  */
 import type { Artifact, ParamSpec, Params } from "@pharos/contracts";
 import type { Image } from "@pharos/core";
@@ -26,7 +27,7 @@ import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import { barHtml, clockHtml, progressHtml } from "./progress.js";
-import { type DataDoc, type DataStep, type TimeBlock, blockAt, stepTitle, timeBlocks } from "./workspace.js";
+import { type DataDoc, type DataStep, type TimeBlock, blockAt, stepTitle, timeBlocks, underWay } from "./workspace.js";
 
 /** Something that can be applied to the shown data: one of a book's actions, or a single ship operation. */
 export type Suggestion =
@@ -37,6 +38,25 @@ export type Suggestion =
 export interface RunControls {
   sections: { title: string; note?: string; params: ParamSpec[]; folded?: boolean }[];
   values: Params;
+}
+
+/** What the Controls' Suggested tab is about: the assistant's suggestion, the book run on view, or an action that fits. */
+export interface SuggestedSubject {
+  kind: "suggestion" | "run" | "next";
+  book: { id: string; title: string };
+  action: string;
+  title: string;
+  /** The settings it lays out (those that fit this data). */
+  specs: ParamSpec[];
+  /** Its values now: the suggestion's, the run's, or the defaults. */
+  values: Params;
+  /** The values the chat's suggestion chose, which win over the layout's. */
+  chosen?: Params;
+  /** Why the assistant suggested it, and what was asked, for a suggestion from the chat. */
+  rationale?: string;
+  request?: string;
+  /** The run's first step, for a run. */
+  first?: number;
 }
 
 /** A book action the Controls offer to run next, laid out by its design, with its defaults. */
@@ -77,11 +97,17 @@ export interface DataWindowHooks {
   updateRun(doc: DataDoc, first: number, values: Params): void;
   /** What the Controls offer to run next on what's on view: the actions that fit the data, or a run's `next`. */
   nextActions(doc: DataDoc): Promise<NextAction[]>;
+  /** For large data that something can make smaller: why, and the first way to do it (its settings, then a run). */
+  smallerFirst(doc: DataDoc, artifact: Artifact): Promise<{ note: string; title: string; apply(): void } | null>;
   /** Runs one of those with the values set in the Controls. */
   runNext(doc: DataDoc, book: string, action: string, values: Params): void;
   removeStep(doc: DataDoc, index: number): void;
   /** Opens the menu of what fits the data on view, under `anchor`. */
   suggestMenu(doc: DataDoc, anchor: DOMRect): void;
+  /** Which Controls tab shows: the window's choice, else Suggested while the assistant can be used. */
+  controlsTab(doc: DataDoc): "manual" | "suggested";
+  /** Draws the Suggested tab into `host`: the assistant's layout of what to run, or re-run, here. */
+  renderSuggested(doc: DataDoc, host: HTMLElement): void;
   stepSpec(run: string): StepSpec | undefined;
   notify(text: string): void;
 }
@@ -92,7 +118,9 @@ const KIND_ICON: Record<string, string> = {
   tracks: "link",
   table: "table",
   mesh: "cube",
-  splat: "sparkle",
+  splat: "particles",
+  photos: "image",
+  sfm: "fit",
   "sim-case": "plane",
   video: "layout",
 };
@@ -117,11 +145,13 @@ export class DataWindow {
   readonly drawer: HTMLElement;
   /** The drawer's controls, redrawn as the selection changes; the results section below them stays put. */
   private readonly ctl: HTMLElement;
-  private readonly resultsSec: HTMLDetailsElement;
+  /** The Suggested tab's panel, and the tabs over both. */
+  private readonly sug: HTMLElement;
+  private readonly tabs: HTMLElement;
+  /** Results, from the button at the history bar's right end: what the run on view made, step by step. */
+  private readonly resultsSec: HTMLElement;
   private readonly grid: HTMLElement;
   private mounted: Mounted | null = null;
-  private tiles: Mounted[] = [];
-  private gridKey = "";
   private readonly loaded = new Map<string, Loaded | Promise<Loaded>>();
   /** Data Pharos can't draw itself → what a ship's view made of it, once asked for. */
   private readonly viewed = new Map<string, string>();
@@ -131,12 +161,12 @@ export class DataWindow {
   /** The history marker is being dragged: the strip isn't redrawn under the pointer. */
   private scrubbing = false;
   private refocusMarker = false;
+  /** The data's "make it smaller first", when it's large. */
+  private smaller: { note: string; title: string; apply(): void } | null = null;
   /** The Controls on show for a book run, so Apply reads its fields. */
   private runCtl: { first: number; specs: ParamSpec[] } | null = null;
   /** The actions the Controls offer to run next, as drawn. */
   private nextCtl: NextAction[] = [];
-  /** "View log" stays open as the drawer redraws during a run. */
-  private logOpen = false;
 
   constructor(
     private readonly doc: DataDoc,
@@ -146,22 +176,37 @@ export class DataWindow {
   ) {
     this.body = body;
     this.body.classList.add("data-body");
-    this.body.innerHTML = `<div class="dv-outputs"></div><div class="dv-stage"></div><div class="dv-status" hidden></div>`;
+    this.body.innerHTML = `<div class="dv-picked" hidden></div><div class="dv-outputs"></div><div class="dv-stage"></div><div class="dv-status" hidden></div>
+      <div class="dv-results-pop" id="${doc.id}-results" role="region" aria-label="Results" hidden>
+        <p class="dv-results-head"><span class="eyebrow">Results</span><button type="button" class="icon-btn" data-act="results" aria-label="Close Results" title="Close">${icon("close", 14)}</button></p>
+        <div class="dv-results-body"></div>
+      </div>`;
     this.stage = this.body.querySelector(".dv-stage")!;
     this.bar = bar;
     this.drawer = document.createElement("aside");
     this.drawer.className = "ctl-drawer data-drawer";
-    this.drawer.innerHTML = `<div class="dv-ctl"></div>
-      <details class="ctl-sec dv-results"${doc.ui.results ? " open" : ""}><summary class="ctl-sec-title">${icon("chevron-right", 12)}Results <small></small></summary><div class="dv-grid"></div></details>`;
+    this.drawer.innerHTML = `<div class="ctl-tabs" role="tablist" aria-label="Controls">
+        <button type="button" role="tab" id="${doc.id}-tab-manual" data-tab="manual" aria-controls="${doc.id}-manual">Manual</button>
+        <button type="button" role="tab" id="${doc.id}-tab-suggested" data-tab="suggested" aria-controls="${doc.id}-suggested">${icon("sparkle", 13)} Suggested</button>
+      </div>
+      <div class="dv-sug" role="tabpanel" id="${doc.id}-suggested" aria-labelledby="${doc.id}-tab-suggested" hidden></div>
+      <div class="dv-ctl" role="tabpanel" id="${doc.id}-manual" aria-labelledby="${doc.id}-tab-manual"></div>`;
     this.ctl = this.drawer.querySelector(".dv-ctl")!;
-    this.resultsSec = this.drawer.querySelector(".dv-results")!;
-    this.grid = this.drawer.querySelector(".dv-grid")!;
-    // tiles hold viewers, so they exist only while the section is open
-    this.resultsSec.addEventListener("toggle", () => {
-      doc.ui.results = this.resultsSec.open;
-      if (this.resultsSec.open) void this.renderGrid();
-      else this.clearGrid();
+    this.sug = this.drawer.querySelector(".dv-sug")!;
+    this.tabs = this.drawer.querySelector(".ctl-tabs")!;
+    // the tabs: a click, or the arrow keys between them
+    const pickTab = (tab: string | undefined) => {
+      if ((tab !== "manual" && tab !== "suggested") || tab === this.hooks.controlsTab(doc)) return;
+      doc.ui.controlsTab = tab;
+      this.renderControls();
+      this.tabs.querySelector<HTMLButtonElement>(`[data-tab="${tab}"]`)!.focus();
+    };
+    this.tabs.addEventListener("click", (e) => pickTab((e.target as HTMLElement).closest<HTMLElement>("[data-tab]")?.dataset.tab));
+    this.tabs.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") pickTab(this.hooks.controlsTab(doc) === "manual" ? "suggested" : "manual");
     });
+    this.resultsSec = this.body.querySelector(".dv-results-pop")!;
+    this.grid = this.body.querySelector(".dv-results-body")!;
     this.body.addEventListener("click", (e) => this.onClick(e));
     this.drawer.addEventListener("click", (e) => this.onClick(e));
     this.drawer.addEventListener("submit", (e) => e.preventDefault());
@@ -174,7 +219,7 @@ export class DataWindow {
     this.bar.addEventListener("keydown", (e) => {
       if (!(e.target as HTMLElement).matches(".tl-marker")) return;
       const stops = this.stops();
-      const pos = blockAt(timeBlocks(this.doc), this.doc.marker) + 1;
+      const pos = blockAt(this.blocks(), this.doc.marker) + 1;
       const to = { ArrowLeft: pos - 1, ArrowRight: pos + 1, Home: 0, End: stops.length - 1 }[e.key];
       if (to === undefined) return;
       e.preventDefault();
@@ -206,10 +251,22 @@ export class DataWindow {
   render() {
     this.renderBar();
     void this.renderBody();
-    void this.renderDrawer();
-    const count = this.results().length;
-    this.resultsSec.querySelector("small")!.textContent = count ? String(count) : "";
-    if (this.resultsSec.open) void this.renderGrid().then(() => this.markTiles());
+    this.renderControls();
+    this.resultsSec.hidden = !(this.doc.ui.results && this.results().length);
+    this.renderResults();
+  }
+
+  /** The Controls' two tabs: the assistant's layout (Suggested), or every setting as the book lays them out (Manual). */
+  private renderControls() {
+    const tab = this.hooks.controlsTab(this.doc);
+    for (const b of this.tabs.querySelectorAll<HTMLButtonElement>("[data-tab]")) {
+      b.setAttribute("aria-selected", String(b.dataset.tab === tab));
+      b.tabIndex = b.dataset.tab === tab ? 0 : -1;
+    }
+    this.sug.hidden = tab !== "suggested";
+    this.ctl.hidden = tab !== "manual";
+    if (tab === "suggested") this.hooks.renderSuggested(this.doc, this.sug);
+    else void this.renderDrawer();
   }
 
   /** An artifact's viewer data, loaded once per window. */
@@ -232,6 +289,15 @@ export class DataWindow {
   private async renderBody() {
     const d = this.doc;
     const { artifactId, step } = this.shown();
+    // a result picked from Results shows with a bar to close it, back to the run's main result
+    const picked = this.picked();
+    const bar = this.body.querySelector<HTMLElement>(".dv-picked")!;
+    bar.hidden = !picked || !step;
+    if (picked && step) {
+      const name = d.output ?? Object.keys(step.outputs ?? {})[0];
+      bar.innerHTML = `<span>Result: <strong>${escapeHtml(this.title(step))}</strong>${name ? ` · ${escapeHtml(name)}` : ""}</span>
+        <button class="icon-btn" data-step="${picked.last + 1}" aria-label="Close this result" title="Back to the run's main result">${icon("close", 14)}</button>`;
+    }
     const outputs = this.body.querySelector<HTMLElement>(".dv-outputs")!;
     const names = Object.keys(step?.outputs ?? {});
     outputs.hidden = names.length < 2;
@@ -240,9 +306,13 @@ export class DataWindow {
       .join("");
 
     const status = this.body.querySelector<HTMLElement>(".dv-status")!;
+    // the card follows the step on view while it isn't done, or else a new run under way (off the timeline until it's done)
+    const pending = timeBlocks(d).find((b) => underWay(d, b));
     const busy = step && step.status !== "done";
-    status.hidden = !busy;
-    if (busy && step) {
+    const card = busy ? step : pending ? d.steps.slice(pending.first, pending.last + 1).find((s) => s.status !== "done") : undefined;
+    status.hidden = !card;
+    if (card) {
+      const step = card;
       const live = step.status === "running" || step.status === "queued";
       // a step waiting on earlier ones shows the one actually working
       const working = live && step.status === "queued" && (step.live?.phase ?? "waiting") === "waiting" ? (d.steps.find((s) => s.status === "running") ?? d.steps.find((s) => s.status === "queued" && s.live && s.live.phase !== "waiting")) : undefined;
@@ -264,11 +334,13 @@ export class DataWindow {
         }
       </div>`;
     }
-    const key = `${artifactId}|${busy ? step!.status : "ok"}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}`;
+    // what was on view stays under the card (the last result, or the step's previous one) rather than an empty stage
+    if (!artifactId && busy && this.shownKey) return;
+    const key = `${artifactId}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
     this.unmount();
-    if (!artifactId || busy) {
+    if (!artifactId) {
       this.stage.innerHTML = "";
       return;
     }
@@ -325,7 +397,7 @@ export class DataWindow {
 
   /** The results of the run on view, step by step: [step index (1-based), output name, artifact id]. */
   private results(): [number, string, string][] {
-    const blocks = timeBlocks(this.doc);
+    const blocks = this.blocks();
     const b = blocks[blockAt(blocks, this.doc.marker)];
     if (!b) return [];
     return this.doc.steps
@@ -333,51 +405,28 @@ export class DataWindow {
       .flatMap((s, j) => (s.status === "done" ? Object.entries(s.outputs ?? {}).map(([n, id]) => [b.first + j + 1, n, id] as [number, string, string]) : []));
   }
 
-  private async renderGrid() {
-    const items = this.results();
-    const key = `${this.doc.marker > 0}|${items.map((r) => r.join(":")).join("|")}`;
-    if (key === this.gridKey) return;
-    this.clearGrid();
-    this.gridKey = key;
-    if (!items.length) {
-      this.grid.innerHTML = `<p class="dv-grid-empty">${this.doc.marker > 0 ? "This run hasn't made anything yet." : "Pick a run in the history: what it made shows here."}</p>`;
-      return;
-    }
-    this.grid.innerHTML = items
-      .map(([index, name, id]) => {
-        const step = this.doc.steps[index - 1];
-        return `<figure class="dv-tile">
-          <figcaption><button class="dv-tile-go" data-index="${index}" data-output="${escapeHtml(name)}" title="Show it in the window">${escapeHtml(this.title(step))} <small>${escapeHtml(name)}</small></button></figcaption>
-          <div class="dv-stage" data-tile="${escapeHtml(id)}"><p class="dv-loading">Loading…</p></div></figure>`;
-      })
-      .join("");
-    this.markTiles();
-    await Promise.all(
-      items.map(async ([, , id]) => {
-        const entry = await this.entry(id);
-        const host = this.grid.querySelector<HTMLElement>(`[data-tile="${CSS.escape(id)}"]`);
-        if (this.gridKey !== key || !host) return;
-        this.tiles.push(mountView(host, entry, await this.artifact(id), true));
-      }),
-    );
-  }
-
-  /** Marks the tile of the result on view. */
-  private markTiles() {
+  /** The run's results as titles; the one on view is marked. Clicking one shows it in the window. */
+  private renderResults() {
     const d = this.doc;
+    const items = this.results();
     const shown = this.shown().artifactId;
-    this.grid.querySelectorAll<HTMLElement>(".dv-tile").forEach((t) => {
-      const on = d.marker > 0 && t.querySelector<HTMLElement>("[data-tile]")?.dataset.tile === shown;
-      t.classList.toggle("on", on);
-      t.querySelector(".dv-tile-go")?.toggleAttribute("aria-current", on);
-    });
+    this.grid.innerHTML = items.length
+      ? `<ul class="dv-result-list">${items
+          .map(([index, name, id]) => {
+            const on = d.marker > 0 && id === shown;
+            return `<li><button class="dv-result${on ? " on" : ""}" data-index="${index}" data-output="${escapeHtml(name)}"${on ? ' aria-current="true"' : ""}>${escapeHtml(this.title(d.steps[index - 1]))} <small>${escapeHtml(name)}</small></button></li>`;
+          })
+          .join("")}</ul>`
+      : `<p class="dv-grid-empty">${d.marker > 0 ? "This run hasn't made anything yet." : "Pick a run in the history: what it made shows here."}</p>`;
   }
 
-  private clearGrid() {
-    for (const t of this.tiles) t.destroy();
-    this.tiles = [];
-    this.gridKey = "";
-    this.grid.innerHTML = "";
+  /** The run's main result is its last step's first output; anything else was picked from Results. */
+  private picked(): { first: number; last: number } | null {
+    const d = this.doc;
+    const b = this.blocks()[blockAt(this.blocks(), d.marker)];
+    if (!b) return null;
+    const main = d.marker - 1 === b.last && (!d.output || d.output === Object.keys(d.steps[b.last].outputs ?? {})[0]);
+    return main ? null : b;
   }
 
   // ---------------------------------------------------------- history: one block per run, and the marker
@@ -386,9 +435,14 @@ export class DataWindow {
     return stepTitle(step);
   }
 
+  /** The runs on the timeline: a new run joins it once it's done. */
+  private blocks(): TimeBlock[] {
+    return timeBlocks(this.doc).filter((b) => !underWay(this.doc, b));
+  }
+
   /** "Run 2 of 3 · Segment and measure", plus the step when the run has several ("· step 3 of 5: Measure"). */
   private where(marker: number): string {
-    const blocks = timeBlocks(this.doc);
+    const blocks = this.blocks();
     const k = blockAt(blocks, marker);
     const b = blocks[k];
     if (!b) return "The data itself";
@@ -398,13 +452,14 @@ export class DataWindow {
 
   /** Where the marker can stop: the data itself (0), then the end of each run. */
   private stops(): number[] {
-    return [0, ...timeBlocks(this.doc).map((b) => b.last + 1)];
+    return [0, ...this.blocks().map((b) => b.last + 1)];
   }
 
   private renderBar() {
     if (this.scrubbing) return;
     const d = this.doc;
-    const blocks = timeBlocks(d);
+    const blocks = this.blocks();
+    const results = this.results().length;
     const on = blockAt(blocks, d.marker);
     const node = (b: TimeBlock, k: number) => {
       const steps = d.steps.slice(b.first, b.last + 1);
@@ -440,7 +495,7 @@ export class DataWindow {
         ${active ? `<button class="tl-text" data-act="cancel">Cancel</button>` : ""}
         ${redo && !active ? `<button class="tl-text" data-act="rerun">${icon("redo", 14)}<span>Re-run</span></button>` : ""}
         ${blocks.length ? `<button class="tl-text" data-act="fork" title="Open a new window with the history up to here">${icon("branch", 14)}<span>Fork</span></button>` : ""}
-        <button class="tl-text" data-act="suggest" aria-haspopup="menu" title="Books and operations that take what's on view">${icon("sparkle", 14)}<span>Suggest</span><span class="caret" aria-hidden="true">▾</span></button>
+        ${results ? `<button class="tl-text" data-act="results" aria-expanded="${!!d.ui.results}" aria-controls="${d.id}-results" title="What the run on view made, step by step">${icon("overview", 14)}<span>Results</span><small>${results}</small></button>` : ""}
       </div>`;
     const marker = this.bar.querySelector<HTMLElement>(".tl-marker");
     if (!marker) return;
@@ -475,10 +530,9 @@ export class DataWindow {
     e.preventDefault();
     const xs = this.markerXs();
     const stops = this.stops();
-    let pos = blockAt(timeBlocks(this.doc), this.doc.marker) + 1;
+    let pos = blockAt(this.blocks(), this.doc.marker) + 1;
     marker.setPointerCapture(e.pointerId);
     marker.focus({ preventScroll: true });
-    marker.classList.add("dragging");
     this.scrubbing = true;
     const move = (ev: PointerEvent) => {
       // the marker follows the pointer; the point in history is the nearest stop
@@ -493,7 +547,6 @@ export class DataWindow {
       marker.removeEventListener("pointermove", move);
       marker.removeEventListener("pointerup", up);
       marker.removeEventListener("pointercancel", up);
-      marker.classList.remove("dragging");
       this.scrubbing = false;
       this.refocusMarker = true;
       this.renderBar();
@@ -509,7 +562,7 @@ export class DataWindow {
   private async renderDrawer() {
     const d = this.doc;
     const step = d.marker > 0 ? d.steps[d.marker - 1] : null;
-    const block = timeBlocks(d)[blockAt(timeBlocks(d), d.marker)];
+    const block = this.blocks()[blockAt(this.blocks(), d.marker)];
     const run = block ? d.steps.slice(block.first, block.last + 1) : [];
     const key = `${d.marker}|${step ? `${step.status}|${d.output ?? ""}|${step.error ?? ""}|${JSON.stringify(run.map((s) => [s.status, s.with]))}` : d.steps.map((s) => s.status).join()}|${d.rationale ?? ""}`;
     if (key === this.drawerKey) return;
@@ -526,11 +579,19 @@ export class DataWindow {
       this.ctl.innerHTML = `
         <p class="ctl-summary">${escapeHtml(a.kind)} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}${facts ? `<br/>${escapeHtml(facts)}` : ""}</p>
         ${d.rationale ? `<section class="ctl-sec"><p class="dv-why">${icon("sparkle", 13)} ${escapeHtml(d.rationale)}</p>${proposed ? `<button class="primary dv-approve" data-act="approve">${icon("batch", 14)} Approve and run</button>` : ""}</section>` : ""}`;
-      // then every book action that fits the data, ready to run from here
-      const next = await this.hooks.nextActions(d).catch(() => []);
-      if (this.drawerKey !== key || !next.length) return;
+      // large data first suggests making it smaller; then every book action that fits it, ready to run from here
+      const [smaller, next] = await Promise.all([this.hooks.smallerFirst(d, a).catch(() => null), this.hooks.nextActions(d).catch(() => [])]);
+      if (this.drawerKey !== key) return;
+      this.smaller = smaller;
+      if (smaller)
+        this.ctl.insertAdjacentHTML(
+          "beforeend",
+          `<section class="ctl-sec dv-large"><p class="ctl-sec-title">Make it smaller first</p><p class="muted small">${escapeHtml(smaller.note)}</p>
+            <button type="button" class="btn" data-act="smaller">${icon("shrink", 15)}<span>${escapeHtml(smaller.title.charAt(0).toUpperCase() + smaller.title.slice(1))}…</span></button></section>`,
+        );
+      if (!next.length) return;
       this.nextCtl = next;
-      this.ctl.insertAdjacentHTML("beforeend", this.nextHtml(next, "Available actions"));
+      this.ctl.insertAdjacentHTML("beforeend", this.nextHtml(next, smaller ? "Or run on it as it is" : "Available actions"));
       return;
     }
     const editable = run.every((s) => s.status !== "running" && s.status !== "queued");
@@ -539,7 +600,7 @@ export class DataWindow {
     if (this.drawerKey !== key) return;
     this.nextCtl = next;
     const spec = ctl ? undefined : this.hooks.stepSpec(step.run);
-    const apply = `<button type="button" class="primary" data-act="update">${icon("redo", 14)} Apply and re-run</button>`;
+    const apply = `<button type="button" class="primary run-btn" data-act="update" title="Runs it again with these settings, as a new run after the last"><span>Apply and run</span>${icon("arrow-right", 14)}</button>`;
     let settings = "";
     if (ctl) {
       this.runCtl = { first: block!.first, specs: ctl.sections.flatMap((sec) => sec.params) };
@@ -554,17 +615,11 @@ export class DataWindow {
       settings = `<section class="ctl-sec"><p class="ctl-sec-title">Settings</p><form class="dv-params" ${editable ? "" : "inert"}>${manifestParamFields(spec.params, step.with)}${apply}</form></section>`;
     } else settings = `<p class="muted small">This step has no settings to change.</p>`;
     this.ctl.innerHTML = `
-      <div class="dv-head"><p class="ctl-summary">${escapeHtml(this.stepOf(d.marker))} · ${escapeHtml(STATUS_LABEL[step.status])}</p></div>
-      <details class="dv-log"${this.logOpen ? " open" : ""}><summary class="link-btn">View log</summary>
-        <p class="ctl-summary">${escapeHtml(this.where(d.marker))}<br/>${escapeHtml(STATUS_LABEL[step.status])}${step.cached ? " (cached result)" : ""}</p>
-        ${step.jobId ? `<button type="button" class="link-btn" data-act="log" data-job="${escapeHtml(step.jobId)}">Open the full log</button>` : `<p class="muted small">No log yet: this step hasn't run.</p>`}
-      </details>
       ${spec ? `<p class="muted small">${escapeHtml(spec.summary)}</p>` : ""}
       ${step.error ? `<p class="chat-warn">${escapeHtml(step.error)}</p>` : ""}
       ${settings}
       ${this.nextHtml(next, "Next")}
-      <section class="ctl-sec"><button class="link danger" data-act="remove">${block && block.last > block.first ? "Remove this run" : "Remove this step"}${block && d.steps.length - 1 > block.last ? " and the ones that use it" : ""}</button></section>`;
-    this.ctl.querySelector<HTMLDetailsElement>(".dv-log")!.addEventListener("toggle", (e) => (this.logOpen = (e.currentTarget as HTMLDetailsElement).open));
+      <section class="ctl-sec ctl-remove-sec"><button type="button" class="ctl-remove" data-act="remove">${block && block.last > block.first ? "Remove this run" : "Remove this step"}${block && d.steps.length - 1 > block.last ? " and the ones that use it" : ""}</button></section>`;
   }
 
   /**
@@ -584,7 +639,7 @@ export class DataWindow {
         })
         .join("");
       return `<form class="dv-next-form">${a.summary ? `<p class="muted small">${escapeHtml(a.summary)}</p>` : ""}${sections}
-        <button type="button" class="primary" data-act="next" data-next="${i}">${escapeHtml(a.title)}</button></form>`;
+        <button type="button" class="primary run-btn" data-act="next" data-next="${i}" title="${escapeHtml(a.title)}"><span>${escapeHtml(a.title)}</span>${icon("arrow-right", 14)}</button></form>`;
     };
     const items = list.map((a, i) =>
       list.length === 1
@@ -621,11 +676,16 @@ export class DataWindow {
         return this.hooks.rerun(d);
       case "fork":
         return this.hooks.fork(d);
+      case "smaller":
+        return this.smaller?.apply();
+      case "results":
+        d.ui.results = !d.ui.results;
+        return this.render();
       case "suggest":
         return this.hooks.suggestMenu(d, el.getBoundingClientRect());
       case "remove": {
         // a run goes as a whole
-        const b = timeBlocks(d)[blockAt(timeBlocks(d), d.marker)];
+        const b = this.blocks()[blockAt(this.blocks(), d.marker)];
         return this.hooks.removeStep(d, b ? b.first : d.marker - 1);
       }
       case "next": {
@@ -680,7 +740,6 @@ export class DataWindow {
 
   destroy() {
     this.unmount();
-    this.clearGrid();
     for (const entry of this.loaded.values()) if (!(entry instanceof Promise)) releaseView(entry);
   }
 }

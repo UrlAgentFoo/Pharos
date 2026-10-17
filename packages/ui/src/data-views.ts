@@ -12,6 +12,7 @@ import type { LocalServer } from "./api.js";
 import { parseCsv } from "./csv.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { ModelView } from "./model-view.js";
+import { SplatView, isSplatPly } from "./splat-view.js";
 import { type ViewState, Viewer, newViewState, scaledCopy, setRanges } from "./viewer.js";
 
 /** What a viewer needs for one artifact, fetched once and kept while its window is open. */
@@ -20,6 +21,7 @@ export type Loaded =
   | { type: "table"; rows: string[][]; total: number }
   | { type: "video"; url: string }
   | { type: "model"; ply: ArrayBuffer }
+  | { type: "splat"; ply: ArrayBuffer }
   | { type: "case"; summary: CaseSummary }
   | { type: "text"; text: string }
   | { type: "page"; url: string }
@@ -47,7 +49,12 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
       const text = new TextDecoder().decode(await s.content(workspace, a.id));
       return { type: "table", rows: parseCsv(text, 501), total: text.split("\n").filter((l) => l.trim()).length - 1 };
     }
-    if (a.kind === "mesh" && a.format === "ply") return { type: "model", ply: await s.content(workspace, a.id) };
+    if (a.kind === "splat" && (a.format === "splat-ply" || a.format === "ply")) return { type: "splat", ply: await s.content(workspace, a.id) };
+    if (a.kind === "mesh" && a.format === "ply") {
+      // a splat saved as plain .ply (as most trainers name it) is recognised by what's in it
+      const ply = await s.content(workspace, a.id);
+      return isSplatPly(ply) ? { type: "splat", ply } : { type: "model", ply };
+    }
     if (a.format === "mp4") return { type: "video", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "video/mp4" })) };
     if (a.format === "openfoam-case") return { type: "case", summary: await s.caseSummary(workspace, a.id) };
     if (a.format === "html") return { type: "page", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "text/html" })) };
@@ -118,6 +125,16 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
         return new ModelView(host.querySelector<HTMLElement>(".dv-model")!, entry.ply);
       } catch (e) {
         host.innerHTML = card("Can't show this model", escapeHtml(e instanceof Error ? e.message : String(e)));
+        return none;
+      }
+    }
+    case "splat": {
+      host.classList.add("has-model");
+      host.innerHTML = `<div class="dv-model"></div>${compact ? "" : `<p class="dv-hint">Drag to turn · scroll to zoom · right-drag to move</p>`}`;
+      try {
+        return new SplatView(host.querySelector<HTMLElement>(".dv-model")!, entry.ply);
+      } catch (e) {
+        host.innerHTML = card("Can't show this splat", escapeHtml(e instanceof Error ? e.message : String(e)));
         return none;
       }
     }

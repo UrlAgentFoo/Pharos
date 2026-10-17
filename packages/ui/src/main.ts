@@ -1,5 +1,5 @@
 import "./style.css";
-import type { Artifact, CatalogueEntry, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
+import type { Artifact, CatalogueEntry, ChatTurn, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
 import { type AiConfig, LocalServer } from "./api.js";
 import { type AskReply, Assistant, type SearchHit, UNTITLED } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
@@ -14,7 +14,8 @@ import { PROJECT_EXT, type ProjectDoc, type ProjectFile, packProject, unpackProj
 import { Autosave } from "./session.js";
 import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
-import { type DataDoc, Workspace } from "./workspace.js";
+import { type DataDoc, Workspace, blockAt, timeBlocks } from "./workspace.js";
+import { SuggestedControls } from "./suggested-controls.js";
 import { WindowSummary } from "./window-summary.js";
 import { currentWorkspace, formatTitle, isSupported, setFormats, workspacePanel } from "./workspace-panel.js";
 
@@ -545,6 +546,18 @@ function refresh() {
   updateEnabled();
 }
 
+/** Removes a run (or a lone step) from a window's history once you've confirmed, with the later runs that use it. */
+async function removeRun(doc: DataDoc, index: number) {
+  const blocks = timeBlocks(doc);
+  const block = blocks[blockAt(blocks, index + 1)];
+  const run = !!block && block.last > block.first;
+  const later = !!block && doc.steps.length - 1 > block.last;
+  const what = run ? "run" : "step";
+  const message = `It leaves this window's history${later ? `, with the later runs that use what it made` : ""}. Your data and the results on disk are kept.`;
+  if (!(await confirmDialog(`Remove this ${what}?`, message, `Remove ${what}`, true))) return;
+  processes.removeStep(doc, index);
+}
+
 /** Closes a window once you've confirmed: its history goes, its data and results stay in the workspace. */
 async function closeDoc(doc: DataDoc) {
   const busy = doc.steps.some((s) => s.status === "running" || s.status === "queued");
@@ -617,12 +630,18 @@ async function openLibrary(data?: { workspace: string; artifacts: Artifact[]; te
 }
 
 /** The assistant's turn: a recipe for the active window's data, proposed into its history. */
-async function ask(text: string): Promise<AskReply> {
+async function ask(text: string, history: ChatTurn[]): Promise<AskReply> {
   const s = server!;
   const doc = ws.active!;
   const shown = (await windows.dataView(doc.id)?.shownArtifact()) ?? doc.source;
-  const r = await s.assistantPlan(doc.workspace, text, [shown.id]);
-  if (!r.plan) return { text: `${r.message}${r.matches.some((m) => m.tier !== "excluded") ? "" : "\n\nNo installed book can run on this data."}` };
+  const r = await s.assistantPlan(doc.workspace, text, [shown.id], history);
+  // a reply in words (a greeting, an answer, or what's missing): the assistant knows what fits and says so itself
+  if (!r.plan) return { text: r.message };
+  if (r.plan.book) {
+    const target = await processes.suggest(r.plan, shown, text);
+    void s.cancelPlan(r.plan.id).catch(() => {}); // the server's copy isn't needed: it runs from the Controls
+    return { text: r.plan.rationale ?? r.message, suggested: { window: target.name, title: r.plan.title } };
+  }
   const target = await processes.fromPlan(r.plan, shown);
   const steps = r.plan.steps.length;
   return { text: r.plan.rationale ?? r.message, proposed: { window: target.name, steps, title: r.plan.title } };
@@ -785,7 +804,13 @@ async function settingsDialog() {
   await ready;
   if (server) aiConfig = await server.aiConfig().catch(() => aiConfig);
   const cfg = aiConfig;
-  const keyStatus = !cfg?.keySource ? "No key set" : cfg.keySource === "settings" ? `Saved key ${cfg.keyHint ?? ""}` : "Using ANTHROPIC_API_KEY from the environment";
+  const keyStatus = !cfg?.keySource
+    ? "No key set"
+    : cfg.keySource === "settings"
+      ? `Saved key ${cfg.keyHint ?? ""}`
+      : cfg.keySource === "file"
+        ? `Using ANTHROPIC_API_KEY from ${cfg.keyFile ?? ".env"}`
+        : "Using ANTHROPIC_API_KEY from the environment";
   const connection = server ? `Connected to the Pharos ${server.info.version} server on this computer (${server.info.platform}${server.info.capabilities.python.available ? ", Python ready" : ""}).` : NO_SERVER;
   const body = !server
     ? `<footer><button class="primary" data-cancel>Close</button></footer>`
@@ -857,7 +882,6 @@ const windowSummary = new WindowSummary(summaryEl, {
   pulls: () => pulls,
   formatTitle,
   getReady: (book) => void getReady(book),
-  useBook: (doc, book, action) => void processes.useBook(doc, book, action),
   select: (doc, marker) => processes.select(doc, marker),
   showLog: (jobId) => void processes.showLog(jobId),
 });
@@ -869,6 +893,19 @@ async function getReady(book: CatalogueEntry) {
   const r = await run(`Getting ${book.title} ready`, () => s.getReady(book.id));
   if (r) notify(r.pulling.length ? `Getting ${r.pulling.map((p) => p.id).join(", ")} ready; follow it under Running in the top bar.` : `${book.title} is ready.`);
 }
+
+/** The Controls' Suggested tab, for every window. */
+const suggested = new SuggestedControls({
+  server: () => server,
+  unavailable: aiUnavailable,
+  subject: (doc) => processes.suggestedSubject(doc),
+  run: (doc, subject, values) => processes.runSuggested(doc, subject, values),
+  dismiss: (doc) => processes.dismissSuggestion(doc),
+  manual: (doc) => {
+    doc.ui.controlsTab = "manual";
+    ws.touch();
+  },
+});
 
 const windows: WindowManager = new WindowManager($("desktop"), ws, {
   dataMenu: (doc, anchor) => void dataMenu(doc, anchor),
@@ -888,9 +925,13 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     runControls: (doc, first) => processes.runControls(doc, first),
     updateRun: (doc, first, values) => void processes.updateRun(doc, first, values),
     nextActions: (doc) => processes.nextActions(doc),
+    smallerFirst: (doc, a) => processes.smallerFirst(doc, a),
     runNext: (doc, book, action, values) => void processes.runNext(doc, book, action, values),
-    removeStep: (doc, i) => processes.removeStep(doc, i),
+    removeStep: (doc, i) => void removeRun(doc, i),
     suggestMenu: (doc, anchor) => void suggestMenu(doc, anchor),
+    // the assistant's layout leads while it can be used; the window remembers a choice of tab
+    controlsTab: (doc) => doc.ui.controlsTab ?? (aiUnavailable() ? "manual" : "suggested"),
+    renderSuggested: (doc, host) => void suggested.render(doc, host),
     stepSpec: (r) => processes.stepSpec(r),
   },
   insets,
