@@ -16,34 +16,40 @@
         <button class="tb-text" data-action="save-project" title="Save the project (images, histories, layout and notes) as one .pharos file"></button>
         <button class="tb-text" data-action="open-project" title="Open an .pharos project file"></button>
         <button class="tb-text" data-action="export-menu" aria-haspopup="menu" title="Export images or notes"></button>
+        <button class="tb-text" data-action="clear-project" title="Start a new, empty project (your data on disk is kept)"></button>
       </div>
 
       <div class="welcome" id="welcome">
-        <p class="eyebrow">Pharos · New session</p>
-        <h1 class="display">Drop an image.</h1>
-        <button class="dropzone" data-action="open" aria-describedby="formats-line">
+        <p class="eyebrow">Pharos · New project</p>
+        <h1 class="display">Drop your data.</h1>
+        <button class="dropzone" data-action="add-data" aria-describedby="formats-line">
           <span class="dropzone-icon" id="dropzone-icon"></span>
-          <span class="dropzone-title">Drag and drop an image here</span>
-          <span class="dropzone-sub">or click to browse</span>
+          <span class="dropzone-title">Drag and drop files here</span>
+          <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, tables · or click to choose</span>
         </button>
-        <p class="formats-line" id="formats-line">TIFF, or <button class="link" id="formats-toggle" aria-expanded="false" aria-controls="formats">see more accepted files</button></p>
+        <label class="problem">
+          <span>What do you want to find out? <small>optional</small></span>
+          <textarea id="problem" rows="2" placeholder="e.g. Track the nuclei and measure how fast they move"></textarea>
+        </label>
+        <p class="formats-line" id="formats-line">Pharos finds the books that can run on your data. <button class="link" id="formats-toggle" aria-expanded="false" aria-controls="formats">What data can I use?</button></p>
         <div class="formats" id="formats" hidden>
-          <p class="eyebrow">Opens today</p>
+          <p class="eyebrow">Accepted data</p>
           <ul>
-            <li>TIFF (<code>.tif</code>, <code>.tiff</code>): 8-bit, 16-bit and 32-bit float</li>
-            <li>Stacks and hyperstacks: channels, z-slices, time frames</li>
-            <li>ImageJ TIFFs keep their pixel size and units</li>
+            <li>Microscopy: TIFF, OME-TIFF, Zeiss <code>.czi</code>, Nikon <code>.nd2</code>, Leica <code>.lif</code>, OME-Zarr folders; 2D, 3D, channels and time</li>
+            <li>Simulation: OpenFOAM case folders (<code>system/</code>, <code>constant/</code>, <code>0/</code>)</li>
+            <li>Tables (<code>.csv</code>, <code>.parquet</code>), meshes (<code>.ply</code>, <code>.vtk</code>) and videos (<code>.mp4</code>)</li>
           </ul>
-          <p class="eyebrow">Coming next</p>
-          <ul>
-            <li>OME-TIFF, Zeiss <code>.czi</code>, Nikon <code>.nd2</code>, Leica <code>.lif</code></li>
-            <li>PNG, JPEG and other everyday formats</li>
-          </ul>
+          <p class="muted small">Folders (OpenFOAM cases, OME-Zarr) can't be dragged in yet: click the box above and choose the folder.</p>
         </div>
-        <div class="samples">
-          <button class="sample" data-action="sample"><span class="sample-icon" data-icon="image"></span><span><strong>Load sample</strong><small>2D cells · 16-bit · 3 slices</small></span></button>
-          <button class="sample" data-action="sample-3d"><span class="sample-icon" data-icon="cube"></span><span><strong>Load 3D sample</strong><small>z-stack · 2 channels · 40 slices</small></span></button>
+        <div class="examples" id="examples" hidden>
+          <p class="eyebrow">Or start from an example</p>
+          <div class="example-list" id="example-list"></div>
         </div>
+        <p class="samples-line">Just looking at an image?
+          <button class="link" data-action="sample">Open a sample image</button> ·
+          <button class="link" data-action="sample-3d">3D sample</button> ·
+          <button class="link" data-action="open">Open a TIFF</button>
+        </p>
         <p class="welcome-hint" id="welcome-hint"></p>
       </div>
     </main>
@@ -53,6 +59,7 @@
 
     <div class="drop-overlay" id="drop" hidden><div><span id="drop-icon"></span><p id="drop-text">Drop to open</p></div></div>
     <input type="file" id="file-input" accept=".tif,.tiff,image/tiff" multiple hidden />
+    <input type="file" id="data-input" multiple hidden />
     <input type="file" id="project-input" accept=".pharos,.zip,application/zip" hidden />
     <dialog id="dialog"></dialog>
     <script type="module" src="/src/main.ts"></script>

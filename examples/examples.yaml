@@ -1,0 +1,21 @@
+# Example data for the start screen. Each loads its files into the workspace, as if
+# they'd been dropped in, and suggests a problem statement for the assistant.
+# Paths are relative to this folder.
+- id: nuclei-timelapse
+  title: Cells moving over time
+  kind: Microscopy time-lapse
+  description: A 3D fluorescence time-lapse of 14 nuclei drifting over 10 frames (synthetic, 96 × 96 × 12 voxels).
+  files: [{ path: data/nuclei-timelapse.tif }]
+  prompt: Track the nuclei over time and make a video of how they move.
+- id: nuclei-stack
+  title: Nuclei in a 3D stack
+  kind: Microscopy z-stack
+  description: A 3D fluorescence stack of 10 nuclei (synthetic, 64 × 64 × 12 voxels, 0.5 µm pixels).
+  files: [{ path: data/nuclei-stack.tif }]
+  prompt: Count the nuclei and measure their volume.
+- id: cylinder-flow
+  title: Flow past an obstacle
+  kind: OpenFOAM case
+  description: A 2D OpenFOAM case of fluid flowing past a square obstacle; it sheds a vortex street.
+  files: [{ path: ../books/fluid-sim/example/case, name: cylinder-flow }]
+  prompt: Simulate the flow at 1.5 m/s and show the vortices.

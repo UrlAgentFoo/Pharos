@@ -3212,6 +3212,7 @@ dialog.side::backdrop {
 .chat.jobs {
   right: auto;
   left: 24px;
+  bottom: 72px; /* stop above the project bar (Save, Open, Export, Clear) */
 }
 
 .jobs-mark {
@@ -3596,4 +3597,122 @@ dialog.side::backdrop {
   max-height: 60vh;
   background: #000;
   border-radius: 3px;
+}
+
+/* ---- data-first start screen */
+.welcome {
+  place-content: safe center;
+  overflow-y: auto;
+}
+
+.problem {
+  display: grid;
+  gap: 6px;
+  width: min(560px, calc(100vw - 32px));
+  text-align: left;
+  font-size: 13px;
+}
+
+.problem small {
+  color: var(--muted);
+}
+
+.problem textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  font: inherit;
+  font-size: 14px;
+  resize: vertical;
+}
+
+.welcome .dropzone {
+  width: min(560px, calc(100vw - 32px));
+}
+
+.examples {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.example-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.example {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.example:hover {
+  border-color: var(--ink);
+}
+
+.example small.eyebrow {
+  margin: 0;
+}
+
+.example strong {
+  font-size: 15px;
+}
+
+.example span {
+  color: var(--muted);
+}
+
+.example em {
+  color: var(--ink);
+  font-style: italic;
+}
+
+.samples-line {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* ---- library tabs */
+.lib-tabs {
+  display: flex;
+  gap: 2px;
+  margin: -4px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.lib-tabs button {
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.lib-tabs button[aria-selected="true"] {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+.ship-ops {
+  margin: 0;
+  padding-left: 16px;
+  font-size: 12px;
+}
+
+.ship-ops small {
+  color: var(--muted);
 }

@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Without a server the
  * app runs in browser-only mode.
  */
-import type { Artifact, AssistantPlan, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { Artifact, AssistantPlan, Example, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -245,6 +245,15 @@ export class LocalServer {
 
   async match(workspace: string, artifacts: string[], text?: string): Promise<{ summaries: DataSummary[]; matches: BookMatch[] }> {
     return (await this.json("/api/match", "POST", { workspace, artifacts, text })) as { summaries: DataSummary[]; matches: BookMatch[] };
+  }
+
+  async examples(): Promise<Example[]> {
+    return (await this.call("/api/examples")).json();
+  }
+
+  /** Copies an example's files into the workspace. */
+  async loadExample(id: string, workspace: string): Promise<Artifact[]> {
+    return (await this.json(`/api/examples/${encodeURIComponent(id)}/load`, "POST", { workspace })) as Artifact[];
   }
 
   async createPlan(workspace: string, book: string, inputs: Record<string, string>, parameters?: Params): Promise<Plan> {

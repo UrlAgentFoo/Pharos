@@ -23,6 +23,7 @@ import {
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
+import { ExampleError, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
@@ -108,7 +109,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const dataDir = opts.dataDir ?? defaultDataDir();
   const workspaces = new WorkspaceStore(dataDir);
   const trust = await TrustStore.load(dataDir);
-  const library = new LibraryHolder([...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d)), trust.get);
+  const libraryDirs = [...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d));
+  const library = new LibraryHolder(libraryDirs, trust.get);
   const orch = new Orchestration(dataDir, workspaces, () => library.get(), trust);
   const catalogue = new CatalogueHolder(() => library.get(), trust, () => orch.gpu());
   const plans = new Plans(dataDir, workspaces, () => library.get(), catalogue, orch);
@@ -117,7 +119,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
 
   const server: Server = createServer((req, res) => {
     handle(req, res).catch((err: unknown) => {
-      const known = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError || err instanceof OrchestrationError;
+      const known = err instanceof HttpError || err instanceof AiError || err instanceof WorkspaceError || err instanceof OrchestrationError || err instanceof ExampleError;
       const status = known ? err.status : 500;
       if (status === 500) console.error(err);
       if (!res.headersSent) sendJson(res, status, { error: err instanceof Error ? err.message : String(err) });
@@ -262,6 +264,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined);
         return sendJson(res, 200, plan);
       }
+      case "GET /api/examples":
+        return sendJson(res, 200, (await loadExamples(libraryDirs)).map(publicExample));
       case "POST /api/assistant/plan": {
         const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown }>(req);
         if (typeof body.workspace !== "string" || typeof body.text !== "string" || !Array.isArray(body.artifacts)) throw new HttpError(400, "workspace, text and artifacts are required");
@@ -297,11 +301,18 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, await orch.storage());
       case "DELETE /api/cache":
         return sendJson(res, 200, await orch.clearCache());
-      default:
+      default: {
+        const example = url.pathname.match(/^\/api\/examples\/([^/]+)\/load$/);
+        if (example && req.method === "POST") {
+          const { workspace } = await readJson<{ workspace?: unknown }>(req);
+          if (typeof workspace !== "string") throw new HttpError(400, "workspace is required");
+          return sendJson(res, 200, await loadExample(libraryDirs, decodeURIComponent(example[1]), workspaces, workspace));
+        }
         if (url.pathname.startsWith("/api/jobs/")) return jobApi(req, res, url, route);
         if (url.pathname.startsWith("/api/plans/")) return planApi(req, res, url, route);
         if (/^\/api\/(library|books|ships)\//.test(url.pathname)) return libraryApi(req, res, url, route);
         return workspaceApi(req, res, url, route);
+      }
     }
   }
 

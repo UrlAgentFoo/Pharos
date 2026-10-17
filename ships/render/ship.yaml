@@ -2,9 +2,9 @@
 id: render
 version: 0.1.0
 image: pharos/render:0.1.0    # built from this folder's Dockerfile
-summary: Makes videos from images over time - max projections, with tracks drawn over them.
+summary: Makes videos - images over time (max projections, with tracks drawn over them) and fluid simulations (vorticity or speed).
 license: MIT
-tags: [visualization, video, tracking]
+tags: [visualization, video, tracking, cfd]
 requires: { memory_gb: 2, network: none }
 operations:
   video:
@@ -26,5 +26,14 @@ operations:
       - { name: fps, type: number, default: 4, min: 0.5, max: 60, description: Frames per second. }
       - { name: channel, type: integer, default: 0, min: 0, description: Channel to show. }
       - { name: tail, type: integer, default: 10, min: 0, max: 1000, description: How many earlier time points of each path to draw. }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }
+  flow-video:
+    summary: Makes an MP4 of a solved OpenFOAM case - vorticity (shows vortices) or speed in the x-y plane, one frame per saved time.
+    command: python /opt/pharos/pharos_render.py flow-video --case {in.case} --out /out/video.mp4 --field {field} --fps {fps}
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    parameters:
+      - { name: field, type: enum, options: [vorticity, speed], default: vorticity, description: "vorticity shows swirling (vortices); speed shows how fast the fluid moves." }
+      - { name: fps, type: number, default: 12, min: 0.5, max: 60, description: Frames per second. }
     outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
     cache: { deterministic: true }

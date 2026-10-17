@@ -60,6 +60,19 @@ export interface WorkspaceInfo {
 /** What `POST /api/plans` takes: a book to run on workspace data. */
 export type PlanRequest = { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params };
 
+/** Example data offered on the start screen. */
+export interface Example {
+  id: string;
+  title: string;
+  /** What kind of data, e.g. "Microscopy time-lapse". */
+  kind: string;
+  description: string;
+  /** A suggested problem statement. */
+  prompt: string;
+  /** The names the files get in the workspace. */
+  files: string[];
+}
+
 /** What the assistant proposes for some data and a request; `plan` is null when nothing fits. */
 export interface AssistantPlan {
   plan: Plan | null;
@@ -123,6 +136,9 @@ export interface ApiRoutes {
 
   "POST /api/plans": { req: PlanRequest; res: Plan };
   /** The assistant picks a book for the data (or improvises), proposing a plan to approve. */
+  "GET /api/examples": { req: void; res: Example[] };
+  /** Copies an example's files into the workspace, as if they'd been dropped in. */
+  "POST /api/examples/:id/load": { req: { workspace: string }; res: Artifact[] };
   "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[] }; res: AssistantPlan };
   "GET /api/plans/:id": { req: void; res: Plan };
   "PUT /api/plans/:id": { req: Pick<Plan, "parameters" | "steps" | "inputs">; res: Plan };

@@ -4,7 +4,7 @@ Synthetic nuclei for tests and book examples: fluorescent blobs in 3D (or
 plus their ground-truth labels. Deterministic for a given seed.
 
     python make_test_data.py stack  out.tif [labels.tif]
-    python make_test_data.py movie  out.tif
+    python make_test_data.py movie  out.tif [frames] [size] [nuclei]
 """
 
 import sys
@@ -46,11 +46,18 @@ def main():
         if len(sys.argv) > 3:
             write(sys.argv[3], labels, "ZYX")
     elif what == "movie":
-        _, _, centres = nuclei(seed=2)
+        count = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+        size = int(sys.argv[4]) if len(sys.argv) > 4 else 64
+        n = int(sys.argv[5]) if len(sys.argv) > 5 else 10
+        shape = (12, size, size)
+        _, _, centres = nuclei(shape=shape, n=n, seed=2)
+        # each nucleus drifts in its own direction, slowly enough to stay in view
+        rng = np.random.default_rng(3)
+        drift = rng.uniform(-1.2, 1.2, (len(centres), 2))
         frames = []
-        for t in range(5):
-            moved = [(cz, cy + 1.5 * t, cx + 1.0 * t) for cz, cy, cx in centres]
-            frames.append(nuclei(seed=10 + t, centres=moved)[0])
+        for t in range(count):
+            moved = [(cz, np.clip(cy + dy * t, 7, size - 8), np.clip(cx + dx * t, 7, size - 8)) for (cz, cy, cx), (dy, dx) in zip(centres, drift)]
+            frames.append(nuclei(shape=shape, seed=10 + t, centres=moved)[0])
         write(out, np.stack(frames), "TZYX")
     else:
         raise SystemExit(f"unknown: {what}")

@@ -178,7 +178,7 @@ function showPanel(
 }
 
 async function addByPath(server: LocalServer, name: string): Promise<Artifact[]> {
-  const path = await browseDialog(server, { title: `Add to ${name}`, pickFolder: false, accept: isSupported, empty: "No folders or supported files here" });
+  const path = await browseDialog(server, { title: `Add to ${name}`, pickFolder: false, allowFolder: true, accept: isSupported, empty: "No supported files here; open a folder, or use this folder if it is the data" });
   return path ? [await server.importPath(name, path)] : [];
 }
 

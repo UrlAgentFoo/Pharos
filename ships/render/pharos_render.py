@@ -4,6 +4,8 @@ render: videos of images, and of tracks drawn over them, for Pharos.
   video        /in/image (OME-Zarr) → /out/video.mp4, a max projection along z per time point
   tracks-video /in/image + /in/tracks (CSV: track_id, t, [z,] y, x in pixels, as Ultrack writes them)
                → /out/video.mp4 with each track's recent path drawn over the projection
+  flow-video   /in/case (a solved OpenFOAM case, ASCII fields, cell centres in 0/C)
+               → /out/video.mp4 of vorticity or speed in the x-y plane, one frame per written time
 
 Progress goes to stdout as JSON lines.
 """
@@ -109,9 +111,114 @@ def cmd_tracks(args):
     progress(1.0, f"{len(by_track)} tracks drawn")
 
 
+# ---------------------------------------------------------------- OpenFOAM
+
+
+def read_foam_field(path):
+    """The internalField of an ASCII OpenFOAM field: (n,) scalars or (n, 3) vectors, or a uniform value."""
+    text = open(path).read()
+    start = text.index("internalField")
+    head = text[start : start + 200]
+    if "nonuniform" not in head:
+        inner = head.split("uniform", 1)[1].split(";", 1)[0].strip().strip("()")
+        return np.array([float(v) for v in inner.split()], np.float32)
+    body = text[start:]
+    count_at = body.index("\n", body.index("nonuniform"))
+    open_at = body.index("(", count_at)
+    close_at = body.index("\n)", open_at)
+    values = body[open_at + 1 : close_at].replace("(", " ").replace(")", " ")
+    data = np.array(values.split(), np.float32)
+    n = int(body[count_at:open_at].strip())
+    return data.reshape(n, -1) if data.size != n else data
+
+
+def foam_times(case):
+    times = []
+    for name in os.listdir(case):
+        try:
+            t = float(name)
+        except ValueError:
+            continue
+        if os.path.isfile(os.path.join(case, name, "U")):
+            times.append((t, name))
+    return [name for t, name in sorted(times)]
+
+
+def diverging(v):
+    """Blue (negative) - white - red (positive), for values in [-1, 1]."""
+    v = np.clip(v, -1, 1)[..., None]
+    blue, white, red = np.array([40, 90, 200]), np.array([250, 250, 250]), np.array([200, 40, 40])
+    return np.where(v < 0, white + (blue - white) * -v, white + (red - white) * v).astype(np.uint8)
+
+
+def sequential(v):
+    """Dark blue - teal - yellow, for values in [0, 1]."""
+    stops = np.array([[20, 30, 70], [30, 110, 140], [70, 170, 120], [240, 220, 60]], np.float32)
+    x = np.clip(v, 0, 1) * (len(stops) - 1)
+    i = np.minimum(x.astype(int), len(stops) - 2)
+    f = (x - i)[..., None]
+    return (stops[i] * (1 - f) + stops[i + 1] * f).astype(np.uint8)
+
+
+def cmd_flow(args):
+    from scipy.interpolate import LinearNDInterpolator
+    from scipy.spatial import Delaunay, cKDTree
+
+    case = args.case
+    centres = read_foam_field(os.path.join(case, "0", "C"))
+    if centres.ndim != 2:
+        raise SystemExit("0/C (cell centres) is missing: run the case with openfoam.solve")
+    xy = centres[:, :2]
+    times = [t for t in foam_times(case) if float(t) > 0]
+    if not times:
+        raise SystemExit("the case has no results to render")
+    lo, hi = xy.min(axis=0), xy.max(axis=0)
+    width = args.width
+    px = (hi[0] - lo[0]) / width
+    # video encoders want sides divisible by 16
+    height = max(16, int(round((hi[1] - lo[1]) / px)) // 16 * 16)
+    gx, gy = np.meshgrid(lo[0] + (np.arange(width) + 0.5) * px, lo[1] + (np.arange(height) + 0.5) * (hi[1] - lo[1]) / height)
+    pixels = np.stack([gx.ravel(), gy.ravel()], axis=1)
+    tree = cKDTree(xy)
+    dist, nearest = tree.query(pixels)
+    # inside an obstacle: farther from the nearest cell centre than that cell's neighbours are
+    # (the 4th neighbour, so long thin cells count their long side too)
+    spacing, _ = tree.query(xy, k=5)
+    inside = (dist > 0.75 * spacing[nearest, 4] + 0.5 * px).reshape(height, width)
+    triangulation = Delaunay(xy)  # built once; each frame only interpolates new values on it
+
+    fields = []
+    for i, t in enumerate(times):
+        u = read_foam_field(os.path.join(case, t, "U"))
+        uv = LinearNDInterpolator(triangulation, u[:, :2])(pixels).reshape(height, width, 2)
+        ux, uy = uv[..., 0], uv[..., 1]
+        if args.field == "vorticity":
+            f = np.gradient(uy, px, axis=1) - np.gradient(ux, px, axis=0)
+        else:
+            f = np.hypot(ux, uy)
+        f[inside | np.isnan(f)] = np.nan
+        fields.append(f)
+        progress(0.6 * (i + 1) / len(times), f"read t = {t}")
+    stack = np.stack(fields)
+    scale = np.nanpercentile(np.abs(stack), 99) or 1.0
+    frames = []
+    for f in stack:
+        rgb = diverging(np.nan_to_num(f / scale)) if args.field == "vorticity" else sequential(np.nan_to_num(f / scale))
+        rgb[np.isnan(f)] = (60, 60, 60)
+        frames.append(rgb[::-1])  # y up
+    iio.imwrite(args.out, np.stack(frames), fps=args.fps, codec="libx264")
+    progress(1.0, f"{len(frames)} frames of {args.field}")
+
+
 def main():
     ap = argparse.ArgumentParser(prog="pharos_render")
     sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("flow-video")
+    p.add_argument("--case", required=True)
+    p.add_argument("--out", required=True)
+    p.add_argument("--field", choices=["vorticity", "speed"], default="vorticity")
+    p.add_argument("--fps", type=float, default=12)
+    p.add_argument("--width", type=int, default=800)
     for name in ("video", "tracks-video"):
         p = sub.add_parser(name)
         p.add_argument("--image", required=True)
@@ -122,7 +229,7 @@ def main():
             p.add_argument("--tracks", required=True)
             p.add_argument("--tail", type=int, default=10, help="time points of path to draw behind each cell")
     args = ap.parse_args()
-    (cmd_video if args.cmd == "video" else cmd_tracks)(args)
+    {"video": cmd_video, "tracks-video": cmd_tracks, "flow-video": cmd_flow}[args.cmd](args)
 
 
 if __name__ == "__main__":

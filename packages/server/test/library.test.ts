@@ -79,6 +79,24 @@ describe("inspect, match and search", () => {
   });
 });
 
+describe("examples", () => {
+  it("lists examples whose files exist and loads them into a workspace", async () => {
+    await mkdir(join(lib, "examples", "data"), { recursive: true });
+    await writeFile(join(lib, "examples", "data", "t.csv"), "a\n1\n");
+    await writeFile(
+      join(lib, "examples", "examples.yaml"),
+      "- { id: table, title: A table, kind: Table, description: One row., prompt: Count the rows., files: [{ path: data/t.csv, name: rows.csv }] }\n" +
+        "- { id: gone, title: Missing, files: [{ path: data/nope.csv }] }\n",
+    );
+    const list = await (await api("/api/examples")).json();
+    expect(list).toEqual([{ id: "table", title: "A table", kind: "Table", description: "One row.", prompt: "Count the rows.", files: ["rows.csv"] }]);
+    const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } });
+    const loaded = await (await api("/api/examples/table/load", json({ workspace: "ex" }))).json();
+    expect(loaded).toEqual([expect.objectContaining({ name: "rows.csv", kind: "table" })]);
+    expect((await api("/api/examples/gone/load", json({ workspace: "ex" }))).status).toBe(404);
+  });
+});
+
 describe("install", () => {
   it("installs a book folder into the data folder's library, once", async () => {
     const src = join(tmp, "incoming");

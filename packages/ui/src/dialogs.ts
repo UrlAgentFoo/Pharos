@@ -129,13 +129,21 @@ const isTiff = (e: DirEntry) => !e.isDir && /\.tiff?$/i.test(e.name);
  */
 export function browseDialog(
   server: LocalServer,
-  opts: { title: string; pickFolder: boolean; start?: string; accept?: (e: DirEntry) => boolean; empty?: string },
+  opts: {
+    title: string;
+    pickFolder: boolean;
+    start?: string;
+    accept?: (e: DirEntry) => boolean;
+    empty?: string;
+    /** Also offer "Use this folder", for data that is a folder (OpenFOAM cases); files stay choosable. */
+    allowFolder?: boolean;
+  },
 ): Promise<string | null> {
   const accept = opts.accept ?? isTiff;
   return showDialog<string | null>(
     `<h2>${escapeHtml(opts.title)}</h2>
      <div class="browser"><div class="crumbs"><button data-up title="Parent folder">↑</button><input class="path" spellcheck="false" /></div><ul class="entries"></ul></div>
-     <footer>${opts.pickFolder ? '<button class="primary" data-choose>Choose this folder</button>' : ""}<button data-cancel>Cancel</button></footer>`,
+     <footer>${opts.pickFolder || opts.allowFolder ? `<button class="${opts.pickFolder ? "primary" : ""}" data-choose>${opts.pickFolder ? "Choose this folder" : "Use this folder"}</button>` : ""}<button data-cancel>Cancel</button></footer>`,
     (done, el) => {
       const list = el.querySelector<HTMLUListElement>(".entries")!;
       const pathEl = el.querySelector<HTMLInputElement>(".path")!;

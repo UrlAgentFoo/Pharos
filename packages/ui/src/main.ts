@@ -18,8 +18,8 @@ import { TOOLS, type Tool, onToolChange, resetRanges, setTool, thumbnailElement 
 import { WindowManager } from "./windows.js";
 import { type Doc, Workspace } from "./workspace.js";
 import { viewerFor } from "./viewers.js";
-import { currentWorkspace, workspacePanel } from "./workspace-panel.js";
-import { libraryPanel } from "./library-panel.js";
+import { currentWorkspace, isSupported, workspacePanel } from "./workspace-panel.js";
+import { type LibraryTab, libraryPanel } from "./library-panel.js";
 import { PlanPanel } from "./plan-panel.js";
 import { JobsPanel } from "./jobs-panel.js";
 import { runDialog } from "./run-dialog.js";
@@ -157,7 +157,9 @@ function act(a: Omit<AppAction, "section">): AppAction {
 const appActions: AppAction[] = [
   act({ id: "open", title: "Open…", menu: ["File"], icon: "open", shortcut: "Mod+O", keywords: ["load", "file", "tiff", "browse"], enabled: () => true, run: () => openDialog() }),
   act({ id: "workspace", title: "Workspace…", menu: ["File"], icon: "panel", keywords: ["data", "artifacts", "project", "folder", "library", "import", "add"], description: "Your data on disk: add files and open them", enabled: () => true, run: () => openWorkspace() }),
-  act({ id: "library", title: "Library…", menu: ["File"], icon: "plug", keywords: ["books", "recipes", "pipelines", "install", "catalogue", "ships", "tools"], description: "Books you can run, and installing more", enabled: () => !!server, run: () => openLibrary() }),
+  act({ id: "library", title: "Library…", menu: ["File"], icon: "plug", keywords: ["books", "recipes", "pipelines", "install", "catalogue", "ships", "tools", "plugins"], description: "Books, ships and built-in tools", enabled: () => true, run: () => openLibrary() }),
+  act({ id: "add-data", title: "Add data…", menu: ["File"], icon: "add", keywords: ["import", "files", "folder", "upload", "dataset", "openfoam", "microscopy"], description: "Add files or a folder to the workspace and find books for them", enabled: () => true, run: () => addData() }),
+  act({ id: "clear-project", title: "New project (clear)", menu: ["File"], icon: "new", keywords: ["clear", "reset", "new", "empty", "start over"], description: "Closes every window and clears notes and results; your data on disk is kept", enabled: () => true, run: () => clearProject() }),
   act({ id: "jobs", title: "Jobs", menu: ["View"], icon: "batch", keywords: ["running", "progress", "queue", "cancel", "ships", "containers", "logs"], description: "Ship operations: progress, logs, cancel", enabled: () => !!server, run: () => jobsPanel.toggle() }),
   act({ id: "storage", title: "Ships and storage…", menu: ["View"], icon: "save", keywords: ["docker", "gpu", "disk", "download", "remove", "cache", "status", "test"], description: "Docker, GPU, downloaded ships and the cache", enabled: () => !!server, run: () => openStorage() }),
   act({ id: "open-local", title: "Open from this computer…", menu: ["File"], icon: "upload", keywords: ["upload", "browse"], enabled: () => true, run: () => openFromComputer() }),
@@ -185,7 +187,7 @@ const appActions: AppAction[] = [
   act({ id: "open-project", title: "Open project…", menu: ["File"], icon: "open", keywords: ["project", "pharos", "zip", "session", "load"], enabled: () => true, run: () => pickProject() }),
   act({ id: "export-all", title: "Export all images as TIFFs (.zip)", menu: ["File"], icon: "batch", keywords: ["export", "zip", "download"], enabled: needsImage, run: () => exportAllTiffs() }),
   act({ id: "export-notes", title: "Export notes as Markdown", menu: ["File"], icon: "script", keywords: ["export", "journal", "markdown", "notes"], enabled: () => true, run: () => exportNotes() }),
-  act({ id: "plugins", title: "Plugins…", menu: ["View"], icon: "plug", keywords: ["extensions", "commands", "manage", "install", "hide"], enabled: () => true, run: () => pluginsDialog() }),
+  act({ id: "plugins", title: "Built-in tools…", menu: ["View"], icon: "plug", keywords: ["plugins", "extensions", "commands", "manage", "hide"], enabled: () => true, run: () => openLibrary(undefined, "tools") }),
   act({ id: "layout-stack", title: "Stack windows", menu: ["Layout"], icon: "duplicate", keywords: ["cascade", "arrange", "cards"], enabled: needsImage, run: () => windows.arrange("stack") }),
   act({ id: "layout-columns", title: "Side by side", menu: ["Layout"], icon: "layout", keywords: ["split", "compare", "arrange", "columns"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("columns") }),
   act({ id: "layout-grid", title: "Grid", menu: ["Layout"], icon: "overview", keywords: ["split", "tile", "arrange"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("grid") }),
@@ -212,7 +214,7 @@ async function runAction(id: string, from?: HTMLElement) {
   await ready;
   if (id === "palette") return overview.open();
   const anchor = from?.getBoundingClientRect();
-  if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["open", "open-local", "sample", "sample-3d"]));
+  if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "workspace", "open", "open-local", "sample", "sample-3d"]));
   if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]));
   if (id === "group-menu" && anchor) return togglePopover(id, anchor, groupHtml);
   if (id === "settings-menu" && anchor) return togglePopover(id, anchor, settingsHtml);
@@ -273,10 +275,9 @@ function buildToolbar() {
     <nav class="tb-center" aria-label="Workspace">
       ${text("workspace", "panel", "Workspace")}
       ${text("library", "plug", "Library")}
-      ${text("add-menu", "add", "Add image", { menu: true })}
+      ${text("add-menu", "add", "Add data", { menu: true })}
       ${text("layout-menu", "layout", "Layout", { menu: true })}
       ${text("group-menu", "link", "Group", { menu: true })}
-      ${text("plugins", "plug", "Plugins")}
       ${text("results", "table", "Results")}
       ${text("overview", "overview", "Overview", { shortcut: "Tab" })}
     </nav>
@@ -301,7 +302,7 @@ function settingsHtml() {
   return `<section>
       <label class="toggle-row">${icon("contrast", 16)}<span>Dark mode</span><input type="checkbox" data-theme-toggle ${dark ? "checked" : ""}/><span class="switch" aria-hidden="true"></span></label>
     </section>
-    <section>${itemHtml("settings")}${itemHtml("plugins")}</section>
+    <section>${itemHtml("settings")}${itemHtml("library")}</section>
     <p class="pop-note">${server ? `Connected to the local Pharos ${escapeHtml(server.info.version)} server` : "Browser-only mode"}</p>`;
 }
 
@@ -461,13 +462,13 @@ function shareView(doc: Doc) {
 
 // ------------------------------------------------------------ plugins
 
-function pluginsDialog() {
-  const byMenu = new Map<string, Command[]>();
-  for (const c of COMMANDS) byMenu.set(c.menu.join(" › "), [...(byMenu.get(c.menu.join(" › ")) ?? []), c]);
-  void showDialog(
-    `<p class="eyebrow">Plugins</p><h2>Commands</h2>
-     <section class="plugin">
-       <header><strong>Pharos core</strong><small>built in · ${COMMANDS.length} commands</small></header>
+/** The library's built-in tools tab: every image command, with a switch to hide it from menus and search. */
+const builtinTools = {
+  html() {
+    const byMenu = new Map<string, Command[]>();
+    for (const c of COMMANDS) byMenu.set(c.menu.join(" › "), [...(byMenu.get(c.menu.join(" › ")) ?? []), c]);
+    return `<section class="plugin">
+       <header><strong>Image tools</strong><small>built in · ${COMMANDS.length} commands · run in the browser on open images</small></header>
        ${[...byMenu]
          .map(
            ([menu, cmds]) => `<p class="plugin-menu">${escapeHtml(menu)}</p>${cmds
@@ -476,25 +477,19 @@ function pluginsDialog() {
          )
          .join("")}
      </section>
-     <p class="muted small">Unticked commands leave the menus and search. You can turn them back on here at any time.</p>
-     <section class="plugin plugin-soon">
-       <header><strong>Add plugins</strong><small>coming with the plugin API (roadmap M6)</small></header>
-       <p class="muted small">Plugins will add commands with typed parameters, so they get dialogs, history steps, folder runs and assistant support automatically, and appear in this list.</p>
-     </section>
-     <footer><button class="primary" data-cancel>Done</button></footer>`,
-    (_done, el) => {
-      el.querySelectorAll<HTMLInputElement>("input[data-cmd]").forEach((box) =>
-        box.addEventListener("change", () => {
-          if (box.checked) hiddenCommands.delete(box.dataset.cmd!);
-          else hiddenCommands.add(box.dataset.cmd!);
-          saveHidden();
-          ws.touch();
-        }),
-      );
-    },
-    undefined,
-  );
-}
+     <p class="muted small">Unticked commands leave the menus and search. You can turn them back on here at any time.</p>`;
+  },
+  wire(el: HTMLElement) {
+    el.querySelectorAll<HTMLInputElement>("input[data-cmd]").forEach((box) =>
+      box.addEventListener("change", () => {
+        if (box.checked) hiddenCommands.delete(box.dataset.cmd!);
+        else hiddenCommands.add(box.dataset.cmd!);
+        saveHidden();
+        ws.touch();
+      }),
+    );
+  },
+};
 
 function updateEnabled() {
   document.querySelectorAll<HTMLButtonElement>(".topbar [data-action], .menu-pop [data-action]").forEach((b) => {
@@ -1017,37 +1012,134 @@ const planPanel = new PlanPanel(() => server, {
   started: () => jobsPanel.show(),
 });
 
-async function openLibrary(data?: { workspace: string; artifacts: Artifact[] }) {
+async function openLibrary(data?: { workspace: string; artifacts: Artifact[]; text?: string }, tab?: LibraryTab) {
   const s = server;
-  if (!s) return alertDialog("Library", "The library needs the local Pharos server. Start it with `npx pharos-lab`.");
   try {
     await libraryPanel(
       s,
       {
         notify,
         gpu: () => !!lastStatus?.gpu.available,
+        tools: builtinTools,
         usePlan: async (book, inputs) => {
-          const plan = await s.createPlan(data?.workspace ?? currentWorkspace(), book.id, inputs);
+          const plan = await s!.createPlan(data?.workspace ?? currentWorkspace(), book.id, inputs);
           await planPanel.show(plan);
         },
       },
       data,
+      tab,
     );
   } catch (e) {
     void alertDialog("Library", e instanceof Error ? e.message : String(e));
   }
 }
 
-async function askAssistant(s: LocalServer, workspace: string, data: Artifact[]) {
+async function askAssistant(s: LocalServer, workspace: string, data: Artifact[], question?: string) {
   const problem = aiUnavailable();
   if (problem) return alertDialog("Assistant", problem);
   const names = data.map((a) => a.name ?? a.id.slice(0, 8)).join(", ");
-  const text = await promptDialog("Ask the assistant", `What do you want to do with ${names}?`, "");
+  const text = question ?? (await promptDialog("Ask the assistant", `What do you want to do with ${names}?`, ""));
   if (!text) return;
   const r = await run("The assistant is choosing a book", () => s.assistantPlan(workspace, text, data.map((a) => a.id)));
   if (!r) return;
   if (r.plan) await planPanel.show(r.plan);
   else void alertDialog("Assistant", `${r.message}${r.matches.some((m) => m.tier !== "excluded") ? "" : "\n\nNo installed book can run on this data."}`);
+}
+
+// ------------------------------------------------------------ data first: add data, examples, the problem statement
+
+/** The optional problem statement on the start screen. */
+const problemText = () => $<HTMLTextAreaElement>("problem").value.trim();
+
+/**
+ * What happens once data is in the workspace: with a problem statement (and
+ * the assistant set up) the assistant proposes a plan; otherwise the library
+ * shows the books that can run on the data, ranked by the statement's words.
+ */
+async function dataFlow(workspace: string, artifacts: Artifact[]) {
+  const s = server;
+  if (!s || !artifacts.length) return;
+  const text = problemText();
+  if (text && !aiUnavailable()) return askAssistant(s, workspace, artifacts, text);
+  if (text && aiConfig && !aiConfig.keySource) notify("Add an API key in Settings to let the assistant plan; showing the books that fit instead.");
+  await openLibrary({ workspace, artifacts, ...(text ? { text } : {}) });
+}
+
+/** Add data: a file or folder on this computer into the workspace (or, without the server, open TIFFs to view). */
+async function addData() {
+  const s = server;
+  if (!s) return openFromComputer();
+  const path = await browseDialog(s, { title: "Add data", pickFolder: false, allowFolder: true, start: lastDir, accept: isSupported, empty: "No supported files here; open a folder, or use this folder if it is the data" });
+  if (!path) return;
+  lastDir = path.slice(0, path.lastIndexOf(s.info.separator)) || s.info.separator;
+  const workspace = currentWorkspace();
+  const added = await run(`Adding ${path.slice(path.lastIndexOf(s.info.separator) + 1)}`, async () => {
+    await s.createWorkspace(workspace);
+    return s.importPath(workspace, path);
+  });
+  if (added) await dataFlow(workspace, [added]);
+}
+
+/** Dropped files go into the workspace; projects still open as projects. */
+async function dropData(files: File[], folders: string[]) {
+  const s = server;
+  if (!s) return openFiles(files);
+  const project = files.find((f) => f.name.toLowerCase().endsWith(PROJECT_EXT));
+  if (project) return openFiles([project]);
+  if (folders.length) notify(`Folders can't be dropped yet (${folders.join(", ")}): use Add data… and choose the folder.`);
+  if (!files.length) return;
+  const workspace = currentWorkspace();
+  const added = await run(`Adding ${files.length === 1 ? files[0].name : `${files.length} files`}`, async () => {
+    await s.createWorkspace(workspace);
+    const out: Artifact[] = [];
+    const skipped: string[] = [];
+    for (const f of files) {
+      try {
+        out.push(await s.upload(workspace, f));
+      } catch (e) {
+        skipped.push(`${f.name}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    if (skipped.length) void alertDialog("Some files weren't added", skipped.join("\n"));
+    return out;
+  });
+  if (added?.length) await dataFlow(workspace, added);
+}
+
+async function showExamples(s: LocalServer) {
+  const examples = await s.examples().catch(() => []);
+  const list = $("example-list");
+  list.innerHTML = examples
+    .map(
+      (e) => `<button class="example" data-example="${escapeHtml(e.id)}">
+        <small class="eyebrow">${escapeHtml(e.kind)}</small><strong>${escapeHtml(e.title)}</strong>
+        <span>${escapeHtml(e.description)}</span><em>“${escapeHtml(e.prompt)}”</em></button>`,
+    )
+    .join("");
+  $("examples").hidden = !examples.length;
+  list.querySelectorAll<HTMLButtonElement>("[data-example]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const e = examples.find((x) => x.id === b.dataset.example)!;
+      const workspace = currentWorkspace();
+      const added = await run(`Loading ${e.title}`, () => s.loadExample(e.id, workspace));
+      if (!added) return;
+      $<HTMLTextAreaElement>("problem").value = e.prompt;
+      await dataFlow(workspace, added);
+    }),
+  );
+}
+
+/** A new, empty project: windows, notes and results go; data on disk and the library stay. */
+async function clearProject() {
+  if (!(await confirmDialog("New project", "Close every window and clear the notes and results? Your data on disk, the workspace and the library are kept.", "Clear"))) return;
+  for (const d of [...ws.docs]) ws.close(d.id);
+  notes.load({ name: "", lines: [] }, new Map());
+  results.load(undefined);
+  planPanel.el.hidden = true;
+  $<HTMLTextAreaElement>("problem").value = "";
+  ws.touch();
+  await autosaveNow();
+  notify("Started a new project");
 }
 
 // ------------------------------------------------------------ ships: system status, jobs, storage
@@ -1415,7 +1507,7 @@ document.addEventListener("dragenter", (e) => {
   if (!hasFiles(e) || overview.isOpen) return;
   dragDepth++;
   const n = e.dataTransfer!.items.length;
-  $("drop-text").textContent = n > 1 ? `Drop to open ${n} images` : "Drop to open";
+  $("drop-text").textContent = server ? (n > 1 ? `Drop to add ${n} files` : "Drop to add your data") : n > 1 ? `Drop to open ${n} images` : "Drop to open";
   $("drop").hidden = false;
 });
 document.addEventListener("dragleave", (e) => {
@@ -1431,7 +1523,11 @@ document.addEventListener("drop", (e) => {
   $("drop").hidden = true;
   if (!e.dataTransfer?.files.length) return;
   e.preventDefault();
-  void openFiles([...e.dataTransfer.files]);
+  // folders arrive as entries without readable content; note them, add the files
+  const items = [...e.dataTransfer.items];
+  const folders = items.map((i) => i.webkitGetAsEntry?.()).filter((x) => x?.isDirectory).map((x) => x!.name);
+  const files = [...e.dataTransfer.files].filter((f) => !folders.includes(f.name));
+  void dropData(files, folders);
 });
 
 $("formats-toggle").addEventListener("click", () => {
@@ -1445,6 +1541,7 @@ const bar = $("project-bar");
 bar.querySelector('[data-action="save-project"]')!.innerHTML = `${icon("save", 15)}<span>Save project</span>`;
 bar.querySelector('[data-action="open-project"]')!.innerHTML = `${icon("open", 15)}<span>Open</span>`;
 bar.querySelector('[data-action="export-menu"]')!.innerHTML = `${icon("upload", 15)}<span>Export</span><span class="caret">▴</span>`;
+bar.querySelector('[data-action="clear-project"]')!.innerHTML = `${icon("new", 15)}<span>Clear</span>`;
 $("drop-icon").innerHTML = icon("upload", 40);
 document.querySelectorAll<HTMLElement>(".sample-icon").forEach((el) => (el.innerHTML = icon(el.dataset.icon!, 20)));
 $("welcome-hint").innerHTML = `<kbd>Tab</kbd> shows every image · <kbd>${formatShortcut("Mod+K")}</kbd> finds any command · <kbd>${formatShortcut("Mod+J")}</kbd> asks the assistant`;
@@ -1461,6 +1558,7 @@ async function boot() {
   [kernels, server] = await Promise.all([loadKernels(fetch(wasmUrl)), LocalServer.connect()]);
   if (server) aiConfig = await server.aiConfig().catch(() => null);
   if (server) void connectShips(server);
+  if (server) void showExamples(server);
   await restoreSession();
   autosaveReady = true;
   updateEnabled();
