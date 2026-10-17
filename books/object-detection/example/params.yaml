@@ -1,0 +1,3 @@
+# Per action, for Test book on the small example data.
+find_in_video:
+  fps: 4

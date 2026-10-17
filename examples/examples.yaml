@@ -94,3 +94,20 @@
   prompt: Make a 3D model of this video that I can turn around.
   # small enough to finish in about 15-20 s on a laptop's CPU (a soft splat); the book's defaults make a sharper one in a few minutes
   run: { book: 3d-capture, action: splat_video, params: { frames: 24, max_size: 400, iterations: 500, downscale: 4, sh_degree: 1 } }
+- id: street-photo
+  title: A busy street
+  kind: Photo
+  description: A shopping street in Porlamar, Venezuela, with people walking, parked cars, motorbikes and market umbrellas (a real photo by Wilfredor, CC0, 1024 × 594).
+  files: [{ path: ../books/object-detection/example/image.tif, name: street.tif }]
+  image: images/street-photo.webp
+  prompt: Find the people and vehicles in this photo and count them.
+  run: { book: object-detection, action: find_in_image }
+- id: street-crossing
+  title: People crossing a street
+  kind: Video
+  description: Six seconds of the scramble crossing at Yonge and Dundas in Toronto, with people walking every way and cars turning through (a real video by Raysonho, CC0, 640 × 360).
+  files: [{ path: ../books/object-detection/example/video.mp4, name: crossing.mp4 }]
+  image: images/street-crossing.webp
+  prompt: Outline the people and cars in this video.
+  # six frames a second: 36 frames, about half a minute on a laptop's CPU with the nano model
+  run: { book: object-detection, action: find_in_video, params: { fps: 6, classes: "person, car" } }

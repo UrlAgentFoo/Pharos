@@ -12,7 +12,8 @@ scipy, tifffile, zarr, PyYAML and Pillow:
       --entrypoint python pharos/render:0.1.0 /ex/make_images.py /ex \
       --solved cylinder-flow=/solved/<id>/case --solved backward-step=/solved/<id>/case ...
 
-Flow examples without --solved are skipped.
+Flow examples without --solved are skipped, and so are the examples whose
+pictures other scripts make (ELSEWHERE).
 """
 
 import argparse
@@ -37,6 +38,9 @@ WINDOWS = {
     "slot-jet": (-1.5, 10.1, 0.1),
     "backward-step": (-1.5, 6.5, 1.5),
 }
+
+# examples whose picture comes from the script that makes their data
+ELSEWHERE = {"orbit-scene": "make_scene.py", "street-photo": "make_media.sh", "street-crossing": "make_media.sh"}
 
 
 # ---------------------------------------------------------------- microscopy
@@ -147,6 +151,9 @@ def main():
         examples = yaml.safe_load(f)
     os.makedirs(os.path.join(args.examples, "images"), exist_ok=True)
     for e in examples:
+        if e["id"] in ELSEWHERE:
+            print(f"{e['id']}: skipped (made by {ELSEWHERE[e['id']]})")
+            continue
         path = os.path.normpath(os.path.join(args.examples, e["files"][0]["path"]))
         if os.path.isdir(os.path.join(path, "system")):
             if e["id"] not in solved:

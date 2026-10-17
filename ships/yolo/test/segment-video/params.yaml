@@ -1,0 +1,3 @@
+# a second of the crossing at 320 × 180, four frames a second; people and cars
+fps: 4
+classes: person, car
