@@ -17,6 +17,7 @@ import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
 import { type DataDoc, Workspace, blockAt, timeBlocks, underWay } from "./workspace.js";
 import { kindLabel } from "./viewers.js";
+import { chainHtml, chainModel, layoutChain, tableLine } from "./chain-graph.js";
 import { SuggestedControls } from "./suggested-controls.js";
 import { localDay, tokenUsageHtml } from "./token-usage.js";
 import { WindowSummary } from "./window-summary.js";
@@ -116,6 +117,7 @@ const ACTIONS: AppAction[] = [
   act({ id: "settings", title: "Assistant and API key…", menu: ["View"], icon: "sparkle", keywords: ["settings", "preferences", "api key", "assistant", "ai", "model"], enabled: () => true, run: () => settingsDialog() }),
   act({ id: "dark-mode", title: "Toggle dark mode", menu: ["View"], icon: "contrast", keywords: ["theme", "night", "light", "appearance"], enabled: () => true, run: () => setDark(document.documentElement.dataset.theme !== "dark") }),
   act({ id: "controls", title: "Show or hide the side panel", menu: ["Window"], icon: "panel", shortcut: "\\", keywords: ["inspector", "panel", "drawer", "settings"], enabled: hasWindow, run: () => ws.active && windows.toggleControls(ws.active.id) }),
+  act({ id: "chain", title: "Show the chain…", menu: ["Window"], icon: "link", keywords: ["graph", "nodes", "pipeline", "how", "made", "steps", "flow", "tools", "why", "provenance"], description: "How this window's results were made: each step, what it passed to the next, and why each run ran", enabled: () => !!ws.active?.steps.length, run: () => ws.active && void showChain(ws.active) }),
   act({ id: "fork", title: "Fork from this point", menu: ["Window"], icon: "branch", keywords: ["branch", "copy", "duplicate", "history", "try", "compare"], description: "A new window with the history up to the step on view", enabled: hasWindow, run: () => ws.active && processes.fork(ws.active) }),
   act({ id: "minimize", title: "Minimise window", menu: ["Window"], icon: "collapse", shortcut: "Mod+Shift+M", keywords: ["hide", "window"], enabled: hasWindow, run: () => ws.active && windows.minimize(ws.active.id) }),
   act({ id: "close", title: "Close window", menu: ["Window"], icon: "close", keywords: ["window"], enabled: hasWindow, run: () => ws.active && closeDoc(ws.active) }),
@@ -809,6 +811,54 @@ function windowRefs(active: DataDoc): { open: WindowRef[]; cites: Record<string,
   return { open, cites };
 }
 
+/**
+ * Show the chain…: the window's history as a graph, from its data through
+ * each step (with its key result), with why each run ran; a click on a step
+ * shows its result in the window.
+ */
+async function showChain(doc: DataDoc) {
+  await processes.loadShips();
+  const s = server;
+  const tables: Record<string, { result: string; detail?: string }> = {};
+  const summaries: Record<string, string> = {};
+  await Promise.all(
+    doc.steps.map(async (step) => {
+      const key = step.book?.action ? `${step.book.id}/${step.book.action}` : null;
+      if (key && !step.reason && !(key in summaries)) {
+        summaries[key] = "";
+        summaries[key] = (await processes.actionSummary(step.book!.id, step.book!.action!)) ?? "";
+      }
+      // a done step's results table, summed up in a line; any other result says what it made
+      const out = processes.stepOutputs(step.run).find((o) => o.kind === "table" && o.format === "csv" && step.outputs?.[o.name]);
+      if (!s || step.status !== "done" || !out) return;
+      try {
+        const a = await s.artifact(doc.workspace, step.outputs![out.name]);
+        if ((a.sizeBytes ?? 0) > 256 * 1024) return;
+        const line = tableLine(new TextDecoder().decode(await s.content(doc.workspace, a.id)));
+        if (line) tables[step.id] = line;
+      } catch {
+        /* unreadable: the node says what kinds it made instead */
+      }
+    }),
+  );
+  const { nodes, runs } = chainModel(doc, { outputs: (r) => processes.stepOutputs(r), formatTitle, kindTitle: (kind) => kindLabel({ kind } as Artifact), tables, summaries });
+  const marker = await showDialog<number | null>(
+    `<p class="eyebrow">Chain</p><h2>${escapeHtml(doc.name)}</h2>
+     <p class="muted small">How each result here was made: the tools in order, what each passed to the next, and why each run ran. Click a step to see its result.</p>
+     <div class="cg-scroll">${chainHtml(layoutChain(nodes, runs))}</div>
+     <footer><button class="primary" data-cancel autofocus>Close</button></footer>`,
+    (done, el) => {
+      el.classList.add("wide");
+      el.addEventListener("close", () => el.classList.remove("wide"), { once: true });
+      el.querySelectorAll<HTMLElement>("[data-marker]").forEach((b) => b.addEventListener("click", () => done(Number(b.dataset.marker))));
+    },
+    null,
+  );
+  if (marker === null) return;
+  processes.select(doc, marker);
+  windows.restore(doc.id);
+}
+
 function aiUnavailable(): string | null {
   if (!server) return NO_SERVER;
   if (!aiConfig) return "Assistant settings are unavailable.";
@@ -1110,6 +1160,7 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     notify,
     select: (doc, marker, output) => processes.select(doc, marker, output),
     fork: (doc) => processes.fork(doc),
+    chain: (doc) => void showChain(doc),
     approve: (doc) => processes.approve(doc),
     rerun: (doc) => processes.rerun(doc),
     cancel: (doc) => processes.cancel(doc),

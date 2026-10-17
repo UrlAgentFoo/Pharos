@@ -84,6 +84,8 @@ export interface DataWindowHooks {
   select(doc: DataDoc, marker: number, output?: string): void;
   /** Opens a new window with the history up to the step on view. */
   fork(doc: DataDoc): void;
+  /** Shows the history as a chain: each step, what it passed to the next, and why each run ran. */
+  chain(doc: DataDoc): void;
   approve(doc: DataDoc): void;
   rerun(doc: DataDoc): void;
   cancel(doc: DataDoc): void;
@@ -516,6 +518,7 @@ export class DataWindow {
         ${active ? `<button class="tl-text" data-act="cancel">Cancel</button>` : ""}
         ${redo && !active ? `<button class="tl-text" data-act="rerun">${icon("redo", 14)}<span>Re-run</span></button>` : ""}
         ${blocks.length ? `<button class="tl-text" data-act="fork" title="Open a new window with the history up to here">${icon("branch", 14)}<span>Fork</span></button>` : ""}
+        ${blocks.length ? `<button class="tl-text" data-act="chain" title="The whole history as a chain: each step, what it passed on, and why it ran">${icon("link", 14)}<span>Chain</span></button>` : ""}
         ${results ? `<button class="tl-text" data-act="results" aria-expanded="${!!d.ui.results}" aria-controls="${d.id}-results" title="What the run on view made, step by step">${icon("overview", 14)}<span>Results</span><small>${results}</small></button>` : ""}
       </div>`;
     const marker = this.bar.querySelector<HTMLElement>(".tl-marker");
@@ -696,6 +699,8 @@ export class DataWindow {
         return this.hooks.rerun(d);
       case "fork":
         return this.hooks.fork(d);
+      case "chain":
+        return this.hooks.chain(d);
       case "smaller":
         return this.smaller?.apply();
       case "results":

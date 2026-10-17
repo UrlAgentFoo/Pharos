@@ -19,6 +19,8 @@ export interface DataStep {
   book?: { id: string; title: string; action?: string };
   /** The run that added the step: a book action's steps share one, and show as one block in the history. */
   block?: string;
+  /** Why the assistant chose the run, when it did: kept on its steps, for the chain view. */
+  reason?: string;
   /** proposed: waiting for Approve; stale: changed, re-runs on the next run. */
   status: "proposed" | "stale" | "queued" | "running" | "done" | "failed" | "cancelled";
   progress?: number;

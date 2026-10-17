@@ -39,7 +39,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested" | "chain"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -70,6 +70,18 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
       this.ws.touch();
     })();
     return this.shipsLoading;
+  }
+
+  /** What an operation makes: each output's name, kind and format (empty for one this window doesn't know). */
+  stepOutputs(run: string): { name: string; kind: string; format: string }[] {
+    const [ship, op] = run.split(".");
+    return (this.ships.get(ship)?.operations[op]?.outputs ?? []).map((o) => ({ name: o.name, kind: o.kind, format: o.format }));
+  }
+
+  /** What a book action does (its summary), for the chain view; undefined when the book or action is gone. */
+  async actionSummary(bookId: string, action: string): Promise<string | undefined> {
+    const book = await this.manifest(bookId).catch(() => null);
+    return (book && bookAction(book, action)?.summary) || undefined;
   }
 
   stepSpec(run: string): StepSpec | undefined {
@@ -345,7 +357,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   }
 
   /** Adds a book action's steps, wired to this window's data, with its parameters set into each step. */
-  appendBook(doc: DataDoc, book: BookManifest, actionName: string, values: Params, status: DataStep["status"]) {
+  appendBook(doc: DataDoc, book: BookManifest, actionName: string, values: Params, status: DataStep["status"], reason?: string) {
     const action = bookAction(book, actionName);
     if (!action) throw new Error(`${book.title} has no action "${actionName}"`);
     const used = new Set<string>();
@@ -360,7 +372,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     for (const s of action.steps) {
       const wires: Record<string, string> = {};
       for (const [port, w] of Object.entries(s.in ?? {})) wires[port] = w.startsWith("$") ? inputWire[w.slice(1)] : `${rename.get(w.split(".")[0])}.${w.split(".")[1]}`;
-      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, action, values), book: bookLabel(book, action), block, status });
+      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, action, values), book: bookLabel(book, action), block, status, ...(reason ? { reason } : {}) });
     }
   }
 
@@ -769,9 +781,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   }
 
   /** Runs a book action from the Controls, with the values set there: the click is the approval. */
-  async runNext(doc: DataDoc, bookId: string, actionName: string, values: Params) {
+  async runNext(doc: DataDoc, bookId: string, actionName: string, values: Params, reason?: string) {
     try {
-      this.appendBook(doc, await this.manifest(bookId), actionName, values, "stale");
+      this.appendBook(doc, await this.manifest(bookId), actionName, values, "stale", reason);
     } catch (e) {
       return this.hooks.notify(e instanceof Error ? e.message : String(e));
     }
@@ -841,7 +853,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     old.forEach((s, i) => {
       // wires inside the run follow the copies; wires to the data or earlier runs stay as they were
       const wires = Object.fromEntries(Object.entries(s.in).map(([port, w]) => [port, rename.has(w.split(".")[0]) ? `${rename.get(w.split(".")[0])}.${w.split(".")[1]}` : w]));
-      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: params(s, i), ...(s.book ? { book: s.book } : {}), block, status: "stale" });
+      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: params(s, i), ...(s.book ? { book: s.book } : {}), ...(s.reason ? { reason: s.reason } : {}), block, status: "stale" });
     });
     doc.marker = doc.steps.length;
     doc.output = undefined;
@@ -910,6 +922,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
         in: wires,
         with: action ? bookStepParams(s, action, plan.parameters) : { ...(s.with ?? {}) },
         ...(book && action ? { book: bookLabel(book, action) } : {}),
+        ...(plan.rationale ? { reason: plan.rationale } : {}),
         block,
         status: "proposed",
       });
@@ -976,8 +989,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   /** Runs the Suggested tab's action with its values: a re-run of the run on view, or a new run. */
   runSuggested(doc: DataDoc, subject: SuggestedSubject, values: Params) {
     if (subject.kind === "run" && subject.first !== undefined) return void this.updateRun(doc, subject.first, values);
+    const reason = subject.kind === "suggestion" ? subject.rationale : undefined;
     if (subject.kind === "suggestion") doc.suggestion = undefined;
-    void this.runNext(doc, subject.book.id, subject.action, values);
+    void this.runNext(doc, subject.book.id, subject.action, values, reason);
   }
 
   /** Lets the assistant's suggestion go, without running it. */

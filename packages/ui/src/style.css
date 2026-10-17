@@ -2777,6 +2777,188 @@ dialog footer .quiet-danger {
   font-weight: 600;
 }
 
+/* ---- the chain: a window's history as a graph, in a wide dialog. Runs are frames carrying why they
+   ran; steps are buttons on top, wired by what each passed on (an SVG between them) */
+dialog.wide {
+  width: min(1180px, calc(100vw - 48px));
+}
+
+.cg-scroll {
+  max-height: min(64vh, 680px);
+  margin-top: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.cg {
+  position: relative;
+}
+
+.cg-group {
+  position: absolute;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.cg-group-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cg-run {
+  margin-right: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* why it ran: the assistant's reason (violet sparkle), or what the book action does */
+.cg-why,
+.cg-about {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.cg-why .icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--ai);
+}
+
+.cg-about {
+  color: var(--muted);
+}
+
+.cg-links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cg-links path {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+
+.cg-links marker path {
+  fill: var(--line-strong);
+  stroke: none;
+}
+
+/* what a link passes on, haloed so it reads over the lines */
+.cg-links text {
+  fill: var(--muted);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--sheet);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.cg-node {
+  position: absolute;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.cg-node:hover {
+  border-color: var(--accent);
+}
+
+.cg-node.status-data {
+  background: var(--sheet);
+}
+
+.cg-node.status-failed {
+  border-color: var(--danger);
+}
+
+.cg-node.status-proposed {
+  border-style: dashed;
+  border-color: var(--ai);
+}
+
+.cg-node.status-stale,
+.cg-node.status-queued,
+.cg-node.status-running {
+  border-style: dashed;
+}
+
+.cg-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cg-node.status-done .cg-status {
+  color: var(--ok);
+}
+
+.cg-node.status-failed .cg-status {
+  color: var(--danger);
+}
+
+.cg-node.status-proposed .cg-status {
+  color: var(--ai);
+}
+
+.cg-title,
+.cg-result {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cg-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cg-result {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cg-result strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .field {
   display: grid;
   gap: 4px;
