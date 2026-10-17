@@ -162,6 +162,15 @@ export class WorkspaceStore {
     return this.ingest(name, basename(path), (dest) => rename(path, dest), undefined, { type, producedBy });
   }
 
+  /**
+   * Takes in an object from a saved project: moves it into the workspace as
+   * the artifact it was (its kind, format, name and the run that made it),
+   * but only if its content still hashes to `expect`.
+   */
+  async adoptAs(name: string, path: string, type: { kind: ArtifactKind; format: Format }, producedBy: string, displayName: string | undefined, expect: string): Promise<Artifact> {
+    return this.ingest(name, basename(path), (dest) => rename(path, dest), displayName, { type, producedBy }, expect);
+  }
+
   /** The workspace's runs/ and cache/ folders. */
   async dirs(name: string): Promise<{ runs: string; cache: string; artifacts: string }> {
     const dir = await this.existing(name);
@@ -174,6 +183,8 @@ export class WorkspaceStore {
     fill: (dest: string) => Promise<void>,
     displayName?: string,
     from?: { type: { kind: ArtifactKind; format: Format }; producedBy: string },
+    /** The hash the content must have (data from a saved project); anything else is refused as damaged. */
+    expect?: string,
   ): Promise<Artifact> {
     const dir = await this.existing(name);
     const tmp = join(dir, "artifacts", `.incoming-${randomBytes(6).toString("hex")}`);
@@ -185,6 +196,7 @@ export class WorkspaceStore {
       const type = from?.type ?? sniff(filename, isDir, isDir ? await readdir(data) : [], await this.formats());
       if (!type) throw new WorkspaceError(415, `Pharos doesn't know what kind of data "${filename}" is yet`);
       const { hash, size } = await hashPath(data);
+      if (expect && hash !== expect) throw new WorkspaceError(422, `"${displayName ?? filename}" in this project is damaged: its content no longer matches what was saved`);
       const final = join(dir, "artifacts", hash);
       const known = await this.read(dir, hash).catch(() => null);
       if (known) return known;

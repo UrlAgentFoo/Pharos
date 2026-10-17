@@ -381,16 +381,81 @@ function gatherProject(): ProjectFile {
 }
 
 async function saveProject() {
-  if (await deliver(packProject(gatherProject()), `${slug(assistant.projectName)}${PROJECT_EXT}`, "application/zip", "Save project")) {
-    lastSaved = new Date();
-    savedPrint = statePrint();
-    updateDesk();
-    void autosaveNow();
+/** Marks the session as saved now. */
+function savedNow() {
+  lastSaved = new Date();
+  savedPrint = statePrint();
+  updateDesk();
+  void autosaveNow();
+}
+
+/**
+ * Save project…: one file with the windows, their histories and the data
+ * they use (and the results, unless left out), so it opens on any computer.
+ */
+  const s = server;
+  const project = gatherProject();
+  if (!s) {
+    // no local server to read the data: the project alone, as before
+    if (await deliver(packProject(project), `${slug(assistant.projectName)}${PROJECT_EXT}`, "application/zip", "Save project")) savedNow();
+    return;
+  }
+  const sizes = await projectSizes(s, project);
+  const sep = s.info.separator;
+  const suggestedPath = (lastSaveDir ?? downloadsDir()).replace(/[/\\]$/, "") + sep + `${slug(assistant.projectName)}${PROJECT_EXT}`;
+  const choice = await showDialog<{ path: string; results: boolean } | null>(
+    `<form method="dialog"><h2>Save project</h2>
+      <p class="muted small">One file with the windows, their histories and the data they use, so it opens on any computer.</p>
+      <label class="field">File<input name="path" value="${escapeHtml(suggestedPath)}" spellcheck="false" autofocus /></label>
+      <p class="small">Data · ${formatSize(sizes.data)}</p>
+      ${sizes.results ? `<label class="check"><input type="checkbox" name="results" checked /> Include results · ${formatSize(sizes.results)}</label>
+      <p class="muted small">Left out, they're made again when the project is opened.</p>` : ""}
+      <footer><button type="button" data-cancel>Cancel</button><button class="primary">Save</button></footer></form>`,
+    (done, el) => {
+      const form = el.querySelector("form")!;
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const path = (form.elements.namedItem("path") as HTMLInputElement).value.trim();
+        const box = form.elements.namedItem("results") as HTMLInputElement | null;
+        if (path) done({ path: path.endsWith(PROJECT_EXT) ? path : path + PROJECT_EXT, results: box ? box.checked : false });
+      });
+    },
+    null,
+  );
+  if (!choice) return;
+  // big projects take a while: the busy line shows, and any failure becomes a dialog
+  const label = `Saving ${choice.path.slice(choice.path.lastIndexOf(sep) + 1)}`;
+  const exists = (e: unknown) => e instanceof Error && e.message.startsWith("already exists");
+  let saved = await run(label, () => s.exportProject(project, choice.path, choice.results).catch((e: unknown) => (exists(e) ? ("exists" as const) : Promise.reject(e))));
+  if (saved === "exists") {
+    if (!(await confirmDialog("Replace file?", `${choice.path} already exists. Replace it?`, "Replace"))) return;
+    saved = await run(label, () => s.exportProject(project, choice.path, choice.results, true));
   }
 }
+  if (!saved) return;
+  lastSaveDir = choice.path.slice(0, choice.path.lastIndexOf(sep)) || sep;
+  notify(`Saved ${choice.path} · ${formatSize(saved.bytes)}`);
+  const n = saved.missing.length;
+  if (n) void alertDialog("Saved without some data", `${n} item${n > 1 ? "s" : ""} the project points at ${n > 1 ? "are" : "is"} no longer in any workspace, so ${n > 1 ? "they weren't" : "it wasn't"} saved. Results among them are made again when the project is opened.`);
+  savedNow();
+}
+
+/** How much a project's data and results take, for the save dialog. */
+async function projectSizes(s: LocalServer, project: ProjectFile): Promise<{ data: number; results: number }> {
+  const data = new Map<string, number>();
+  const results = new Map<string, string>();
+  for (const d of project.docs) {
+    data.set(d.source.id, d.source.sizeBytes ?? 0);
+    for (const st of d.steps) for (const id of Object.values(st.outputs ?? {})) if (!data.has(id)) results.set(id, d.workspace);
+  }
+  const sizes = await Promise.all([...results].map(([id, w]) => s.artifact(w, id).then((a) => a.sizeBytes ?? 0, () => 0)));
+  return { data: [...data.values()].reduce((a, b) => a + b, 0), results: sizes.reduce((a, b) => a + b, 0) };
 
 function pickProject() {
   const input = $<HTMLInputElement>("project-input");
+  const s = server;
+  // with the local server, the file is read on disk, so a project with gigabytes of data opens without the page holding it
+  if (s) return void openProjectFile(s);
   input.value = "";
   input.onchange = async () => {
     const f = input.files?.[0];
@@ -411,25 +476,69 @@ async function openProject(bytes: Uint8Array, filename: string) {
 }
 
 /** Replaces the session with a project's windows, each showing its data and history as saved. */
+/** Open project… through the local server: its data goes back into the workspaces, each checked against its hash. */
+async function openProjectFile(s: LocalServer) {
+  const path = await browseDialog(s, { title: "Open project", pickFolder: false, start: lastSaveDir, accept: (e) => !e.isDir && e.name.toLowerCase().endsWith(PROJECT_EXT), empty: "No Pharos projects (.pharos) here" });
+  if (!path) return;
+  const name = path.slice(path.lastIndexOf(s.info.separator) + 1);
+  if (ws.docs.length && !(await confirmDialog("Open project?", `Opening ${name} replaces the ${ws.docs.length} window${ws.docs.length > 1 ? "s" : ""} open now. Save first if you need them.`, "Open"))) return;
+  const opened = await run(`Opening ${name}`, () => s.importProject(path));
+  if (!opened) return;
+  const project = opened.project as ProjectFile;
+  await restoreProject(project);
+  lastSaveDir = path.slice(0, path.lastIndexOf(s.info.separator)) || s.info.separator;
+  lastSaved = new Date(project.saved);
+  savedPrint = statePrint();
+  updateDesk();
+  if (opened.imported) notify(`Opened ${name} · ${opened.imported} item${opened.imported > 1 ? "s" : ""} added to the workspace${opened.reused ? `, ${opened.reused} already there` : ""}`);
+}
+
+/** An artifact by its hash: in the workspace named first, then in any other (a workspace renamed, or data added elsewhere). */
+async function findArtifact(s: LocalServer, workspace: string, id: string): Promise<Artifact | null> {
+  const here = await s.artifact(workspace, id).catch(() => null);
+  if (here) return here;
+  for (const w of await s.workspaces().catch(() => [])) {
+    if (w.name === workspace) continue;
+    const there = await s.artifact(w.name, id).catch(() => null);
+    if (there) return there;
+  }
+  return null;
+}
+
 async function restoreProject(project: ProjectFile) {
   for (const d of [...ws.docs]) ws.close(d.id);
   assistant.setProjectName(project.name);
   assistant.reset();
   const missing: string[] = [];
   for (const pd of project.docs) {
-    // the data must still be in its workspace: results come back from there too
-    const source = server ? await server.artifact(pd.workspace, pd.source.id).catch(() => null) : null;
+  let remade = 0;
+    // the data, found by its hash; without it the window can't be shown
+    const source = server ? await findArtifact(server, pd.workspace, pd.source.id) : null;
     if (!source) {
       missing.push(pd.name);
       continue;
     }
-    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps: pd.steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, ui: pd.ui });
+    // results no longer anywhere go back to "changed": running again makes them, often from the cache
+    const steps = server
+      ? await Promise.all(
+          pd.steps.map(async (st) => {
+            const outs = Object.values(st.outputs ?? {});
+            if (st.status !== "done" || !outs.length) return st;
+            const found = await Promise.all(outs.map((id) => findArtifact(server!, pd.workspace, id)));
+            if (found.every(Boolean)) return st;
+            remade++;
+            return { ...st, status: "stale" as const, outputs: undefined, jobId: undefined, cached: undefined };
+          }),
+        )
+      : pd.steps;
+    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, ui: pd.ui });
     windows.sync();
     windows.restorePlacement(doc.id, pd.rect, pd.minimized);
     void processes.reattach(doc);
   }
   ws.touch();
-  if (missing.length) void alertDialog("Some windows weren't restored", `Their data is no longer in its workspace:\n${missing.map((n) => `• ${n}`).join("\n")}`);
+  if (missing.length) void alertDialog("Some windows weren't restored", `Their data isn't in any workspace any more:\n${missing.map((n) => `• ${n}`).join("\n")}`);
+  else if (remade) notify(`${remade} step${remade > 1 ? "s" : ""} whose results weren't saved will run again: press Re-run in ${remade > 1 ? "their windows" : "its window"}`);
 }
 
 const autosave = new Autosave();

@@ -128,6 +128,16 @@ export class LocalServer {
 
   // ---------------------------------------------------------- workspaces and artifacts
 
+  /** Saves a project as one .pharos file at `path`, with its data (and, with `results`, what its steps made). */
+  async exportProject(project: unknown, path: string, results: boolean, overwrite = false): Promise<{ path: string; bytes: number; objects: number; missing: string[] }> {
+    return (await this.json("/api/projects/export", "POST", { project, path, results, overwrite })) as { path: string; bytes: number; objects: number; missing: string[] };
+  }
+
+  /** Opens a .pharos file on disk: its data goes back into the workspaces, checked against its hashes. */
+  async importProject(path: string): Promise<{ project: unknown; imported: number; reused: number; missing: string[] }> {
+    return (await this.json("/api/projects/import", "POST", { path })) as { project: unknown; imported: number; reused: number; missing: string[] };
+  }
+
   async workspaces(): Promise<WorkspaceInfo[]> {
     return (await this.call("/api/workspaces")).json();
   }

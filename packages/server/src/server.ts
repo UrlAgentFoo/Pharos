@@ -19,6 +19,7 @@ import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 
+import { exportProject, importProject } from "./bundle.js";
 export const VERSION = "0.1.0";
 
 export interface ServerOptions {
@@ -194,6 +195,17 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, { path: file, bytes: body.length });
       }
       case "GET /api/ai/config":
+      // a project saved with its data, as one file; and opened again, its data back in the workspaces
+      case "POST /api/projects/export": {
+        const { project, path, results, overwrite } = await readJson<{ project?: unknown; path?: unknown; results?: unknown; overwrite?: unknown }>(req);
+        if (!project || typeof project !== "object" || (project as { format?: unknown }).format !== "pharos-project") throw new HttpError(400, "project must be a Pharos project");
+        const file = requirePath(typeof path === "string" ? path : null);
+        return sendJson(res, 200, await exportProject(workspaces, project as Parameters<typeof exportProject>[1], file, { results: results !== false, overwrite: overwrite === true }));
+      }
+      case "POST /api/projects/import": {
+        const { path } = await readJson<{ path?: unknown }>(req);
+        return sendJson(res, 200, await importProject(workspaces, requirePath(typeof path === "string" ? path : null)));
+      }
         return sendJson(res, 200, { ...configView(await loadSettings(settingsDir), opts.envFile), usage: tokens.view() });
       case "PUT /api/ai/config": {
         const next = updateSettings(await loadSettings(settingsDir), await readJson(req));
