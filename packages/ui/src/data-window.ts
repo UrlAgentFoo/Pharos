@@ -21,6 +21,7 @@
 import type { Artifact, ParamSpec, Params } from "@pharos/contracts";
 import type { Image } from "@pharos/core";
 import type { LocalServer } from "./api.js";
+import { CadEditor, isEditablePart } from "./cad-editor.js";
 import { type Loaded, type Mounted, loadView, mountView, releaseView } from "./data-views.js";
 import { forgetView, holdView, touchView } from "./view-memory.js";
 import { thumbnailElement } from "./viewer.js";
@@ -84,6 +85,8 @@ export interface DataWindowHooks {
   select(doc: DataDoc, marker: number, output?: string): void;
   /** Opens a new window with the history up to the step on view. */
   fork(doc: DataDoc): void;
+  /** Expands the window to fill the space beside the column (a STEP part then opens in the editor). */
+  expand(doc: DataDoc): void;
   /** Shows the history as a chain: each step, what it passed to the next, and why each run ran. */
   chain(doc: DataDoc): void;
   approve(doc: DataDoc): void;
@@ -96,6 +99,8 @@ export interface DataWindowHooks {
   /** Runs a view on `artifact` (cached like any operation) and returns what it made. */
   runView(doc: DataDoc, artifact: Artifact, tool: string): Promise<Artifact>;
   updateStep(doc: DataDoc, index: number, params: Params): void;
+  /** Adds a run of one ship operation on the data on view (with these settings) to the history and runs it: an editor's button. */
+  runOperation(doc: DataDoc, run: string, params: Params): void;
   /** The Controls for the book run starting at step `first` (0-based); null for a run of one operation. */
   runControls(doc: DataDoc, first: number): Promise<RunControls | null>;
   /** Sets a book run's parameters; what changed runs again. */
@@ -356,12 +361,25 @@ export class DataWindow {
     }
     // what was on view stays under the card (the last result, or the step's previous one) rather than an empty stage
     if (!artifactId && busy && this.shownKey) return;
-    const key = `${artifactId}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}`;
+    // expanded, a window showing a STEP part edits it in place; otherwise it shows it as before
+    const editing = !!artifactId && this.isExpanded() && isEditablePart(await this.artifact(artifactId));
+    const key = `${artifactId}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}|${editing ? "edit" : ""}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
     this.unmount();
     if (!artifactId) {
       this.stage.innerHTML = "";
+      return;
+    }
+    if (editing) {
+      const part = await this.artifact(artifactId);
+      if (this.shownKey !== key) return;
+      this.onStage = artifactId;
+      this.mounted = new CadEditor(this.stage, d.workspace, part, {
+        server: () => this.hooks.server(),
+        specs: (run) => this.hooks.stepSpec(run)?.params ?? [],
+        edit: (run, params) => this.hooks.runOperation(d, run, params),
+      });
       return;
     }
     const showId = this.viewed.get(artifactId) ?? artifactId;
@@ -375,17 +393,18 @@ export class DataWindow {
     if (entry.type === "info") void this.offerViews(artifact);
   }
 
-  /** For data Pharos can't draw: the ship views that can show it, as buttons on its card. */
+  /** For data Pharos can't draw: the ship views that can show it, as buttons on its card, and for a STEP part, the editor. */
   private async offerViews(a: Artifact) {
     const key = this.shownKey;
     const views = await this.hooks.viewsFor(a);
-    if (!views.length || this.shownKey !== key) return;
+    const edit = isEditablePart(a);
+    if ((!views.length && !edit) || this.shownKey !== key) return;
     const card = this.stage.querySelector(".dv-card");
     const note = card?.querySelector(".muted");
-    if (note) note.textContent = "Pharos can't draw this itself, but a ship can show it. It's stored at:";
+    if (note && views.length) note.textContent = "Pharos can't draw this itself, but a ship can show it. It's stored at:";
     card?.insertAdjacentHTML(
       "beforeend",
-      `<div class="dv-views">${views.map((v) => `<button class="chip primary-chip" data-view="${escapeHtml(v.tool)}" title="${escapeHtml(v.summary)}">${icon("ship", 13)} Show with ${escapeHtml(v.title)}</button>`).join("")}</div>`,
+      `<div class="dv-views">${edit ? `<button class="chip primary-chip" data-act="edit-part" title="Expands the window into the editor: change lengths, faces and holes with FreeCAD">${icon("pencil", 13)} Edit it</button>` : ""}${views.map((v) => `<button class="chip primary-chip" data-view="${escapeHtml(v.tool)}" title="${escapeHtml(v.summary)}">${icon("ship", 13)} Show with ${escapeHtml(v.title)}</button>`).join("")}</div>`,
     );
   }
 
@@ -407,6 +426,11 @@ export class DataWindow {
       this.shownKey = "";
       await this.renderBody();
     }
+  }
+
+  /** Whether the window fills the space beside the column (its expand button). */
+  private isExpanded(): boolean {
+    return !!this.body.closest(".win")?.classList.contains("expanded");
   }
 
   private unmount() {
@@ -691,6 +715,8 @@ export class DataWindow {
     switch (el.dataset.act) {
       case "approve":
         return this.hooks.approve(d);
+      case "edit-part":
+        return this.hooks.expand(d);
       case "cancel":
         return this.hooks.cancel(d);
       case "log":

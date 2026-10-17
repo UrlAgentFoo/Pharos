@@ -39,7 +39,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested" | "chain"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested" | "chain" | "expand"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -398,11 +398,16 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
 
   // ---------------------------------------------------------- running the history
 
-  /** Runs the history up to the first proposed step; unchanged steps come from the cache. */
+  /** Runs the history, but for the proposed steps and what reads them; unchanged steps come from the cache. */
   async run(doc: DataDoc) {
     const s = this.server;
-    const firstProposed = doc.steps.findIndex((x) => x.status === "proposed");
-    const steps = firstProposed < 0 ? doc.steps : doc.steps.slice(0, firstProposed);
+    // proposed steps wait for Approve, and so does whatever reads them; the rest runs (an edit, an action
+    // from the Controls), even when it comes after a proposal it doesn't use
+    const waiting = new Set<string>();
+    for (const x of doc.steps) {
+      if (x.status === "proposed" || Object.values(x.in).some((w) => waiting.has(w.split(".")[0]))) waiting.add(x.id);
+    }
+    const steps = doc.steps.filter((x) => !waiting.has(x.id));
     if (!steps.length) return;
     for (const step of steps) if (step.status !== "done") Object.assign(step, { status: "queued", error: undefined, message: undefined, progress: undefined });
     this.ws.touch();
@@ -836,6 +841,31 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const next = { ...current, ...values };
     if ((run.action.parameters ?? []).every((p) => next[p.name] === current[p.name])) return this.hooks.notify("Nothing changed: these are the settings it ran with.");
     this.appendCopy(doc, block, (_s, i) => bookStepParams(run.action.steps[i], run.action, next));
+  }
+
+  /**
+   * An editor's button: a run of one operation on the data on view (or the
+   * nearest earlier data of the kind it takes), with these settings, added
+   * to the history and run. Pressing the button is the approval.
+   */
+  async runOperation(doc: DataDoc, run: string, params: Params) {
+    try {
+      await this.loadShips();
+      const op = this.ships.get(run.split(".")[0])?.operations[run.split(".")[1]];
+      if (!op) throw new Error(`no operation ${run}`);
+      const used = new Set<string>();
+      const wires: Record<string, string> = {};
+      for (const port of op.inputs ?? []) {
+        if (!port.optional) wires[port.name] = this.pick(doc, port.kind, port.formats, used, `"${port.name}"`);
+      }
+      const defaults = Object.fromEntries((op.parameters ?? []).flatMap((p) => (p.default === undefined ? [] : [[p.name, p.default]])));
+      doc.steps.push({ id: this.uniqueId(doc, run.split(".")[1].replace(/-/g, "_")), run, in: wires, with: { ...defaults, ...params }, status: "stale", block: newBlock() });
+    } catch (e) {
+      return this.hooks.notify(e instanceof Error ? e.message : String(e));
+    }
+    // the window stays on what it shows, with the run's progress over it, and moves to the run once it's done
+    this.follow(doc);
+    await this.run(doc);
   }
 
   /** Apply and run for a step of one operation: it again with new settings, as a new run after the last. */

@@ -1,0 +1,4 @@
+# 80 → 120 mm, cut at x = 20 (between the left hole and the boss)
+axis: x
+length: 120
+at: 0.25

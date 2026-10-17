@@ -5022,6 +5022,179 @@ dialog.side::backdrop {
   cursor: grab;
 }
 
+/* ---- the CAD editor: an expanded window's body for a STEP part (cad-editor.ts) */
+
+/* the tools along the top, the part's faces down the left, the part in 3D, and the tool's settings floating over it */
+.cad-ed {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.cad-tools {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sheet);
+}
+
+.cad-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cad-tool:hover {
+  border-color: var(--line-strong);
+}
+
+.cad-tool.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.cad-tree {
+  overflow-y: auto;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  background: var(--sheet);
+  font-size: 13px;
+}
+
+.cad-size {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-size small,
+.cad-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-tree .eyebrow {
+  margin: 12px 0 4px;
+}
+
+.cad-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* a face or hole: the one picked edged in the accent, as the part shows it */
+.cad-row {
+  display: grid;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cad-row:hover,
+.cad-row.hover {
+  background: var(--hover);
+}
+
+.cad-row.on {
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.cad-view {
+  position: relative;
+  min-height: 0;
+}
+
+.cad-view canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.cad-panel {
+  position: absolute;
+  left: 236px;
+  bottom: 16px;
+  width: 264px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.cad-panel:empty {
+  display: none;
+}
+
+.cad-panel p {
+  margin: 0 0 8px;
+}
+
+.cad-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cad-picked {
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-need {
+  color: var(--warn-text);
+}
+
+.cad-offers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cad-form .field:first-child {
+  margin-top: 0;
+}
+
+/* its button as the Controls' run buttons: the edit's name, then an arrow, on one line */
+.cad-form .primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+}
+
 .dv-hint {
   position: absolute;
   left: 8px;

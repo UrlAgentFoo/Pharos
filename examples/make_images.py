@@ -40,7 +40,7 @@ WINDOWS = {
 }
 
 # examples whose picture comes from the script that makes their data
-ELSEWHERE = {"orbit-scene": "make_scene.py", "street-photo": "make_media.sh", "street-crossing": "make_media.sh", "shelf-bracket": "make_part_image.py"}
+ELSEWHERE = {"orbit-scene": "make_scene.py", "street-photo": "make_media.sh", "street-crossing": "make_media.sh", "shelf-bracket": "make_part_image.py", "mounting-plate": "make_part_mesh.py and make_part_image.py"}
 
 
 # ---------------------------------------------------------------- microscopy

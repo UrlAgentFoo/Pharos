@@ -16,6 +16,13 @@
   prompt: Will this bracket hold a 15 kg shelf printed in PLA? If not, make it stronger and tell me how long it takes to print.
   # what its window opens with (half of 15 kg on each of two brackets): a few seconds, then straight from the cache
   run: { book: printed-parts, action: test, params: { load: 74 } }
+- id: mounting-plate
+  title: A plate to edit
+  kind: CAD part (STEP)
+  description: An 80 × 30 mm plate, 8 mm thick, with two 6 mm screw holes, a round boss and rounded corners, as a STEP file. Expand its window to edit it with FreeCAD.
+  files: [{ path: data/mounting-plate.step, name: plate.step }]
+  image: images/mounting-plate.webp
+  prompt: Make the plate 100 mm long and its screw holes 8 mm.
 - id: nuclei-timelapse
   title: Cells moving over time
   kind: Microscopy time-lapse

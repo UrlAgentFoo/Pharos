@@ -266,6 +266,8 @@ export class WindowManager {
     const expanded = !!w.zoomedFrom;
     w.el.classList.toggle("expanded", expanded);
     this.markExpanded();
+    // its body may change with it: an expanded window edits a STEP part
+    w.view.render();
     b.innerHTML = icon(expanded ? "shrink" : "expand", 15);
     b.title = expanded ? "Collapse" : "Expand";
     b.setAttribute("aria-label", expanded ? "Collapse window" : "Expand window");
