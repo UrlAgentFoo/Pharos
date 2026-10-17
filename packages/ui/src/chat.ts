@@ -24,8 +24,8 @@ export interface AskReply {
   text: string;
   /** What each citation the text may hold ([1], [2.1]) points at; text that cites nothing here stays plain. */
   cites?: Record<string, CiteTarget>;
-  /** Steps it proposed in a window's history, waiting for Approve; `runs` for a chain of several. */
-  proposed?: { window: string; windowId: string; steps: number; title: string; runs?: number };
+  /** A chain of runs it suggests for a window: a suggestion in the chat only; nothing is added to the window. */
+  chain?: { window: string; windowId: string; title: string; runs: { title: string; why?: string }[] };
   /** A book action it set up in a window's Controls (Suggested tab), waiting to be run. */
   suggested?: { window: string; windowId: string; title: string; book: string };
 }
@@ -289,13 +289,14 @@ export class Assistant {
     const { reply } = m;
     el.className = "msg assistant";
     if (reply.text) el.insertAdjacentHTML("beforeend", `<div class="reply">${replyHtml(reply.text, reply.cites ?? {}, index)}</div>`);
-    // what it left in a window, in two lines: what, then where it waits, with a way there
-    if (reply.proposed) {
-      const p = reply.proposed;
+    // a chain it suggests: each run and why, here only; what it set up in a window: what, then where it waits
+    if (reply.chain) {
+      const p = reply.chain;
       el.insertAdjacentHTML(
         "beforeend",
         `<div class="chat-card"><p class="chat-card-title">${icon("script", 14)}<strong>${escapeHtml(p.title)}</strong></p>
-         <p class="chat-card-note">${p.runs && p.runs > 1 ? `A chain of ${p.runs} runs (${p.steps} steps)` : `${p.steps} step${p.steps > 1 ? "s" : ""}`} waiting for your approval in ${escapeHtml(p.window)}. ${p.runs && p.runs > 1 ? `<button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="chain">Show the chain</button> · ` : ""}<button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="history">Show the steps</button></p></div>`,
+         <ol class="chat-chain">${p.runs.map((r) => `<li><strong>${escapeHtml(r.title)}</strong>${r.why ? `<div class="chat-chain-why">${replyHtml(r.why, reply.cites ?? {}, index)}</div>` : ""}</li>`).join("")}</ol>
+         <p class="chat-card-note">A suggestion: nothing was added to ${escapeHtml(p.window)}. Run each from its Controls or ⋯ menu. <button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="history">Show the window</button></p></div>`,
       );
     }
     if (reply.suggested) {

@@ -783,9 +783,12 @@ async function ask(text: string, history: ChatTurn[]): Promise<AskReply> {
     const sug = target.suggestion;
     return { text: r.plan.rationale ?? r.message, cites, suggested: { window: target.name, windowId: target.id, title: sug?.title ?? r.plan.title, book: sug?.book.title ?? "" } };
   }
-  const target = await processes.fromPlan(r.plan, shown);
-  const steps = r.plan.steps.length;
-  return { text: r.plan.rationale ?? r.message, cites, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title, ...(r.plan.links?.length ? { runs: r.plan.links.length } : {}) } };
+  // a chain stays a suggestion, in the chat: nothing lands in the window, which runs each part from its Controls
+  void s.cancelPlan(r.plan.id).catch(() => {});
+  const runs = r.plan.links?.length
+    ? r.plan.links.map((l) => ({ title: l.title, ...(l.why ? { why: l.why } : {}) }))
+    : r.plan.steps.map((st) => ({ title: processes.stepSpec(st.run)?.title ?? st.run }));
+  return { text: r.plan.rationale ?? r.message, cites, chain: { window: doc.name, windowId: doc.id, title: r.plan.title, runs } };
 }
 
 /**

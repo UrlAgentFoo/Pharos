@@ -2605,6 +2605,23 @@ body.overview-mode .project-bar {
   color: var(--ai);
 }
 
+/* a suggested chain: each run, in order, with why it's there */
+.chat-chain {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.chat-chain-why {
+  color: var(--muted);
+}
+
+.chat-chain-why p {
+  margin: 0;
+}
+
 .chat-card-title small,
 .chat-card-note {
   color: var(--muted);

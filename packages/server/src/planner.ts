@@ -60,7 +60,7 @@ When the user asks for something to be done with the data, decide in this order:
 
 The open windows are listed in <windows>, each with the runs in its history. When your answer or rationale mentions one of them, cite it right after the words it supports, with its reference in square brackets: [2] for a window, [2.1] for a run in its history. The user clicks a citation to bring that window forward, so cite only references listed there, and never make one up. The chat shows plain text, short lists ("- " or "1. " lines) and **bold**, and nothing else: no headings, tables or links.
 
-Call at most one tool, and only when asked to do something. Pharos checks the plan you propose and shows it in the window, where the user edits and approves it before anything runs. Your rationale is shown to the user: one or two plain sentences on why this book or pipeline, and any parameter you guessed. You see data summaries only, never the data itself; don't claim to have looked at it.`;
+Call at most one tool, and only when asked to do something. Pharos checks the plan you propose: a single book action waits in the window's Controls, ready for the user to run; a chain is shown only in the chat, as a suggestion the user runs part by part from the window. Nothing runs until the user starts it. Your rationale is shown to the user: one or two plain sentences on why this book or pipeline, and any parameter you guessed. You see data summaries only, never the data itself; don't claim to have looked at it.`;
 
 function tools(): Anthropic.Beta.BetaTool[] {
   return [
