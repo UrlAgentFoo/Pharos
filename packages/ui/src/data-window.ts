@@ -85,6 +85,8 @@ export interface DataWindowHooks {
   select(doc: DataDoc, marker: number, output?: string): void;
   /** Opens a new window with the history up to the step on view. */
   fork(doc: DataDoc): void;
+  /** Right-click on a run in the history (at `marker`, just after it): its menu, under `anchor`. */
+  historyMenu(doc: DataDoc, marker: number, anchor: DOMRect): void;
   /** Expands the window to fill the space beside the column (a STEP part then opens in the editor). */
   expand(doc: DataDoc): void;
   /** Shows the history as a chain: each step, what it passed to the next, and why each run ran. */
@@ -225,6 +227,13 @@ export class DataWindow {
     this.drawer.addEventListener("click", (e) => this.onClick(e));
     this.drawer.addEventListener("submit", (e) => e.preventDefault());
     this.bar.addEventListener("click", (e) => this.onClick(e));
+    // a run's own menu (the data itself has none); the keyboard's menu key opens it too
+    this.bar.addEventListener("contextmenu", (e) => {
+      const run = (e.target as HTMLElement).closest<HTMLElement>(".tl-node[data-index]");
+      if (!run || run.dataset.index === "0") return;
+      e.preventDefault();
+      this.hooks.historyMenu(this.doc, Number(run.dataset.index), run.getBoundingClientRect());
+    });
     // drag the marker, or press anywhere on the track between runs to jump it there
     this.bar.addEventListener("pointerdown", (e) => {
       const t = e.target as HTMLElement;
@@ -356,6 +365,7 @@ export class DataWindow {
             : `<strong>${escapeHtml(title)}</strong>
                <span>${escapeHtml(step.status === "failed" ? (step.error ?? "failed") : step.status === "proposed" ? "Proposed: approve to run it" : (step.message ?? STATUS_LABEL[step.status]))}</span>
                ${step.status === "failed" && step.jobId ? `<button class="link-btn" data-act="log" data-job="${escapeHtml(step.jobId)}">View log</button>` : ""}
+               ${step.status === "failed" || step.status === "cancelled" || step.status === "stale" ? `<button class="link-btn" data-act="rerun">Run it again</button>` : ""}
                ${step.status === "proposed" ? `<button class="primary" data-act="approve">${icon("batch", 14)} Approve and run</button>` : ""}`
         }
       </div>`;
@@ -537,7 +547,6 @@ export class DataWindow {
     const pos = on + 1;
     const proposed = d.steps.some((s) => s.status === "proposed");
     const active = d.steps.some((s) => s.status === "running" || s.status === "queued");
-    const redo = d.steps.some((s) => s.status === "stale" || s.status === "failed" || s.status === "cancelled");
     const b = blocks[on];
     this.bar.innerHTML = `
       <div class="tl-controls">
@@ -554,7 +563,6 @@ export class DataWindow {
       <div class="tl-actions">
         ${proposed ? `<button class="tl-text primary-text" data-act="approve">${icon("batch", 14)}<span>Approve</span></button>` : ""}
         ${active ? `<button class="tl-text" data-act="cancel">Cancel</button>` : ""}
-        ${redo && !active ? `<button class="tl-text" data-act="rerun">${icon("redo", 14)}<span>Re-run</span></button>` : ""}
         ${blocks.length ? `<button class="tl-text" data-act="fork" title="Open a new window with the history up to here">${icon("branch", 14)}<span>Fork</span></button>` : ""}
         ${blocks.length ? `<button class="tl-text" data-act="chain" title="The whole history as a chain: each step, what it passed on, and why it ran">${icon("link", 14)}<span>Chain</span></button>` : ""}
         ${results ? `<button class="tl-text" data-act="results" aria-expanded="${!!d.ui.results}" aria-controls="${d.id}-results" title="What the run on view made, step by step">${icon("overview", 14)}<span>Results</span><small>${results}</small></button>` : ""}

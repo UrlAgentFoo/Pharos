@@ -39,7 +39,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested" | "chain" | "expand"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu" | "controlsTab" | "renderSuggested" | "chain" | "expand" | "historyMenu"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -543,7 +543,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
         // the server restarted and forgot the run: its steps would wait for their turn forever, so say what happened
         const doc = this.running.get(id)!;
         this.running.delete(id);
-        this.settle(doc, "failed", "Pharos's server restarted before this finished: press Re-run to run it again");
+        this.settle(doc, "failed", "Pharos's server restarted before this finished");
       }
     }
   }
@@ -895,6 +895,15 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     doc.output = undefined;
     this.ws.touch();
     void this.run(doc);
+  }
+
+  /** Removes step `first` and every step after it (its run and all later ones), stopping any still going. */
+  removeFrom(doc: DataDoc, first: number) {
+    if (doc.steps.slice(first).some((s) => s.status === "running" || s.status === "queued")) this.cancel(doc);
+    doc.steps = doc.steps.slice(0, first);
+    doc.marker = Math.min(doc.marker, first);
+    doc.output = undefined;
+    this.ws.touch();
   }
 
   removeStep(doc: DataDoc, index: number) {

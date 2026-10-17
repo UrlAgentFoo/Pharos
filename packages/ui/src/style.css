@@ -431,7 +431,8 @@ button:disabled {
 }
 
 .menu-pop button[data-action],
-.menu-pop button[data-dp] {
+.menu-pop button[data-dp],
+.menu-pop button[data-cut] {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -445,18 +446,28 @@ button:disabled {
 }
 
 .menu-pop button[data-action] span,
-.menu-pop button[data-dp] span {
+.menu-pop button[data-dp] span,
+.menu-pop button[data-cut] span {
   flex: 1;
 }
 
 .menu-pop button[data-action] .icon,
-.menu-pop button[data-dp] .icon {
+.menu-pop button[data-dp] .icon,
+.menu-pop button[data-cut] .icon {
   color: var(--muted);
 }
 
 .menu-pop button[data-action]:hover:not(:disabled),
 .menu-pop button[data-dp]:hover:not(:disabled) {
   background: var(--hover);
+}
+
+/* a history run's Delete: grey like the rest until hovered, then red, as destructive actions are */
+.menu-pop button[data-cut]:hover,
+.menu-pop button[data-cut]:focus-visible,
+.menu-pop button[data-cut]:hover .icon,
+.menu-pop button[data-cut]:focus-visible .icon {
+  color: var(--danger);
 }
 
 .dot {

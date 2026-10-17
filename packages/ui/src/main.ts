@@ -246,6 +246,12 @@ pop.addEventListener("click", (e) => {
     const id = row.dataset.activityWin!;
     return windows.isMinimized(id) ? windows.restore(id) : ws.activate(id);
   }
+  const cut = (e.target as HTMLElement).closest<HTMLElement>("[data-cut]");
+  if (cut) {
+    closePopover();
+    const doc = ws.get(cut.dataset.cutDoc!);
+    return void (doc && deleteFrom(doc, Number(cut.dataset.cut)));
+  }
   const dp = (e.target as HTMLElement).closest<HTMLElement>("[data-dp]");
   if (!dp) return;
   closePopover();
@@ -698,6 +704,29 @@ async function removeRun(doc: DataDoc, index: number) {
   const message = `It leaves this window's history${later ? `, with the later runs that use what it made` : ""}. Your data and the results on disk are kept.`;
   if (!(await confirmDialog(`Remove this ${what}?`, message, `Remove ${what}`, true))) return;
   processes.removeStep(doc, index);
+}
+
+/** Right-click on a run in a window's history: deleting it and what came after. */
+function historyMenu(doc: DataDoc, marker: number, anchor: DOMRect) {
+  togglePopover(`history:${doc.id}:${marker}`, anchor, () =>
+    `<section><button data-cut="${marker}" data-cut-doc="${escapeHtml(doc.id)}" role="menuitem">${icon("trash", 16)}<span>Delete this run and the later ones…</span></button></section>`,
+  );
+}
+
+/** Deletes a run and every run after it from a window's history, once you've confirmed: back to how it was before that run. */
+async function deleteFrom(doc: DataDoc, marker: number) {
+  const all = timeBlocks(doc);
+  const block = all[blockAt(all, marker)];
+  if (!block) return;
+  // numbered as the history bar numbers them: the finished runs
+  const shown = all.filter((b) => !underWay(doc, b));
+  const n = shown.indexOf(block) + 1;
+  const later = all.length - 1 - all.indexOf(block);
+  const going = doc.steps.slice(block.first).some((s) => s.status === "running" || s.status === "queued");
+  const title = later ? `Delete run ${n} and the ${later === 1 ? "one" : later} after it?` : `Delete run ${n}?`;
+  const message = `${later ? "They leave" : "It leaves"} this window's history${going ? ", and runs still going stop" : ""}. Your data and the results on disk are kept.`;
+  if (!(await confirmDialog(title, message, later ? `Delete ${later + 1} runs` : "Delete run", true))) return;
+  processes.removeFrom(doc, block.first);
 }
 
 /** Closes a window once you've confirmed: its history goes, its data and results stay in the workspace. */
@@ -1184,6 +1213,7 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     select: (doc, marker, output) => processes.select(doc, marker, output),
     fork: (doc) => processes.fork(doc),
     expand: (doc) => windows.toggleZoom(doc.id),
+    historyMenu: (doc, marker, anchor) => historyMenu(doc, marker, anchor),
     chain: (doc) => void showChain(doc),
     approve: (doc) => processes.approve(doc),
     rerun: (doc) => processes.rerun(doc),
