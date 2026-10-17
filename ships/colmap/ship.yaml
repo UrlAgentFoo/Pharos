@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: colmap
+version: 0.1.0
+image: pharos/colmap:0.1.0    # built from this folder's Dockerfile, on ubuntu:24.04 (COLMAP 3.9.1, CPU; FFmpeg 6.1)
+summary: Structure from motion with COLMAP - works out where each photo or video frame was taken, and the scene's sparse 3D points; takes frames from videos with FFmpeg.
+citation: "Schönberger & Frahm, Structure-from-Motion Revisited, CVPR 2016. https://colmap.github.io"
+license: BSD-3-Clause
+homepage: https://colmap.github.io
+tags: [photogrammetry, structure-from-motion, 3d, cameras, video, gaussian-splatting]
+requires: { memory_gb: 4, network: none }
+formats:
+  # a folder of photos of one scene, laid out as COLMAP and splat trainers expect: the photos in images/
+  photo-set: { kind: photos, title: Photo set, folder: true, contains: [images] }
+  # where each photo was taken: the photos in images/, cameras and sparse points in sparse/0/
+  colmap: { kind: sfm, title: COLMAP reconstruction, folder: true, contains: [images, sparse] }
+  mov: { kind: video, title: QuickTime video, extensions: [.mov] }
+operations:
+  frames:
+    summary: Takes evenly spaced frames from a video as a photo set, at most the number you choose, scaled down to the size you choose.
+    command: python3 /opt/pharos/pharos_colmap.py frames --video {in.video} --out /out/photos --frames {frames} --max-size {max_size}
+    inputs: [{ name: video, kind: video, formats: [mp4, mov] }]
+    parameters:
+      - { name: frames, type: integer, default: 80, min: 3, max: 400, description: "How many frames to take, spread evenly over the video." }
+      - { name: max_size, type: integer, unit: px, default: 1280, min: 320, max: 4096, description: "Frames with a longer side than this are scaled down." }
+    outputs: [{ name: photos, kind: photos, format: photo-set, path: /out/photos }]
+    cache: { deterministic: true }
+  reconstruct:
+    summary: Works out where each photo of a scene was taken (structure from motion) and the scene's sparse 3D points, as a COLMAP reconstruction and a coloured point cloud.
+    command: python3 /opt/pharos/pharos_colmap.py reconstruct --photos {in.photos} --out /out/scene --points /out/points.ply --matcher {matcher} --max-size {max_size}
+    inputs: [{ name: photos, kind: photos, formats: [photo-set] }]
+    parameters:
+      - { name: matcher, type: enum, options: [sequential, exhaustive], default: sequential, description: "sequential compares each photo with the ones just before and after it: fast, for video frames and photos taken in order. exhaustive compares every pair: slower, for photos in any order." }
+      - { name: max_size, type: integer, unit: px, default: 1600, min: 320, max: 4096, description: "Photos with a longer side than this are scaled down first." }
+    outputs:
+      - { name: scene, kind: sfm, format: colmap, path: /out/scene }
+      - { name: points, kind: mesh, format: ply, path: /out/points.ply }
+    cache: { deterministic: true }

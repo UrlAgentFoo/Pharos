@@ -87,7 +87,8 @@ export const DISPLAYABLE_FORMATS: readonly string[] = ["tiff", "ome-tiff", "ome-
 /**
  * Recognises a file or folder from its name (and, for folders, what it
  * contains), using the built-in formats plus any that ships declare.
- * Longer extensions win, so `.ome.tif` is OME-TIFF rather than TIFF.
+ * Longer extensions win, so `.ome.tif` is OME-TIFF rather than TIFF; for
+ * folders, the format whose `contains` names the most entries wins.
  */
 export function sniffFormat(
   name: string,
@@ -105,10 +106,13 @@ export function sniffFormat(
   }
   if (best) return { kind: best.kind, format: best.format };
   if (!isDir) return null;
+  // the format naming the most entries wins: a COLMAP folder (images/ and sparse/) before a plain photo set (images/)
+  let found: { kind: string; format: string; n: number } | null = null;
   for (const [format, info] of Object.entries(formats)) {
-    if (info.folder && info.contains?.every((e) => entries.includes(e))) return { kind: info.kind, format };
+    const n = info.contains?.length ?? 0;
+    if (info.folder && n > (found?.n ?? 0) && info.contains!.every((e) => entries.includes(e))) found = { kind: info.kind, format, n };
   }
-  return null;
+  return found && { kind: found.kind, format: found.format };
 }
 
 /**

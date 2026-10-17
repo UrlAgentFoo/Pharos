@@ -1,0 +1,2 @@
+# the COCO model finds no nuclei here; this checks the operation runs and writes both outputs
+confidence: 0.25

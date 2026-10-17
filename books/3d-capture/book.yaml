@@ -1,0 +1,71 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/book.schema.json
+id: 3d-capture
+version: 0.1.0
+title: 3D capture
+summary: Turns a video (or photos) taken while moving around an object or through a place into a 3D Gaussian splat you can turn and fly through - COLMAP works out where each frame was taken, then OpenSplat trains the splat. Can also just place the cameras and show the scene's sparse 3D points.
+how_to_use: Open a video filmed while walking slowly around an object or through a still place, or a folder of photos. Make a Gaussian splat of it to turn and fly through in 3D.
+tags: [gaussian-splatting, splat, 3d, 3d-model, scan, photogrammetry, structure-from-motion, video, photos, radiance-field, nerf, colmap]
+authors: [Pharos]
+ships: { colmap: ^0.1, opensplat: ^0.1 }
+actions:
+  splat_video:
+    title: Gaussian splat from a video
+    summary: Takes evenly spaced frames from the video, works out where each was taken (COLMAP), then trains a 3D Gaussian splat of the scene (OpenSplat) to turn and fly through.
+    inputs:
+      - name: video
+        description: A video filmed while moving slowly around an object or through a still scene, so each spot is seen in many frames.
+        accepts: { kind: video, formats: [mp4, mov] }
+    parameters:
+      - { name: frames, label: Frames, type: integer, default: 80, min: 10, max: 400, description: "How many frames to take, spread evenly over the video: more place the cameras more reliably and take longer.", sets: frames.frames }
+      - { name: max_size, label: Largest frame side, type: integer, unit: px, default: 1280, min: 320, max: 4096, description: "Frames with a longer side than this are scaled down first.", sets: frames.max_size }
+      - { name: iterations, label: Training steps, type: integer, default: 2000, min: 100, max: 30000, description: "More steps give a sharper scene: 2,000 take a few minutes on the CPU for a short video.", sets: train.iterations }
+      - { name: downscale, label: Train at 1 / …, type: number, default: 2, min: 1, max: 8, description: "Trains on frames scaled down by this factor: 2 is four times faster than 1, and less sharp.", sets: train.downscale }
+      - { name: max_gaussians, label: Most Gaussians, type: integer, default: 1000000, min: 1000, max: 10000000, description: "The most Gaussians the splat may grow to: fewer trains faster and makes a lighter model, with less fine detail.", sets: train.max_gaussians }
+      - { name: sh_degree, label: Colour by angle, type: integer, default: 3, min: 1, max: 3, description: "3 lets colours change with the viewing angle (shine, reflections); 1 gives each point one colour.", sets: train.sh_degree }
+    controls:
+      - { title: Frames, note: "More frames place the cameras more reliably; the video should move slowly and keep the scene still.", params: [frames, max_size] }
+      - { title: Training, note: "More steps give a sharper scene and take longer. Changing these keeps the frames and cameras.", params: [iterations, downscale, max_gaussians] }
+      - { title: Look, params: [sh_degree] }
+    steps:
+      - { id: frames, run: colmap.frames, in: { video: $video } }
+      - { id: cameras, run: colmap.reconstruct, in: { photos: frames.photos }, with: { matcher: sequential } }
+      - { id: train, run: opensplat.train, in: { scene: cameras.scene } }
+    outputs: { splat: train.splat, points: cameras.points, cameras: cameras.scene, frames: frames.photos }
+  cameras_video:
+    title: Place the cameras from a video
+    summary: Takes frames from the video and works out where each was taken (COLMAP), showing the scene's sparse 3D points; a quicker check before training a splat.
+    inputs:
+      - name: video
+        description: A video filmed while moving slowly around an object or through a still scene.
+        accepts: { kind: video, formats: [mp4, mov] }
+    parameters:
+      - { name: frames, label: Frames, type: integer, default: 80, min: 10, max: 400, description: "How many frames to take, spread evenly over the video.", sets: frames.frames }
+      - { name: max_size, label: Largest frame side, type: integer, unit: px, default: 1280, min: 320, max: 4096, description: "Frames with a longer side than this are scaled down first.", sets: frames.max_size }
+    controls:
+      - { title: Frames, note: "Use the same settings as the splat, so it reuses these cameras.", params: [frames, max_size] }
+    steps:
+      - { id: frames, run: colmap.frames, in: { video: $video } }
+      - { id: cameras, run: colmap.reconstruct, in: { photos: frames.photos }, with: { matcher: sequential } }
+    outputs: { points: cameras.points, cameras: cameras.scene, frames: frames.photos }
+    next: [splat_video]
+  splat_photos:
+    title: Gaussian splat from photos
+    summary: Works out where each photo was taken (COLMAP), then trains a 3D Gaussian splat of the scene (OpenSplat).
+    inputs:
+      - name: photos
+        description: A folder with the photos in images/, taken from many positions around a still scene, each spot in several photos.
+        accepts: { kind: photos, formats: [photo-set] }
+    parameters:
+      - { name: matcher, label: Photo order, type: enum, options: [exhaustive, sequential], default: exhaustive, description: "exhaustive compares every pair (photos in any order); sequential only neighbours (photos taken in order, faster).", sets: cameras.matcher }
+      - { name: iterations, label: Training steps, type: integer, default: 2000, min: 100, max: 30000, description: "More steps give a sharper scene: 2,000 take a few minutes on the CPU for a few dozen photos.", sets: train.iterations }
+      - { name: downscale, label: Train at 1 / …, type: number, default: 2, min: 1, max: 8, description: "Trains on photos scaled down by this factor: 2 is four times faster than 1, and less sharp.", sets: train.downscale }
+      - { name: max_gaussians, label: Most Gaussians, type: integer, default: 1000000, min: 1000, max: 10000000, description: "The most Gaussians the splat may grow to: fewer trains faster and makes a lighter model, with less fine detail.", sets: train.max_gaussians }
+      - { name: sh_degree, label: Colour by angle, type: integer, default: 3, min: 1, max: 3, description: "3 lets colours change with the viewing angle (shine, reflections); 1 gives each point one colour.", sets: train.sh_degree }
+    controls:
+      - { title: Photos, params: [matcher] }
+      - { title: Training, note: "More steps give a sharper scene and take longer. Changing these keeps the cameras.", params: [iterations, downscale, max_gaussians] }
+      - { title: Look, params: [sh_degree] }
+    steps:
+      - { id: cameras, run: colmap.reconstruct, in: { photos: $photos } }
+      - { id: train, run: opensplat.train, in: { scene: cameras.scene } }
+    outputs: { splat: train.splat, points: cameras.points, cameras: cameras.scene }

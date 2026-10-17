@@ -114,6 +114,17 @@ describe("formats", () => {
     expect(sniffFormat("pbmc.h5ad", false, [], formats)).toEqual({ kind: "single-cell", format: "h5ad" });
     expect(sniffFormat("pbmc.h5ad", false)).toBeNull();
   });
+
+  it("prefers the folder format that names the most of its entries", () => {
+    const formats = {
+      ...BUILT_IN_FORMATS,
+      "photo-set": { kind: "photos", folder: true, contains: ["images"] },
+      colmap: { kind: "sfm", folder: true, contains: ["images", "sparse"] },
+    };
+    expect(sniffFormat("garden", true, ["images", "sparse"], formats)).toEqual({ kind: "sfm", format: "colmap" });
+    expect(sniffFormat("garden", true, ["images"], formats)).toEqual({ kind: "photos", format: "photo-set" });
+    expect(sniffFormat("scene.splat.ply", false, [], { ...formats, "splat-ply": { kind: "splat", extensions: [".splat.ply"] } })).toEqual({ kind: "splat", format: "splat-ply" });
+  });
 });
 
 describe("plans", () => {

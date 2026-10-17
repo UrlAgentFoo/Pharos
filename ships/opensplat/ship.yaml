@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: opensplat
+version: 0.1.0
+image: pharos/opensplat:0.1.0    # built from this folder's Dockerfile: OpenSplat 1.2.2 for the CPU, on ubuntu:24.04
+summary: Trains a 3D Gaussian splat of a scene from photos whose cameras are known (a COLMAP reconstruction) with OpenSplat; runs on the CPU, so it works anywhere (2,000 steps on 60 small frames take about 2 1/2 minutes on a laptop).
+citation: "OpenSplat, https://github.com/pierotofy/OpenSplat; Kerbl et al., 3D Gaussian Splatting for Real-Time Radiance Field Rendering, SIGGRAPH 2023"
+license: AGPL-3.0-only
+homepage: https://github.com/pierotofy/OpenSplat
+tags: [gaussian-splatting, 3d, radiance-field, photogrammetry]
+requires: { memory_gb: 6, network: none }
+formats:
+  # the PLY 3D Gaussian splatting writes; named so it isn't taken for a mesh
+  splat-ply: { kind: splat, title: Gaussian splat, extensions: [.splat.ply] }
+operations:
+  train:
+    summary: Trains a 3D Gaussian splat from a COLMAP reconstruction (photos and their cameras), for the number of steps you choose.
+    command: python3 /opt/pharos/pharos_splat.py train --scene {in.scene} --out /out/scene.splat.ply --iterations {iterations} --downscale {downscale} --sh-degree {sh_degree} --max-gaussians {max_gaussians}
+    inputs: [{ name: scene, kind: sfm, formats: [colmap] }]
+    parameters:
+      - { name: iterations, type: integer, default: 2000, min: 100, max: 30000, description: "Training steps: more gives a sharper scene and takes longer (on the CPU, roughly 10-20 steps a second for small photos)." }
+      - { name: downscale, type: number, default: 2, min: 1, max: 8, description: "Trains on photos scaled down by this factor: 2 is four times faster than 1, and less sharp." }
+      - { name: sh_degree, type: integer, default: 3, min: 1, max: 3, description: "How much a colour may change with the viewing angle (spherical-harmonics degree): 3 shows shine and reflections, 1 is flat colour." }
+      - { name: max_gaussians, type: integer, default: 1000000, min: 1000, max: 10000000, description: "The most Gaussians the splat may grow to: fewer trains faster and makes a lighter file, with less fine detail." }
+    outputs: [{ name: splat, kind: splat, format: splat-ply, path: /out/scene.splat.ply }]
+    cache: { deterministic: true }

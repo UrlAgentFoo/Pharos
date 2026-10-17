@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: mesh-ops
+version: 0.1.0
+image: pharos/mesh-ops:0.1.0    # built from this folder's Dockerfile
+summary: Makes 3D models lighter so they load and turn faster - fewer triangles for meshes (colours kept), fewer points for point clouds, fewer Gaussians for splats.
+license: MIT
+tags: [3d, mesh, decimation, low-poly, point-cloud, gaussian-splatting, downsample]
+requires: { memory_gb: 2, network: none }
+operations:
+  decimate:
+    summary: Makes a mesh low-poly by merging triangles (quadric decimation), keeping its shape and colours; a PLY with no faces (a point cloud) keeps an even sample of its points.
+    command: python /opt/pharos/pharos_mesh.py decimate --mesh {in.mesh} --out /out/model.ply --keep {keep}
+    inputs: [{ name: mesh, kind: mesh, formats: [ply] }]
+    parameters:
+      - { name: keep, type: number, default: 0.25, min: 0.01, max: 1, description: "The share of triangles (or points) to keep: 0.25 keeps a quarter." }
+    outputs: [{ name: model, kind: mesh, format: ply, path: /out/model.ply }]
+    cache: { deterministic: true }
+  thin-splat:
+    summary: Makes a Gaussian splat lighter by keeping the Gaussians that show most (the most opaque and largest), so it loads and turns faster.
+    command: python /opt/pharos/pharos_mesh.py thin-splat --splat {in.splat} --out /out/scene.splat.ply --keep {keep} --most {most}
+    inputs: [{ name: splat, kind: splat, formats: [splat-ply] }]
+    parameters:
+      - { name: keep, type: number, default: 0.5, min: 0.01, max: 1, description: "The share of Gaussians to keep: 0.5 keeps half." }
+      - { name: most, type: integer, default: 0, min: 0, description: "Keep at most this many Gaussians; 0 for no limit beyond the share." }
+    outputs: [{ name: splat, kind: splat, format: splat-ply, path: /out/scene.splat.ply }]
+    cache: { deterministic: true }

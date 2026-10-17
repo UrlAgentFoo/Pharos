@@ -85,3 +85,12 @@
   image: images/slot-jet.webp
   prompt: Show me the geometry in 3D, then simulate the jet at 1 m/s.
   run: { book: fluid-flow, action: geometry }
+- id: orbit-scene
+  title: Walking around a still scene
+  kind: Video
+  description: A 6-second video circling a patterned ball, a box and a pebble on a patterned floor, as a phone filmed walking around them would (synthetic, 640 × 480).
+  files: [{ path: ../books/3d-capture/example/orbit.mp4, name: orbit.mp4 }]
+  image: images/orbit-scene.webp
+  prompt: Make a 3D model of this video that I can turn around.
+  # small enough to finish in about 15-20 s on a laptop's CPU (a soft splat); the book's defaults make a sharper one in a few minutes
+  run: { book: 3d-capture, action: splat_video, params: { frames: 24, max_size: 400, iterations: 500, downscale: 4, sh_degree: 1 } }
