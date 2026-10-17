@@ -17,7 +17,8 @@ import { type ViewState, Viewer, newViewState, scaledCopy, setRanges } from "./v
 
 /** What a viewer needs for one artifact, fetched once and kept while its window is open. */
 export type Loaded =
-  | { type: "image"; image: Image; view: ViewState }
+  /** `note`: what a preview of a larger image left out ("A preview: every 2nd pixel, 1 in 3 frames"). */
+  | { type: "image"; image: Image; view: ViewState; note?: string }
   | { type: "table"; rows: string[][]; total: number }
   /** A media link the video streams from: nothing of it is held in the page. */
   | { type: "video"; url: string }
@@ -40,7 +41,7 @@ export interface Mounted {
 export async function loadView(s: LocalServer, workspace: string, a: Artifact): Promise<Loaded> {
   try {
     if (a.kind === "volume" || a.kind === "labels") {
-      let tiff: ArrayBuffer;
+      let tiff: { data: ArrayBuffer; note?: string };
       try {
         tiff = await s.artifactImage(workspace, a.id);
       } catch (e) {
@@ -48,12 +49,12 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
         if ((e as { status?: number }).status === 415) return { type: "info", reason: e instanceof Error ? e.message : String(e) };
         throw e;
       }
-      const image = await readTiff(tiff, a.name);
+      const image = await readTiff(tiff.data, a.name);
       const view = newViewState(image);
       view.labels = a.kind === "labels";
       // open stacks in the middle, where the objects usually are, not on the (often empty) first slice
       view.pos.z = Math.floor(image.shape.slices / 2);
-      return { type: "image", image, view };
+      return { type: "image", image, view, ...(tiff.note ? { note: tiff.note } : {}) };
     }
     if (a.format === "csv") {
       const text = new TextDecoder().decode(await s.content(workspace, a.id));
@@ -97,7 +98,7 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
       // a tile has its own view, opened on the middle slice where objects usually are
       const view = compact ? { ...entry.view, pos: { ...entry.view.pos, z: Math.floor(slices / 2) }, placed: false } : entry.view;
       host.classList.add("has-image");
-      host.innerHTML = `<div class="dv-canvas"><canvas tabindex="0"></canvas><div class="win-readout"></div></div>
+      host.innerHTML = `<div class="dv-canvas"><canvas tabindex="0"></canvas><div class="win-readout"></div>${entry.note && !compact ? `<p class="dv-preview-note" title="The window shows less than the whole image; ships run on all of it">${escapeHtml(entry.note)}</p>` : ""}</div>
         <div class="dv-sliders">${[["z", slices, "Slice"], ["t", frames, "Frame"], ["c", channels, "Channel"]]
           .filter(([, n]) => (n as number) > 1)
           .map(([axis, n, label]) => `<label>${label}<input type="range" min="0" max="${(n as number) - 1}" value="${view.pos[axis as "z" | "t" | "c"]}" data-axis="${axis}"/><output>${view.pos[axis as "z" | "t" | "c"] + 1}/${n}</output></label>`)

@@ -5,7 +5,7 @@
  * blosclz, LZ4, zlib or zstd, then the bytes (or bits) put back in order.
  */
 import { inflateSync, zstdDecompressSync } from "node:zlib";
-import { lz4Block } from "./lz4.js";
+import { lz4Into } from "./lz4.js";
 
 const DOSHUFFLE = 0x1;
 const MEMCPYED = 0x2;
@@ -28,6 +28,9 @@ export function blosc(src: Uint8Array): Buffer {
   if (!codec || codec === "snappy") throw new Error(`Blosc chunks compressed with ${codec ?? `codec ${flags >> 5}`} can't be previewed`);
   const out = Buffer.alloc(nbytes);
   const nblocks = Math.ceil(nbytes / blocksize);
+  const shuffled = (flags & DOSHUFFLE && typesize > 1) || flags & DOBITSHUFFLE;
+  // a shuffled block is decoded here first, then put back in order into `out`; one that isn't, straight into `out`
+  const scratch = shuffled ? new Uint8Array(blocksize) : null;
   for (let b = 0; b < nblocks; b++) {
     const leftover = b === nblocks - 1 && nbytes % blocksize !== 0;
     const bsize = leftover ? nbytes % blocksize : blocksize;
@@ -35,33 +38,52 @@ export function blosc(src: Uint8Array): Buffer {
     const split = !(flags & DONT_SPLIT) && typesize <= MAX_SPLITS && blocksize / typesize >= MIN_BUFFERSIZE && !leftover;
     const streams = split ? typesize : 1;
     const per = bsize / streams;
-    const block = Buffer.alloc(bsize);
+    const [target, base] = scratch ? [scratch, 0] : [out, b * blocksize];
     for (let s = 0; s < streams; s++) {
       const cbytes = view.getUint32(at, true);
       at += 4;
       const data = src.subarray(at, at + cbytes);
       at += cbytes;
       // a stream that didn't compress is stored as it is
-      block.set(cbytes === per ? data : inflate(codec, data, per), s * per);
+      if (cbytes === per) target.set(data, base + s * per);
+      else inflate(codec, data, target, base + s * per, per);
     }
-    const shuffled = flags & DOSHUFFLE && typesize > 1 ? unshuffle(block, typesize) : flags & DOBITSHUFFLE ? bitunshuffle(block, typesize, version) : block;
-    out.set(shuffled, b * blocksize);
+    if (!scratch) continue;
+    const block = scratch.subarray(0, bsize);
+    if (flags & DOSHUFFLE && typesize > 1) unshuffle(block, typesize, out, b * blocksize);
+    else out.set(bitunshuffle(Buffer.from(block), typesize, version), b * blocksize);
   }
   return out;
 }
 
-function inflate(codec: string, data: Uint8Array, size: number): Buffer {
-  const out = codec === "lz4" ? lz4Block(data, size) : codec === "zlib" ? inflateSync(data) : codec === "zstd" ? zstdDecompressSync(data) : blosclz(data, size);
-  if (out.length !== size) throw new Error(`a Blosc ${codec} stream came to ${out.length} bytes, not ${size}`);
-  return out;
+/** One compressed stream into `out` at `at`: `size` bytes. */
+function inflate(codec: string, data: Uint8Array, out: Uint8Array, at: number, size: number) {
+  if (codec === "lz4") return lz4Into(data, out, at, size);
+  const got = codec === "zlib" ? inflateSync(data) : codec === "zstd" ? zstdDecompressSync(data) : blosclz(data, size);
+  if (got.length !== size) throw new Error(`a Blosc ${codec} stream came to ${got.length} bytes, not ${size}`);
+  out.set(got, at);
 }
 
-/** Byte shuffle undone: byte j of every element was stored together, the j-th run. */
-function unshuffle(src: Buffer, typesize: number): Buffer {
+const LITTLE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
+/** Byte shuffle undone, into `out` at `at`: byte j of every element was stored together, the j-th run. */
+function unshuffle(src: Uint8Array, typesize: number, out: Uint8Array, at: number) {
   const n = Math.floor(src.length / typesize);
-  const out = Buffer.from(src); // the bytes past whole elements stay as they are
-  for (let j = 0; j < typesize; j++) for (let i = 0; i < n; i++) out[i * typesize + j] = src[j * n + i];
-  return out;
+  // the bytes past whole elements stay as they are
+  out.set(src.subarray(n * typesize), at + n * typesize);
+  const aligned = (out.byteOffset + at) % typesize === 0;
+  if (LITTLE && aligned && typesize === 2) {
+    // a whole element at a time: low byte from the first run, high byte from the second
+    const out16 = new Uint16Array(out.buffer, out.byteOffset + at, n);
+    for (let i = 0; i < n; i++) out16[i] = src[i] | (src[n + i] << 8);
+    return;
+  }
+  if (LITTLE && aligned && typesize === 4) {
+    const out32 = new Uint32Array(out.buffer, out.byteOffset + at, n);
+    for (let i = 0; i < n; i++) out32[i] = (src[i] | (src[n + i] << 8) | (src[2 * n + i] << 16) | (src[3 * n + i] << 24)) >>> 0;
+    return;
+  }
+  for (let j = 0; j < typesize; j++) for (let i = 0; i < n; i++) out[at + i * typesize + j] = src[j * n + i];
 }
 
 /**

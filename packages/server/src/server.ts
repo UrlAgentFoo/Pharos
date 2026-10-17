@@ -16,7 +16,7 @@ import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
 import { ExampleError, exampleImage, examplePlan, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
-import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
+import { PreviewError, caseSummary, imagePreview } from "./preview.js";
 import { Plans } from "./plans.js";
 import { WorkspaceError, WorkspaceStore } from "./workspaces.js";
 import { exportProject, importProject } from "./bundle.js";
@@ -498,7 +498,9 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return sendJson(res, 200, { url: `/api/media/${link}` });
     }
     if (req.method === "GET" && id && m[3] === "/image") {
-      const tiff = await imageAsTiff(await workspaces.get(name, id));
+      const { tiff, note } = await imagePreview(await workspaces.get(name, id));
+      // a preview of something larger says what it left out, for the window to show
+      if (note) res.setHeader("X-Pharos-Preview", encodeURIComponent(note));
       return sendBytes(res, Buffer.from(tiff.buffer, tiff.byteOffset, tiff.byteLength), "image/tiff");
     }
     if (req.method === "GET" && id && m[3] === "/case") return sendJson(res, 200, await caseSummary(await workspaces.get(name, id)));

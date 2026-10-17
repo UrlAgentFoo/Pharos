@@ -4545,6 +4545,24 @@ dialog.side::backdrop {
   touch-action: none;
 }
 
+/* what a preview of a larger image left out, at its top left (the readout is at the bottom) */
+.dv-preview-note {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
 .dv-sliders {
   display: flex;
   flex-wrap: wrap;

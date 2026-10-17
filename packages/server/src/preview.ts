@@ -21,22 +21,31 @@ export class PreviewError extends Error {
   }
 }
 
-/** Largest image to send to the browser in one piece. */
-const MAX_PREVIEW_BYTES = 1024 ** 3;
-
 // ------------------------------------------------------------ images
 
 export async function imageAsTiff(a: Artifact): Promise<Uint8Array> {
+  return (await imagePreview(a)).tiff;
+}
+
+/** An image or labels as TIFF for the window, with a note when it's a preview of something larger (which frames, which pixels). */
+export async function imagePreview(a: Artifact): Promise<{ tiff: Uint8Array; note?: string }> {
   if (a.kind !== "volume" && a.kind !== "labels") throw new PreviewError(415, `${a.kind} data isn't an image`);
-  if (a.format === "tiff" || a.format === "ome-tiff") return readFile(a.uri);
-  if (a.format === "ome-zarr") return writeTiff(await readOmeZarr(a.uri, a.name));
+  if (a.format === "tiff" || a.format === "ome-tiff") return { tiff: await readFile(a.uri) };
+  if (a.format === "ome-zarr") {
+    const { image, note } = await zarrPreview(a.uri, a.name);
+    return { tiff: writeTiff(image), ...(note ? { note } : {}) };
+  }
   throw new PreviewError(415, `Pharos can't preview ${a.format} images yet; convert them to OME-Zarr first (bio-utils › convert)`);
 }
 
-/** An OME-Zarr folder's image, or any other Zarr's (see zarr.ts), at the largest level that fits in a preview. */
+/** An OME-Zarr folder's image, or any other Zarr's (see zarr.ts), as much of it as a preview holds. */
 export async function readOmeZarr(dir: string, name?: string): Promise<Image> {
+  return (await zarrPreview(dir, name)).image;
+}
+
+async function zarrPreview(dir: string, name?: string): Promise<{ image: Image; note?: string }> {
   try {
-    return await readZarrImage(dir, name, MAX_PREVIEW_BYTES);
+    return await readZarrImage(dir, name);
   } catch (e) {
     if (e instanceof ZarrError) throw new PreviewError(e.status, e.message);
     // a chunk that doesn't decode: say so rather than show a wrong picture

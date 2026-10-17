@@ -237,98 +237,207 @@ async function openArray(dir: string): Promise<ArrayReader> {
   };
 }
 
-/** Every value of the array, C-ordered, as numbers. */
-async function readValues(a: ArrayReader): Promise<Float64Array> {
-  const { shape, chunks, type } = a;
-  const total = shape.reduce((x, y) => x * y, 1);
-  const values = new Float64Array(total).fill(a.fill);
-  const grid = shape.map((n, i) => Math.ceil(n / chunks[i]));
-  const strides = shape.map((_, i) => shape.slice(i + 1).reduce((x, y) => x * y, 1));
-  const chunkStrides = chunks.map((_, i) => chunks.slice(i + 1).reduce((x, y) => x * y, 1));
-  const count = chunks.reduce((x, y) => x * y, 1);
-  const index = new Array<number>(shape.length).fill(0);
-  if (!total) return values;
-  for (;;) {
-    const buf = await a.chunk(index);
-    if (buf) {
-      if (buf.length < count * type.size) throw new ZarrError(415, `a chunk of this Zarr is ${buf.length} bytes, not the ${count * type.size} its shape needs`);
-      const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
-      for (let k = 0; k < count; k++) {
-        let at = 0;
-        let inside = true;
-        for (let d = 0; d < shape.length; d++) {
-          const pos = index[d] * chunks[d] + (Math.floor(k / chunkStrides[d]) % chunks[d]);
-          if (pos >= shape[d]) {
-            inside = false;
-            break;
-          }
-          at += pos * strides[d];
-        }
-        if (inside) values[at] = type.read(view, k * type.size);
-      }
-    }
-    let d = shape.length - 1;
-    while (d >= 0 && ++index[d] >= grid[d]) index[d--] = 0;
-    if (d < 0) break;
-  }
-  return values;
+/**
+ * How much a preview may hold, how wide it may be, and how much it may
+ * decode to get there; a stack keeps up to `maxSlices` slices of a frame,
+ * at as little as `minSide` pixels across.
+ */
+export interface PreviewBudget {
+  maxBytes: number;
+  maxSide: number;
+  maxDecoded: number;
+  maxSlices: number;
+  minSide: number;
 }
 
-// ------------------------------------------------------------ the image
+export const PREVIEW_BUDGET: PreviewBudget = { maxBytes: 512 * 1024 ** 2, maxSide: 2048, maxDecoded: 4 * 1024 ** 3, maxSlices: 256, minSide: 512 };
 
-/** The image in a Zarr store, at the first level of its pyramid that fits in `maxBytes`. */
-export async function readZarrImage(dir: string, name?: string, maxBytes = 1024 ** 3): Promise<Image> {
+/** Every `step`-th index below `n`. */
+const every = (n: number, step: number) => Array.from({ length: Math.ceil(n / step) }, (_, i) => i * step);
+
+/**
+ * The steps that fit a frame's planes (t × z × c) into `room`: frames first,
+ * since a frame's whole stack shows more of 3D data than every frame with a
+ * few of its slices; then slices; channels only when even one of each
+ * doesn't fit.
+ */
+function thin(T: number, Z: number, C: number, room: number): { t: number; z: number; c: number } {
+  const steps = { t: 1, z: 1, c: 1 };
+  const count = () => Math.ceil(T / steps.t) * Math.ceil(Z / steps.z) * Math.ceil(C / steps.c);
+  while (count() > room && Math.ceil(T / steps.t) > 1) steps.t++;
+  while (count() > room && Math.ceil(Z / steps.z) > 1) steps.z++;
+  while (count() > room && Math.ceil(C / steps.c) > 1) steps.c++;
+  return steps;
+}
+
+/**
+ * A preview of the image in a Zarr store, within `budget`: a pyramid level
+ * no wider than `maxSide` (else every n-th pixel of the smallest), and, when
+ * its planes don't all fit, every n-th frame and slice. Only the chunks those
+ * planes touch are decoded. `note` says what was left out, for the window.
+ */
+export async function readZarrImage(dir: string, name?: string, limits: Partial<PreviewBudget> = {}): Promise<{ image: Image; note?: string }> {
+  const budget = { ...PREVIEW_BUDGET, ...limits };
   const found = await find(dir);
   const axes = found.axes;
   if (new Set(axes).size !== axes.length || [...axes].some((a) => !"tczyx".includes(a))) throw new ZarrError(415, `can't preview axes ${axes}`);
-  let picked: { reader: ArrayReader; scale?: number[] } | null = null;
-  for (const level of found.levels) {
-    const reader = await openArray(level.dir);
-    if (reader.shape.length !== axes.length) throw new ZarrError(415, `the array has ${reader.shape.length} axes but its metadata names ${axes.length}`);
-    if (reader.shape.reduce((x, y) => x * y, 1) * 4 <= maxBytes) {
-      picked = { reader, scale: level.scale };
+  const side = (shape: number[]) => Math.max(shape[axes.indexOf("y")] ?? 1, shape[axes.indexOf("x")] ?? 1);
+  let level = found.levels.length - 1;
+  let reader: ArrayReader | null = null;
+  for (let i = 0; i < found.levels.length; i++) {
+    const r = await openArray(found.levels[i].dir);
+    if (r.shape.length !== axes.length) throw new ZarrError(415, `the array has ${r.shape.length} axes but its metadata names ${axes.length}`);
+    if (side(r.shape) <= budget.maxSide || i === found.levels.length - 1) {
+      level = i;
+      reader = r;
       break;
     }
   }
-  if (!picked) throw new ZarrError(413, "this image is too large to preview, even at its smallest level");
-  const { reader, scale = [] } = picked;
-  const values = await readValues(reader);
-  const shape = reader.shape;
-  const strides = shape.map((_, i) => shape.slice(i + 1).reduce((x, y) => x * y, 1));
-  // to the viewer's model: planes of y × x, channel fastest, then z, then t
+  const { shape, chunks, type } = reader!;
   const size = (a: string) => (axes.includes(a) ? shape[axes.indexOf(a)] : 1);
   const [T, C, Z, Y, X] = ["t", "c", "z", "y", "x"].map(size);
-  const type = reader.type.viewer;
-  const planes: PixelArray[] = [];
-  for (let t = 0; t < T; t++)
-    for (let z = 0; z < Z; z++)
-      for (let c = 0; c < C; c++) {
-        const plane = type === "uint8" ? new Uint8Array(X * Y) : type === "uint16" ? new Uint16Array(X * Y) : new Float32Array(X * Y);
-        for (let y = 0; y < Y; y++)
-          for (let x = 0; x < X; x++) {
-            let at = 0;
-            for (const [a, v] of [["t", t], ["c", c], ["z", z], ["y", y], ["x", x]] as const) if (axes.includes(a)) at += v * strides[axes.indexOf(a)];
-            plane[y * X + x] = values[at];
+  const viewer = type.viewer;
+  const bytesPer = viewer === "uint8" ? 1 : viewer === "uint16" ? 2 : 4;
+  // how many planes fit, taking every `step`-th pixel (all of each plane is decoded, whatever's kept)
+  const roomAt = (step: number) => Math.max(1, Math.min(Math.floor(budget.maxBytes / (Math.ceil(Y / step) * Math.ceil(X / step) * bytesPer)), Math.floor(budget.maxDecoded / (Y * X * type.size))));
+  let px = Math.max(1, Math.ceil(Math.max(Y, X) / budget.maxSide));
+  // a stack is better seen whole at lower resolution than in a few full-resolution slices: halve the
+  // pixels (down to minSide across) until a frame's slices fit, up to maxSlices of them
+  while (roomAt(px) < Math.min(Z, budget.maxSlices) * C && Math.max(Y, X) / (px * 2) >= budget.minSide) px *= 2;
+  const [Ys, Xs] = [Math.ceil(Y / px), Math.ceil(X / px)];
+  const room = roomAt(px);
+  const steps = thin(T, Z, C, room);
+  const picked = { t: every(T, steps.t), z: every(Z, steps.z), c: every(C, steps.c) };
+  // index along each axis → its place in the preview, or -1 when it's left out
+  const place = (n: number, list: number[]) => {
+    const out = new Int32Array(n).fill(-1);
+    list.forEach((v, i) => (out[v] = i));
+    return out;
+  };
+  const at = { t: place(T, picked.t), z: place(Z, picked.z), c: place(C, picked.c) };
+  const [Tp, Zp, Cp] = [picked.t.length, picked.z.length, picked.c.length];
+  const planes: PixelArray[] = Array.from({ length: Tp * Zp * Cp }, () => {
+    const plane = viewer === "uint8" ? new Uint8Array(Ys * Xs) : viewer === "uint16" ? new Uint16Array(Ys * Xs) : new Float32Array(Ys * Xs);
+    return plane.fill(reader!.fill);
+  });
+
+  // the chunks to decode: along t, z and c only those holding a picked plane; all of y and x
+  const dimOf = [...axes] as ("t" | "c" | "z" | "y" | "x")[];
+  const grid = shape.map((n, i) => Math.ceil(n / chunks[i]));
+  const wanted = dimOf.map((a, d) => {
+    const all = Array.from({ length: grid[d] }, (_, i) => i);
+    if (a === "y" || a === "x") return all;
+    const list = picked[a];
+    return all.filter((ci) => list.some((v) => v >= ci * chunks[d] && v < (ci + 1) * chunks[d]));
+  });
+  const chunkStrides = chunks.map((_, i) => chunks.slice(i + 1).reduce((a, b) => a * b, 1));
+  const yxLast = dimOf[axes.length - 2] === "y" && dimOf[axes.length - 1] === "x";
+  // strides over a chunk's planes (every axis but y and x), for the fast path
+  const outerStrides = chunks.slice(0, -2).map((_, i, list) => list.slice(i + 1).reduce((a, b) => a * b, 1));
+  const count = chunks.reduce((a, b) => a * b, 1);
+  let decoded = 0;
+  const pos = new Array<number>(axes.length).fill(0);
+  const cursor = new Array<number>(axes.length).fill(0);
+  if (wanted.every((w) => w.length)) {
+    for (;;) {
+      const index = cursor.map((k, d) => wanted[d][k]);
+      const buf = await reader!.chunk(index);
+      if (buf) {
+        decoded += buf.length;
+        if (decoded > 2 * budget.maxDecoded) throw new ZarrError(413, "this image's chunks are too large to preview it quickly");
+        if (buf.length < count * type.size) throw new ZarrError(415, `a chunk of this Zarr is ${buf.length} bytes, not the ${count * type.size} its shape needs`);
+        const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+        if (yxLast) {
+          // the usual layout (y and x last, as OME has them): each plane of the chunk, if it's kept, then only its kept rows and columns
+          const nd = axes.length;
+          const [ny, nx] = [chunks[nd - 2], chunks[nd - 1]];
+          const [y0, x0] = [index[nd - 2] * ny, index[nd - 1] * nx];
+          const [yStart, xStart] = [(px - (y0 % px)) % px, (px - (x0 % px)) % px];
+          for (let o = 0; o < count / (ny * nx); o++) {
+            let t = 0;
+            let z = 0;
+            let c = 0;
+            let kept = true;
+            for (let d = 0; d < nd - 2; d++) {
+              const p = index[d] * chunks[d] + (Math.floor(o / outerStrides[d]) % chunks[d]);
+              const a = dimOf[d] as "t" | "z" | "c";
+              const v = p < shape[d] ? at[a][p] : -1;
+              if (v < 0) {
+                kept = false;
+                break;
+              }
+              if (a === "t") t = v;
+              else if (a === "z") z = v;
+              else c = v;
+            }
+            if (!kept) continue;
+            const plane = planes[(t * Zp + z) * Cp + c];
+            for (let yy = yStart; yy < ny && y0 + yy < Y; yy += px) {
+              const from = (o * ny + yy) * nx;
+              const to = ((y0 + yy) / px) * Xs;
+              for (let xx = xStart; xx < nx && x0 + xx < X; xx += px) plane[to + (x0 + xx) / px] = type.read(view, (from + xx) * type.size);
+            }
           }
-        planes.push(plane);
+        } else for (let k = 0; k < count; k++) {
+          let ok = true;
+          for (let d = 0; d < axes.length; d++) {
+            const p = index[d] * chunks[d] + (Math.floor(k / chunkStrides[d]) % chunks[d]);
+            const a = dimOf[d];
+            if (p >= shape[d] || ((a === "y" || a === "x") && p % px) || ((a === "t" || a === "z" || a === "c") && at[a][p] < 0)) {
+              ok = false;
+              break;
+            }
+            pos[d] = p;
+          }
+          if (!ok) continue;
+          let t = 0;
+          let z = 0;
+          let c = 0;
+          let y = 0;
+          let x = 0;
+          for (let d = 0; d < axes.length; d++) {
+            const a = dimOf[d];
+            if (a === "t") t = at.t[pos[d]];
+            else if (a === "z") z = at.z[pos[d]];
+            else if (a === "c") c = at.c[pos[d]];
+            else if (a === "y") y = pos[d] / px;
+            else x = pos[d] / px;
+          }
+          planes[(t * Zp + z) * Cp + c][y * Xs + x] = type.read(view, k * type.size);
+        }
       }
+      let d = axes.length - 1;
+      while (d >= 0 && ++cursor[d] >= wanted[d].length) cursor[d--] = 0;
+      if (d < 0) break;
+    }
+  }
+
+  const scale = found.levels[level].scale ?? [];
   const step = (a: string) => (axes.includes(a) ? (scale[axes.indexOf(a)] ?? 1) : 1);
   const unit = found.unit;
-  return createImage({
-    dtype: type,
-    width: X,
-    height: Y,
-    channels: C,
-    slices: Z,
-    frames: T,
+  const image = createImage({
+    dtype: viewer,
+    width: Xs,
+    height: Ys,
+    channels: Cp,
+    slices: Zp,
+    frames: Tp,
     planes,
     ...(name ? { name } : {}),
     calibration: {
-      pixelWidth: step("x"),
-      pixelHeight: step("y"),
-      pixelDepth: step("z"),
+      pixelWidth: step("x") * px,
+      pixelHeight: step("y") * px,
+      pixelDepth: step("z") * steps.z,
       unit: unit === "micrometer" ? "µm" : unit === "nanometer" ? "nm" : (unit ?? "pixel"),
-      frameInterval: axes.includes("t") ? step("t") : 0,
+      frameInterval: axes.includes("t") ? step("t") * steps.t : 0,
     },
   });
+  const left = [
+    level > 0 ? `level ${level + 1} of ${found.levels.length} of its pyramid` : "",
+    px > 1 ? `every ${px}${px === 2 ? "nd" : px === 3 ? "rd" : "th"} pixel` : "",
+    steps.t > 1 ? `1 in ${steps.t} frames` : "",
+    steps.z > 1 ? `1 in ${steps.z} slices` : "",
+    steps.c > 1 ? `1 in ${steps.c} channels` : "",
+  ].filter(Boolean);
+  return { image, ...(left.length ? { note: `A preview: ${left.join(", ")}` } : {}) };
 }

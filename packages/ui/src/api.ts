@@ -169,9 +169,11 @@ export class LocalServer {
     return r.json();
   }
 
-  /** An image or labels artifact as TIFF bytes, for the image viewer. */
-  async artifactImage(workspace: string, id: string): Promise<ArrayBuffer> {
-    return (await this.call(`${artifactsPath(workspace)}/${id}/image`)).arrayBuffer();
+  /** An image or labels artifact as TIFF bytes, for the image viewer; `note` when it's a preview of something larger. */
+  async artifactImage(workspace: string, id: string): Promise<{ data: ArrayBuffer; note?: string }> {
+    const r = await this.call(`${artifactsPath(workspace)}/${id}/image`);
+    const note = r.headers.get("x-pharos-preview");
+    return { data: await r.arrayBuffer(), ...(note ? { note: decodeURIComponent(note) } : {}) };
   }
 
   async caseSummary(workspace: string, id: string): Promise<CaseSummary> {
