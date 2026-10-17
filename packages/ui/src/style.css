@@ -31,9 +31,11 @@
   --scrim: rgba(238, 234, 227, 0.8);
   --backdrop: rgba(43, 42, 39, 0.18);
   /* the beam rising behind the start screen's drop area: by day a soft shade, as light can't show on paper */
-  --beam: rgba(43, 42, 39, 0.08);
-  --beam-core: rgba(43, 42, 39, 0.17); /* its heart, low down, and the pool on the floor it rises from */
+  --beam: rgba(43, 42, 39, 0.11);
+  --beam-core: rgba(43, 42, 39, 0.2); /* its heart, low down, and the pool on the floor it rises from */
   --beam-halo: rgba(243, 240, 235, 0.94); /* the ground under the drop area's text, hiding the cards behind */
+  --beam-button: #fbfaf7; /* the upload button in it, and its arrow */
+  --beam-button-ink: #2b2a27;
   --warn-bg: #fbf3e6;
   --warn-text: #7a4a12;
   --warn-line: #c9862e;
@@ -71,9 +73,11 @@
   --glass-soft: rgba(33, 32, 29, 0.6);
   --scrim: rgba(18, 17, 16, 0.8);
   --backdrop: rgba(0, 0, 0, 0.45);
-  --beam: rgba(236, 232, 225, 0.09);
-  --beam-core: rgba(236, 232, 225, 0.26);
+  --beam: rgba(236, 232, 225, 0.1);
+  --beam-core: rgba(236, 232, 225, 0.24);
   --beam-halo: rgba(25, 24, 22, 0.92);
+  --beam-button: #d8d3ca; /* lit by the beam */
+  --beam-button-ink: #191816;
   --warn-bg: #3a2c19;
   --warn-text: #f0c98d;
   --warn-line: #c9862e;
@@ -4322,14 +4326,14 @@ dialog.side::backdrop {
   pointer-events: none;
 }
 
-/* the beam: rising from the pool of light on the floor, already a little wide there, strongest at its heart
-   low down and spreading and fading as it goes up. Its foot fades into the pool, so the pool reads as a whole
+/* the beam: rising from the pool of light on the floor, already a little wide there, keeping its strength
+   and its cone for most of its height, brighter at its heart, and fading out near the top. Its foot fades into the pool, so the pool reads as a whole
    ellipse; its sides are soft: the mask is a cone whose point is well below the floor */
 .ring-on .welcome-centre::before {
   inset: -96px -160px -24px;
   background:
-    radial-gradient(ellipse 18% 70% at 50% 82%, var(--beam-core), transparent),
-    linear-gradient(to top, var(--beam), var(--beam) 30%, transparent 95%);
+    radial-gradient(ellipse 30% 90% at 50% 90%, var(--beam-core), transparent 85%),
+    linear-gradient(to top, var(--beam), var(--beam) 65%, transparent);
   -webkit-mask-image:
     conic-gradient(from -32deg at 50% calc(100% + 340px), transparent, black 14deg, black 50deg, transparent 64deg, transparent),
     linear-gradient(to top, transparent, black 16%);
@@ -4358,18 +4362,21 @@ dialog.side::backdrop {
   font-size: 56px;
 }
 
-/* in the ring the drop area is open, with no box: a soft glow, fading at its edges, keeps its text clear of the cards behind */
+/* in the ring the drop area is open, with no box: a soft glow in the beam's own light, fading at its edges,
+   keeps its text clear of the cards behind */
 .ring-on .dropzone,
 .ring-on .dropzone:hover {
   width: 520px;
   padding: 16px 32px;
   border-color: transparent;
   background:
-    radial-gradient(closest-side, var(--beam) 55%, transparent),
+    radial-gradient(closest-side, var(--beam-core) 55%, transparent),
     radial-gradient(closest-side, var(--beam-halo) 55%, transparent);
 }
 
 .ring-on .dropzone-icon {
+  background: var(--beam-button);
+  color: var(--beam-button-ink);
   transition: border-color 0.15s;
 }
 
