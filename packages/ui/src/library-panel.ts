@@ -22,9 +22,13 @@ type Choice =
   | { use: BookCard; action: string }
   | { guide: BookCard }
   | { test: BookCard }
+  | { ready: BookCard }
   | { install: true }
   | { issues: true }
   | null;
+
+/** How much the ships a book still needs weigh, when Docker has said. */
+const missingSize = (c: BookCard) => c.ships.filter((s) => !s.downloaded).reduce((n, s) => n + (s.sizeBytes ?? 0), 0);
 
 function card(c: BookCard, match: BookMatch | undefined, withData: boolean, gpu: boolean): string {
   const e = c.entry;
@@ -47,7 +51,11 @@ function card(c: BookCard, match: BookMatch | undefined, withData: boolean, gpu:
         .map((a) => `<button class="chip ${fits(a.name) ? "primary-chip" : ""}" data-use="${escapeHtml(e.id)}" data-action="${escapeHtml(a.name)}" ${fits(a.name) ? "" : "disabled"} title="${escapeHtml(a.summary ?? a.title)}">${escapeHtml(a.title)}</button>`)
         .join("")}</div></section>
     <section><h4>Accepted files</h4><p class="book-files">${files}</p></section>
-    <section><h4>Ships</h4><ul class="book-ships">${ships}</ul>${noGpu ? `<p class="book-note">Needs an NVIDIA GPU, which this machine doesn't have.</p>` : ""}</section>
+    <section><h4>Ships</h4><ul class="book-ships">${ships}</ul>${noGpu ? `<p class="book-note">Needs an NVIDIA GPU, which this machine doesn't have.</p>` : ""}${
+      c.ships.some((s) => !s.downloaded) && !noGpu
+        ? `<button class="link-btn" data-ready="${escapeHtml(e.id)}" title="Downloads or sets up the faded ships now, so the first run doesn't wait">Get ready${missingSize(c) ? ` (${formatSize(missingSize(c))})` : ""}</button>`
+        : ""
+    }</section>
     <div class="book-more"><button class="link-btn" data-guide="${escapeHtml(e.id)}">Guide</button><button class="link-btn" data-test="${escapeHtml(e.id)}" title="Runs each action on the book's example data">Test</button></div>
   </li>`;
 }
@@ -89,6 +97,7 @@ export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, dat
         el.querySelectorAll<HTMLButtonElement>("[data-use]").forEach((b) => b.addEventListener("click", () => done({ use: find(b.dataset.use!), action: b.dataset.action! })));
         el.querySelectorAll<HTMLButtonElement>("[data-guide]").forEach((b) => b.addEventListener("click", () => done({ guide: find(b.dataset.guide!) })));
         el.querySelectorAll<HTMLButtonElement>("[data-test]").forEach((b) => b.addEventListener("click", () => done({ test: find(b.dataset.test!) })));
+        el.querySelectorAll<HTMLButtonElement>("[data-ready]").forEach((b) => b.addEventListener("click", () => done({ ready: find(b.dataset.ready!) })));
         el.querySelector("[data-install]")!.addEventListener("click", () => done({ install: true }));
         el.querySelector("[data-issues]")?.addEventListener("click", () => done({ issues: true }));
       },
@@ -107,6 +116,10 @@ export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, dat
           if (i >= 0) inputs[input.name] = pool.splice(i, 1)[0].id;
         }
         return await hooks.usePlan(choice.use.entry, choice.action, inputs);
+      }
+      if ("ready" in choice) {
+        const r = await server.getReady(choice.ready.entry.id);
+        hooks.notify(r.pulling.length ? `Getting ${r.pulling.map((p) => p.id).join(", ")} ready; follow it under Running in the top bar.` : `${choice.ready.entry.title} is ready.`);
       }
       if ("guide" in choice) await guideDialog(choice.guide.entry, (await server.book(choice.guide.entry.id)).guide);
       if ("test" in choice) {

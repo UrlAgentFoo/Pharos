@@ -149,6 +149,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
       ${[...byShip].map(([ship, ops]) => `<section><h4>${escapeHtml(ship)}${this.trust.get(ship) === "verified" ? " <small>verified</small>" : ""}</h4>${ops.map(([i, s]) => tool(i, s)).join("")}</section>`).join("") || `<section><h4>Tools</h4><p class="pop-note">No tool takes this yet.</p></section>`}
       <section>
         ${doc.marker > 0 ? `<button data-dp="separate" role="menuitem">${icon("duplicate", 16)}<span>Open this result in its own window</span></button>` : ""}
+        ${this.savable(doc).length ? `<button data-dp="save-book" role="menuitem">${icon("book", 16)}<span>Save these steps as a book…</span></button>` : ""}
         <button data-dp="controls" role="menuitem">${icon("panel", 16)}<span>${doc.ui.controls ? "Hide" : "Show"} controls</span></button>
         <button data-dp="close" role="menuitem">${icon("close", 16)}<span>Close window</span></button>
       </section>`;
@@ -170,6 +171,70 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
       this.ws.touch();
     }
     if (value === "close") this.ws.close(doc.id);
+    if (value === "save-book") await this.saveAsBook(doc);
+  }
+
+  // ---------------------------------------------------------- Save as book
+
+  /** The steps worth saving: those that ran, from the start of the history up to the first that didn't. */
+  private savable(doc: DataDoc): DataStep[] {
+    const first = doc.steps.findIndex((s) => s.status !== "done");
+    return first < 0 ? doc.steps : doc.steps.slice(0, first);
+  }
+
+  /**
+   * Saves the window's steps that worked as a book (or as another action of
+   * a book saved earlier), so they can be used on other data from Books.
+   */
+  async saveAsBook(doc: DataDoc) {
+    const steps = this.savable(doc);
+    if (!steps.length) return this.hooks.notify("Run some steps first: a book is made from steps that worked.");
+    const cards = await this.cards();
+    const first = steps.find((x) => x.book)?.book?.title;
+    const choice = await showDialog<{ book: string; title: string; summary: string; action: string } | null>(
+      `<form method="dialog"><p class="eyebrow">Save as book</p><h2>${steps.length} step${steps.length === 1 ? "" : "s"} from ${escapeHtml(doc.name)}</h2>
+       <p class="muted small">${steps.map((s) => `<code>${escapeHtml(s.run)}</code>`).join(" → ")}</p>
+       <label class="field">Book<select name="book"><option value="">A new book</option>${cards.map((c) => `<option value="${escapeHtml(c.entry.id)}">${escapeHtml(c.entry.title)}</option>`).join("")}</select></label>
+       <label class="field new-only">Title, as people name the domain<input name="title" required placeholder="e.g. Fluid flow" value="${escapeHtml(first ?? "")}"/></label>
+       <label class="field new-only">One sentence on what it does<input name="summary" placeholder="What the book does with someone's data"/></label>
+       <label class="field">What these steps do, as a button<input name="action" required placeholder="e.g. Simulate the flow"/></label>
+       <p class="muted small">Steps run on data like <strong>${escapeHtml(doc.source.name ?? doc.source.kind)}</strong> (${escapeHtml(doc.source.kind)}). Only books saved in Pharos can gain more actions.</p>
+       <footer><button type="button" data-cancel>Cancel</button><button class="primary">${icon("book", 15)} Save</button></footer></form>`,
+      (done, el) => {
+        const form = el.querySelector("form")!;
+        const book = form.elements.namedItem("book") as HTMLSelectElement;
+        const sync = () => {
+          for (const f of el.querySelectorAll<HTMLElement>(".new-only")) f.hidden = !!book.value;
+          (form.elements.namedItem("title") as HTMLInputElement).required = !book.value;
+        };
+        book.addEventListener("change", sync);
+        sync();
+        form.addEventListener("submit", (e) => {
+          e.preventDefault();
+          const v = (n: string) => (form.elements.namedItem(n) as HTMLInputElement).value.trim();
+          done({ book: book.value, title: v("title"), summary: v("summary"), action: v("action") });
+        });
+      },
+      null,
+    );
+    if (!choice) return;
+    const card = cards.find((c) => c.entry.id === choice.book);
+    const title = card?.entry.title ?? choice.title;
+    const s = this.server;
+    const saved = await this.hooks.busy("Saving the book", async () => {
+      const plan = await s.createStepsPlan(doc.workspace, title, { [SOURCE]: doc.source.id }, steps.map((x): Step => ({ id: x.id, run: x.run, in: x.in, with: x.with })));
+      try {
+        return await s.saveAsBook(plan.id, {
+          id: card?.entry.id ?? slug(title, "-"),
+          title,
+          summary: card?.entry.summary ?? (choice.summary || `${choice.action}.`),
+          action: { name: slug(choice.action, "_"), title: choice.action },
+        });
+      } finally {
+        await s.cancelPlan(plan.id).catch(() => {});
+      }
+    });
+    if (saved) this.hooks.notify(`Saved: ${saved.title} › ${choice.action}. It's in Books, for other data like this.`);
   }
 
   // ---------------------------------------------------------- applying processes
@@ -595,4 +660,11 @@ function bookStepParams(step: Step, action: BookAction, values: Params): Params 
     }
   }
   return out;
+}
+
+/** A name for an id: lowercase words joined by `sep` ("Fluid flow" → fluid-flow or fluid_flow). */
+function slug(text: string, sep: "-" | "_"): string {
+  const words = text.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter(Boolean);
+  const out = words.join(sep) || "saved";
+  return sep === "_" && /^[0-9]/.test(out) ? `a_${out}` : out;
 }

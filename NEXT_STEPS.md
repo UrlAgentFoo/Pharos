@@ -115,10 +115,14 @@ data and the assistant.
 
 ## 4. Finish what's half-built
 
-- [ ] Save as book in the UI (the route exists).
-- [ ] Test ship, Test book and Get ready buttons (routes exist).
+- [x] Save as book in the UI: a window's ⋯ menu saves the steps that ran as a
+      new book, or as another action of a book saved earlier.
+- [x] Test ship and Test book were already in; Get ready is on a book's card
+      when some of its ships aren't here yet.
 - [ ] Pin every ship image by digest; tags like `pharos/bio-utils:0.1.0`
-      undermine the reproducibility promise.
+      undermine the reproducibility promise. Needs a registry to publish
+      to; meanwhile run records store each image's exact id, and images
+      rebuild when their ship folder changes.
 
 ## 5. Is the architecture right for a universal tool runner?
 

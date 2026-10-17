@@ -193,6 +193,11 @@ export class LocalServer {
     return (await this.call(`/api/ships/${encodeURIComponent(id)}/${encodeURIComponent(version)}${force ? "?force=1" : ""}`, { method: "DELETE" })).json();
   }
 
+  /** Starts downloading (or building) the ships a book needs that aren't here yet. */
+  async getReady(id: string): Promise<{ pulling: { id: string; version: string; image: string }[] }> {
+    return (await this.json(`/api/books/${encodeURIComponent(id)}/get-ready`, "POST", {})) as { pulling: { id: string; version: string; image: string }[] };
+  }
+
   async testShip(id: string, version?: string): Promise<TestResult> {
     return (await this.json(`/api/ships/${encodeURIComponent(id)}/test`, "POST", { version })) as TestResult;
   }
