@@ -5,11 +5,11 @@
  */
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync } from "node:fs";
+import { accessSync, constants, existsSync } from "node:fs";
 import { readFile, readdir } from "node:fs/promises";
 import { type IncomingMessage, request } from "node:http";
 import { homedir } from "node:os";
-import { join, relative } from "node:path";
+import { delimiter, dirname, join, relative } from "node:path";
 
 export class DockerError extends Error {
   constructor(
@@ -72,14 +72,45 @@ export interface ContainerSpec {
 }
 
 /**
+ * The docker command line: on $PATH, or where Docker Desktop, OrbStack and
+ * Homebrew put it. Docker Desktop's per-user install leaves it in
+ * ~/.docker/bin, which a shell (or an app launched from Finder) may not have
+ * on its PATH.
+ */
+export function locateCli(): string | null {
+  const onPath = (process.env.PATH ?? "").split(delimiter).filter(Boolean).map((d) => join(d, "docker"));
+  const usual = [
+    join(homedir(), ".docker", "bin", "docker"),
+    "/usr/local/bin/docker",
+    "/opt/homebrew/bin/docker",
+    "/Applications/Docker.app/Contents/Resources/bin/docker",
+    join(homedir(), ".orbstack", "bin", "docker"),
+  ];
+  for (const p of [...onPath, ...usual]) {
+    try {
+      accessSync(p, constants.X_OK);
+      return p;
+    } catch {}
+  }
+  return null;
+}
+
+/** An environment for running the docker CLI that also finds its helpers (docker-credential-desktop) beside it. */
+function cliEnv(cli: string): NodeJS.ProcessEnv {
+  return { ...process.env, PATH: [dirname(cli), process.env.PATH].filter(Boolean).join(delimiter) };
+}
+
+/**
  * Builds an image from a folder with a Dockerfile, using the docker command
  * line (BuildKit), and reports each line of its output. Ship folders hold
  * the Dockerfile of images that aren't published to a registry.
  */
 export function buildImage(context: string, tag: string, onLine: (line: string) => void = () => {}, signal?: AbortSignal, labels: Record<string, string> = {}): Promise<void> {
   return new Promise((ok, fail) => {
+    const cli = locateCli();
+    if (!cli) return fail(new DockerError(500, "couldn't find the docker command line, which building a ship needs; install Docker Desktop or add docker to your PATH"));
     const labelArgs = Object.entries(labels).flatMap(([k, v]) => ["--label", `${k}=${v}`]);
-    const child = spawn("docker", ["build", "--progress=plain", ...labelArgs, "--tag", tag, context], { stdio: ["ignore", "pipe", "pipe"], signal });
+    const child = spawn(cli, ["build", "--progress=plain", ...labelArgs, "--tag", tag, context], { stdio: ["ignore", "pipe", "pipe"], env: cliEnv(cli), signal });
     const tail: string[] = [];
     const read = (chunk: Buffer) => {
       for (const line of chunk.toString("utf8").split(/\r?\n/)) {
@@ -100,8 +131,9 @@ export function buildImage(context: string, tag: string, onLine: (line: string) 
 export function locateSocket(): string | null {
   const fromHost = process.env.DOCKER_HOST;
   if (fromHost?.startsWith("unix://")) return fromHost.slice("unix://".length);
-  const ctx = spawnSync("docker", ["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], { encoding: "utf8", timeout: 3000 });
-  const host = ctx.status === 0 ? ctx.stdout.trim() : "";
+  const cli = locateCli();
+  const ctx = cli ? spawnSync(cli, ["context", "inspect", "--format", "{{.Endpoints.docker.Host}}"], { encoding: "utf8", timeout: 3000, env: cliEnv(cli) }) : null;
+  const host = ctx?.status === 0 ? ctx.stdout.trim() : "";
   if (host.startsWith("unix://") && existsSync(host.slice(7))) return host.slice(7);
   for (const p of [join(homedir(), ".docker", "run", "docker.sock"), "/var/run/docker.sock"]) if (existsSync(p)) return p;
   return null;
