@@ -116,6 +116,11 @@ def cmd_track(a):
     args.out_dir, args.no_eval, args.log_dir = "/tmp/stf", True, "/tmp/stf-logs"
     args.num_dog, args.temporal_radius, args.value_floor = a.num_dog, a.temporal_radius, a.value_floor
     args.lambda_termination, args.lambda_start, args.max_nodes = a.lambda_termination, a.lambda_start, a.max_nodes
+    # The method's best setting (LOO-CV 0.7823): a quick detection-only prerun measures how much the small-band
+    # detection count jitters, and picks 3 bands with per-scale normalisation for an active video, 1 band otherwise
+    args.psn_auto_select_by_jitter, args.jitter_threshold = a.auto_bands, a.jitter_threshold
+    if not a.auto_bands:
+        args.per_scale_norm = False
     # One Field Cell per 1.625 µm, as tuned: 64³ on the 104 µm Biohub field of view.
     args.grid = max(8, int(round(fov[0] / 1.625)))
 
@@ -144,6 +149,8 @@ def cmd_track(a):
     solver.setup_logging(args.log_dir)
     progress(0.01, f"{nt} time points of {nz} × {ny} × {nx} voxels, field {args.grid}³")
     _, _, graph, out_dir, _ = solver.run(args)
+    if a.auto_bands:
+        progress(0.97, f"bands picked for this video: {'3, each scale normalised (an active video)' if args.per_scale_norm else '1 (a calm video)'}")
 
     # The solver writes cell_id/parent_id; Pharos tracks use Ultrack's names, with -1 for no parent.
     n = set()
@@ -218,7 +225,9 @@ def main():
     t = sub.add_parser("track")
     t.add_argument("--movie", required=True)
     t.add_argument("--channel", type=int, default=0)
-    t.add_argument("--num-dog", type=int, default=2)
+    t.add_argument("--num-dog", type=int, default=1)
+    t.add_argument("--auto-bands", type=lambda v: str(v).lower() in ("1", "true", "yes", "on"), default=True)
+    t.add_argument("--jitter-threshold", type=float, default=0.059)
     t.add_argument("--temporal-radius", type=int, default=2)
     t.add_argument("--value-floor", type=float, default=0.0175)
     t.add_argument("--lambda-termination", type=float, default=0.6)

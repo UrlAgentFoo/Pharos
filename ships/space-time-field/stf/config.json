@@ -18,7 +18,7 @@
       "dog_inner": 2.5,
       "enhanced": true,
       "sensitivity": 0.6,
-      "num_dog": 2,
+      "num_dog": 1,
       "dynamic_dog": true,
       "temporal_radius": 2,
       "center_weight": 1.0,
@@ -55,7 +55,10 @@
       "napari": false,
       "no_eval": false,
       "gt_geff": null,
-      "eval_split": 50
+      "eval_split": 50,
+      "per_scale_norm": false,
+      "psn_auto_select_by_jitter": true,
+      "jitter_threshold": 0.059
     },
     "method_constants": {
       "ADAPTIVE_SNR_THRESHOLD": 1.35,
@@ -75,7 +78,7 @@
       "LAMBDA_TERMINATION": 0.6,
       "LINK_DISTANCE": 1.0,
       "MAX_NODES_PER_FRAME": 1500,
-      "NUM_DOG": 2,
+      "NUM_DOG": 1,
       "PROB_POWER": 1.0,
       "REG_SPACING_UM": 1.625,
       "RESIDUAL_GATE_UM": 6.5,

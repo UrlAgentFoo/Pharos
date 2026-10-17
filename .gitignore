@@ -6,3 +6,4 @@ packages/server/ui/
 .env
 .env.*
 .claude/worktrees/
+for_demo/
