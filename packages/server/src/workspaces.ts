@@ -54,6 +54,8 @@ async function hashPath(path: string): Promise<{ hash: string; size: number }> {
 
 export class WorkspaceStore {
   readonly root: string;
+  /** The run cache, shared by every workspace: a result made in one is reused in all. */
+  readonly cacheDir: string;
 
   /** `formats`: every format files are recognised as, built in plus those ships declare. */
   constructor(
@@ -61,6 +63,7 @@ export class WorkspaceStore {
     private readonly formats: () => Promise<Record<string, FormatInfo> | undefined> = async () => undefined,
   ) {
     this.root = join(dataDir, "workspaces");
+    this.cacheDir = join(dataDir, "cache");
   }
 
   private dir(name: string): string {
@@ -119,6 +122,22 @@ export class WorkspaceStore {
     return JSON.parse(await readFile(join(dir, "artifacts", id, "artifact.json"), "utf8")) as Artifact;
   }
 
+  /**
+   * Brings an artifact from another workspace into this one: the same
+   * content, so the same id, kind, metadata and the run that made it.
+   */
+  async copyArtifact(from: string, id: string, to: string): Promise<Artifact> {
+    const a = await this.get(from, id);
+    const copied = await this.ingest(
+      to,
+      basename(a.uri),
+      (dest) => cp(a.uri, dest, { recursive: true, mode: constants.COPYFILE_FICLONE }),
+      a.name,
+      { type: { kind: a.kind, format: a.format }, producedBy: a.producedBy ?? "" },
+    );
+    return Object.keys(a.meta).length ? this.setMeta(to, copied.id, a.meta) : copied;
+  }
+
   /** Copies a file or folder from anywhere on disk into the workspace. */
   async importPath(name: string, source: string, displayName?: string): Promise<Artifact> {
     const s = await stat(source).catch(() => null);
@@ -144,9 +163,9 @@ export class WorkspaceStore {
   }
 
   /** The workspace's runs/ and cache/ folders. */
-  async dirs(name: string): Promise<{ runs: string; cache: string }> {
+  async dirs(name: string): Promise<{ runs: string; cache: string; artifacts: string }> {
     const dir = await this.existing(name);
-    return { runs: join(dir, "runs"), cache: join(dir, "cache") };
+    return { runs: join(dir, "runs"), cache: this.cacheDir, artifacts: join(dir, "artifacts") };
   }
 
   private async ingest(
@@ -176,7 +195,7 @@ export class WorkspaceStore {
         uri: join(final, filename),
         name: displayName ?? filename,
         meta: {},
-        ...(from ? { producedBy: from.producedBy } : {}),
+        ...(from?.producedBy ? { producedBy: from.producedBy } : {}),
         contentHash: `sha256:${hash}`,
         sizeBytes: size,
         createdAt: new Date().toISOString(),

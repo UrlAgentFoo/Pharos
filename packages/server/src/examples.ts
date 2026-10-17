@@ -1,12 +1,18 @@
 /**
  * Example data for the start screen, from `examples/examples.yaml` in each
- * library folder: what it is, its files, and a suggested problem statement.
+ * library folder: what it is, its files, a suggested problem statement, and
+ * optionally how to run it quickly (a book action with small parameters).
  */
 import { readFile, stat } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { parse } from "yaml";
-import type { Artifact, Example } from "@pharos/contracts";
+import { type Artifact, type Example, type Params, type Plan, bookAction } from "@pharos/contracts";
+import type { Library } from "@pharos/books";
+import type { Plans } from "./plans.js";
 import type { WorkspaceStore } from "./workspaces.js";
+
+/** Where prepared examples run; the shared cache makes their results instant everywhere. */
+export const EXAMPLES_WORKSPACE = "examples";
 
 interface ExampleSource extends Example {
   paths: { path: string; name: string }[];
@@ -44,11 +50,23 @@ export async function loadExamples(dirs: string[]): Promise<ExampleSource[]> {
         description: String(item.description ?? ""),
         prompt: String(item.prompt ?? ""),
         files: paths.map((p) => p.name),
+        ...(run(item.run) ? { run: run(item.run)! } : {}),
         paths,
       });
     }
   }
   return out;
+}
+
+function run(raw: unknown): Example["run"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.book !== "string") return undefined;
+  return {
+    book: r.book,
+    ...(typeof r.action === "string" ? { action: r.action } : {}),
+    ...(r.params && typeof r.params === "object" ? { params: r.params as Params } : {}),
+  };
 }
 
 export const publicExample = ({ paths: _paths, ...e }: ExampleSource): Example => e;
@@ -60,4 +78,25 @@ export async function loadExample(dirs: string[], id: string, workspaces: Worksp
   const artifacts: Artifact[] = [];
   for (const p of example.paths) artifacts.push(await workspaces.importPath(workspace, p.path, p.name));
   return artifacts;
+}
+
+/**
+ * Loads an example into `workspace` and makes a plan from its `run`: its
+ * files fill the action's inputs by kind, in order. The plan is proposed,
+ * not started; the caller approves it.
+ */
+export async function examplePlan(dirs: string[], id: string, workspaces: WorkspaceStore, plans: Plans, library: Library, workspace = EXAMPLES_WORKSPACE): Promise<Plan> {
+  const example = (await loadExamples(dirs)).find((e) => e.id === id);
+  if (!example) throw new ExampleError(404, `no example "${id}"`);
+  if (!example.run) throw new ExampleError(422, `example "${id}" doesn't say how to run it`);
+  const book = library.book(example.run.book)?.manifest;
+  const action = book && bookAction(book, example.run.action);
+  if (!book || !action) throw new ExampleError(422, `example "${id}" runs ${example.run.book}${example.run.action ? ` › ${example.run.action}` : ""}, which isn't in the library`);
+  const pool = await loadExample(dirs, id, workspaces, workspace);
+  const inputs: Record<string, string> = {};
+  for (const input of action.inputs ?? []) {
+    const i = pool.findIndex((a) => a.kind === input.accepts.kind);
+    if (i >= 0) inputs[input.name] = pool.splice(i, 1)[0].id;
+  }
+  return plans.fromBook(workspace, book.id, inputs, example.run.params ?? {}, book.version, action.name);
 }

@@ -5,13 +5,13 @@ import { type IncomingMessage, type Server, type ServerResponse, createServer } 
 import type { AddressInfo } from "node:net";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
-import { Library, type TrustLookup, resolveBook } from "@pharos/books";
+import { Library, type TrustLookup, hasErrors, resolveBook } from "@pharos/books";
 import type { Step } from "@pharos/contracts";
 import { AiError, type AiClientFactory, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
-import { ExampleError, loadExample, loadExamples, publicExample } from "./examples.js";
+import { ExampleError, examplePlan, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
 import { PreviewError, caseSummary, imageAsTiff } from "./preview.js";
 import { Plans } from "./plans.js";
@@ -281,6 +281,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case "DELETE /api/cache":
         return sendJson(res, 200, await orch.clearCache());
       default: {
+        const prepare = url.pathname.match(/^\/api\/examples\/([^/]+)\/prepare$/);
+        if (prepare && req.method === "POST") {
+          const plan = await examplePlan(libraryDirs, decodeURIComponent(prepare[1]), workspaces, plans, await library.get());
+          return sendJson(res, 200, hasErrors(plan.problems) ? plan : (await plans.approve(plan.id)).plan);
+        }
         const example = url.pathname.match(/^\/api\/examples\/([^/]+)\/load$/);
         if (example && req.method === "POST") {
           const { workspace } = await readJson<{ workspace?: unknown }>(req);
@@ -444,7 +449,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         library.close();
         catalogue.close();
         server.closeAllConnections();
-        server.close(() => ok());
+        // warm containers go too, so none outlive the server
+        server.close(() => void orch.close().finally(ok));
       }),
   };
 }

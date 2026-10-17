@@ -24,17 +24,32 @@
       "type": "string"
     },
     "mode": {
-      "description": "cli (default) or http to keep a model warm.",
+      "description": "cli (default): a fresh container per operation. warm: one container per workspace stays up between operations, so they start at once; inputs still appear at /in, outputs go to /out.",
       "anyOf": [
         {
           "const": "cli",
           "type": "string"
         },
         {
-          "const": "http",
+          "const": "warm",
           "type": "string"
         }
       ]
+    },
+    "warm": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "start": {
+          "description": "Runs when the warm container starts and keeps running, e.g. a server that loads a model once; operations can talk to it inside the container.",
+          "type": "string"
+        },
+        "idle_minutes": {
+          "exclusiveMinimum": 0,
+          "description": "Stop the container after this long without operations (default 10).",
+          "type": "number"
+        }
+      }
     },
     "summary": {
       "type": "string"
@@ -114,7 +129,7 @@
           "properties": {
             "kind": {
               "pattern": "^[a-z][a-z0-9-]*$",
-              "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+              "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
               "type": "string"
             },
             "title": {
@@ -194,7 +209,7 @@
                   },
                   "kind": {
                     "pattern": "^[a-z][a-z0-9-]*$",
-                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
                     "type": "string"
                   },
                   "formats": {
@@ -203,7 +218,7 @@
                     "type": "array",
                     "items": {
                       "pattern": "^[a-z0-9][a-z0-9-]*$",
-                      "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                      "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
                       "type": "string"
                     }
                   },
@@ -324,12 +339,12 @@
                   },
                   "kind": {
                     "pattern": "^[a-z][a-z0-9-]*$",
-                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
                     "type": "string"
                   },
                   "format": {
                     "pattern": "^[a-z0-9][a-z0-9-]*$",
-                    "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                    "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
                     "type": "string"
                   },
                   "path": {
@@ -360,6 +375,10 @@
               "pattern": "^operation_\\d+$",
               "description": "EDAM operation term.",
               "type": "string"
+            },
+            "view": {
+              "description": "Shows data rather than changing it: one input, and one output Pharos can display (an image, table, video, 3D model or web page). Windows offer it for data Pharos can't show itself; it doesn't enter the history.",
+              "type": "boolean"
             }
           }
         }

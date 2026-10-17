@@ -11,7 +11,7 @@ import { type ObjectOptions, type Static, type TSchema, type TString, Type } fro
  * astronomy, audio) can bring its own. These are the ones Pharos itself
  * knows how to show.
  */
-export const ARTIFACT_KINDS = ["volume", "labels", "tracks", "table", "mesh", "splat", "sim-case", "video"] as const;
+export const ARTIFACT_KINDS = ["volume", "labels", "tracks", "table", "mesh", "splat", "sim-case", "video", "report"] as const;
 export const KIND_PATTERN = "^[a-z][a-z0-9-]*$";
 // `string & {}` keeps editor completion for the built-in names while allowing any other
 export type ArtifactKind = (typeof ARTIFACT_KINDS)[number] | (string & {});
@@ -37,6 +37,7 @@ export const FORMATS = [
   "mp4",
   "openfoam-case",
   "geff",
+  "html",
 ] as const;
 export const FORMAT_PATTERN = "^[a-z0-9][a-z0-9-]*$";
 export type Format = (typeof FORMATS)[number] | (string & {});
@@ -76,7 +77,12 @@ export const BUILT_IN_FORMATS: Record<(typeof FORMATS)[number], FormatInfo> = {
   mp4: { kind: "video", title: "MP4 video", extensions: [".mp4"] },
   "openfoam-case": { kind: "sim-case", title: "OpenFOAM case", folder: true, contains: ["system", "constant"] },
   geff: { kind: "tracks", title: "GEFF tracks", extensions: [".geff"], folder: true },
+  // a page a ship's view makes; shown sandboxed, with no access to Pharos or the network
+  html: { kind: "report", title: "Web page", extensions: [".html", ".htm"] },
 };
+
+/** Formats a window can draw itself; a ship's view operation must produce one of these. */
+export const DISPLAYABLE_FORMATS: readonly string[] = ["tiff", "ome-tiff", "ome-zarr", "csv", "ply", "mp4", "html", "json"];
 
 /**
  * Recognises a file or folder from its name (and, for folders, what it

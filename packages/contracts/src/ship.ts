@@ -3,7 +3,8 @@
  *
  * In CLI mode (the default) each operation is a command that reads its
  * inputs from `/in`, writes its outputs to `/out` and exits, printing
- * progress as JSON lines (see `ProgressLine`). Field names follow Boutiques
+ * progress as JSON lines (see `ProgressLine`). Warm ships run the same
+ * commands inside a container that stays up between operations. Field names follow Boutiques
  * where they overlap.
  */
 import { type Static, Type } from "@sinclair/typebox";
@@ -57,6 +58,12 @@ export const OperationSchema = Type.Object(
       ),
     ),
     edam: Type.Optional(Type.String({ pattern: "^operation_\\d+$", description: "EDAM operation term." })),
+    view: Type.Optional(
+      Type.Boolean({
+        description:
+          "Shows data rather than changing it: one input, and one output Pharos can display (an image, table, video, 3D model or web page). Windows offer it for data Pharos can't show itself; it doesn't enter the history.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -88,7 +95,23 @@ export const ShipManifestSchema = Type.Object(
     id: IdSchema,
     version: VersionSchema,
     image: Type.String({ minLength: 1, description: "Container image, pinned by digest (name@sha256:…) for verified ships." }),
-    mode: Type.Optional(Type.Union([Type.Literal("cli"), Type.Literal("http")], { description: "cli (default) or http to keep a model warm." })),
+    mode: Type.Optional(
+      Type.Union([Type.Literal("cli"), Type.Literal("warm")], {
+        description:
+          "cli (default): a fresh container per operation. warm: one container per workspace stays up between operations, so they start at once; inputs still appear at /in, outputs go to /out.",
+      }),
+    ),
+    warm: Type.Optional(
+      Type.Object(
+        {
+          start: Type.Optional(
+            Type.String({ description: "Runs when the warm container starts and keeps running, e.g. a server that loads a model once; operations can talk to it inside the container." }),
+          ),
+          idle_minutes: Type.Optional(Type.Number({ exclusiveMinimum: 0, description: "Stop the container after this long without operations (default 10)." })),
+        },
+        { additionalProperties: false },
+      ),
+    ),
     summary: Type.Optional(Type.String()),
     citation: Type.Optional(Type.String()),
     license: Type.Optional(Type.String({ description: "SPDX licence id of the tool, e.g. GPL-3.0-only." })),

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AUTHOR_HELP, runAuthorCommand } from "./author.js";
 import { MCP_HELP, runMcp } from "./mcp-cli.js";
+import type { Example, Plan } from "@pharos/contracts";
 import { VERSION, defaultDataDir, startServer } from "./server.js";
 
 const HELP = `Pharos ${VERSION}: scientific tools, one local app
@@ -25,6 +26,9 @@ The server only listens on 127.0.0.1 and requires the secret token in the
 launch URL, so other users and websites cannot reach your files.
 
 ${AUTHOR_HELP}
+Examples:
+  pharos warm [-l <dir>] [-d <dir>]       run every example with a \`run:\` once, so it opens instantly
+
 ${MCP_HELP}`;
 
 function findUiDir(): string {
@@ -43,8 +47,56 @@ function openBrowser(url: string) {
     .unref();
 }
 
+/**
+ * `pharos warm`: runs every example that says how to run itself, so their
+ * results are in the (shared) cache and open instantly in the app. For
+ * demo preparation and authors; it runs containers, so it's never automatic.
+ */
+async function warm(argv: string[]) {
+  const { values } = parseArgs({ args: argv, options: { data: { type: "string", short: "d" }, library: { type: "string", short: "l", multiple: true } } });
+  const server = await startServer({
+    port: 0,
+    uiDir: findUiDir(),
+    dataDir: values.data ? resolve(values.data) : defaultDataDir(),
+    libraryDirs: (values.library ?? ["."]).map((d) => resolve(d)),
+  });
+  const token = new URL(server.launchUrl).hash.replace(/^#token=/, "");
+  const api = async <T>(path: string, method = "GET"): Promise<T> => {
+    const r = await fetch(`${server.url}${path}`, { method, headers: { "x-pharos-token": token, "content-type": "application/json" }, ...(method === "POST" ? { body: "{}" } : {}) });
+    const body = (await r.json()) as T & { error?: string };
+    if (!r.ok) throw new Error(body.error ?? `${r.status}`);
+    return body;
+  };
+  let failed = 0;
+  try {
+    const examples = (await api<Example[]>("/api/examples")).filter((e) => e.run);
+    if (!examples.length) console.log("No example says how to run it (a `run:` in examples.yaml).");
+    for (const e of examples) {
+      const started = Date.now();
+      process.stdout.write(`${e.title}: `);
+      try {
+        let plan = await api<Plan>(`/api/examples/${encodeURIComponent(e.id)}/prepare`, "POST");
+        if (plan.status === "proposed") throw new Error(plan.problems.map((p) => p.message).join("; "));
+        while (!["done", "failed", "cancelled"].includes(plan.status)) {
+          await new Promise((ok) => setTimeout(ok, 1000));
+          plan = await api<Plan>(`/api/plans/${plan.id}`);
+        }
+        if (plan.status !== "done") throw new Error(plan.error ?? plan.status);
+        console.log(`ready (${Math.round((Date.now() - started) / 1000)} s)`);
+      } catch (err) {
+        failed++;
+        console.log(`failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+  } finally {
+    await server.close();
+  }
+  process.exitCode = failed ? 1 : 0;
+}
+
 export async function main(argv = process.argv.slice(2)) {
   if (argv[0] === "mcp") return runMcp(argv.slice(1));
+  if (argv[0] === "warm") return warm(argv.slice(1));
   const code = await runAuthorCommand(argv);
   if (code !== null) {
     process.exitCode = code;

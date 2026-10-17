@@ -15,13 +15,16 @@ import { appendFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artifact, Job, Params, RunRecord, ShipManifest } from "@pharos/contracts";
 import { RunCache, cacheKey } from "./cache.js";
-import { type DockerClient, buildImage } from "./docker.js";
-import { RunError, runOperation } from "./runner.js";
+import { CONTEXT_LABEL, type DockerClient, type ImageInfo, buildImage, contextHash } from "./docker.js";
+import { RunError, type RunOptions, runOperation } from "./runner.js";
+import { WarmPool } from "./warm.js";
 
 /** How the queue reads and writes a workspace; the server's workspace store provides it. */
 export interface WorkspaceAccess {
-  /** The workspace's `runs/` and `cache/` folders. */
-  dirs(workspace: string): Promise<{ runs: string; cache: string }>;
+  /** The workspace's `runs/` and `artifacts/` folders, and the run cache (shared by every workspace). */
+  dirs(workspace: string): Promise<{ runs: string; cache: string; artifacts?: string }>;
+  /** Brings an artifact from another workspace into this one (same content, same id); null if it's gone. */
+  copy?(from: string, id: string, to: string): Promise<Artifact | null>;
   /** Moves an output into the workspace as an artifact. */
   adopt(workspace: string, path: string, type: { kind: Artifact["kind"]; format: Artifact["format"] }, producedBy: string): Promise<Artifact>;
   get(workspace: string, id: string): Promise<Artifact | null>;
@@ -109,9 +112,18 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
   private readonly gpuSlot = new Slots(1);
   private readonly cpuSlots: Slots;
 
+  private readonly warm: WarmPool;
+
   constructor(private readonly o: QueueOptions) {
     super();
     this.cpuSlots = new Slots(o.cpuSlots ?? 2);
+    this.warm = new WarmPool(o.docker);
+    void this.warm.sweep();
+  }
+
+  /** Stops the warm containers; call when the server stops. */
+  close(): Promise<void> {
+    return this.warm.close();
   }
 
   list(): Job[] {
@@ -200,7 +212,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
     const event = (patch: Partial<PullEvent>) => void this.emit("pull", { image, ship: ship.id, version: ship.version, receivedBytes: 0, done: false, ...patch });
     const context = this.o.buildContext?.(ship);
     const fetch = context
-      ? buildImage(context, image, (line) => event({ message: line.slice(0, 200) }))
+      ? contextHash(context).then((hash) => buildImage(context, image, (line) => event({ message: line.slice(0, 200) }), undefined, { [CONTEXT_LABEL]: hash }))
       : this.o.docker.pull(image, (receivedBytes, totalBytes) => event({ receivedBytes, totalBytes }));
     const p: Promise<void> = fetch
       .then(
@@ -226,7 +238,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
     let slot: Slots | undefined;
     try {
       // the image: pinned digests identify it without downloading
-      let image = await this.o.docker.inspectImage(req.ship.image);
+      let image = await this.current(req.ship);
       const pinned = req.ship.image.includes("@sha256:") ? req.ship.image.slice(req.ship.image.indexOf("@") + 1) : undefined;
       const op = req.ship.operations[req.operation];
       const deterministic = op.cache?.deterministic ?? false;
@@ -267,7 +279,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
 
       await mkdir(runDir, { recursive: true });
       const logFile = join(runDir, "log.txt");
-      const result = await runOperation(this.o.docker, {
+      const run: RunOptions = {
         ship: req.ship,
         operation: req.operation,
         inputs: req.inputs,
@@ -281,7 +293,12 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
           void appendFile(logFile, line + "\n");
         },
         onProgress: (p) => this.update(e, { ...(p.progress !== undefined ? { progress: p.progress } : {}), ...(p.message ? { message: p.message } : {}) }),
-      });
+      };
+      // warm ships run inside a container that stays up; the rest get a fresh one
+      const result =
+        req.ship.mode === "warm" && dirs.artifacts
+          ? await this.warm.run({ ...run, artifactsDir: dirs.artifacts, runsDir: dirs.runs })
+          : await runOperation(this.o.docker, run);
       if (result.exitCode !== 0) {
         const tail = e.log.slice(-3).join(" ").slice(-300);
         throw new RunError(`exited with code ${result.exitCode}${tail ? `: ${tail}` : ""}`);
@@ -295,7 +312,7 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
         bytes += a.sizeBytes ?? 0;
       }
       await rm(join(runDir, "out"), { recursive: true, force: true });
-      if (deterministic) await cache.put({ key: runKey, outputs, bytes, runId });
+      if (deterministic) await cache.put({ key: runKey, outputs, bytes, runId, workspace: req.workspace });
 
       const record: RunRecord = {
         id: runId,
@@ -327,12 +344,30 @@ export class JobQueue extends EventEmitter<{ job: [Job]; log: [string, string]; 
     }
   }
 
-  /** Finishes the job from the cache when every cached output still exists. */
+  /**
+   * The ship's image, or null when it must be downloaded or built first. An
+   * image built from a ship folder whose files have changed since counts as
+   * missing, so it is rebuilt rather than running the old scripts.
+   */
+  private async current(ship: ShipManifest): Promise<ImageInfo | null> {
+    const image = await this.o.docker.inspectImage(ship.image);
+    const context = image && this.o.buildContext?.(ship);
+    if (!context) return image;
+    return image.Config?.Labels?.[CONTEXT_LABEL] === (await contextHash(context)) ? image : null;
+  }
+
+  /**
+   * Finishes the job from the cache when every cached output still exists.
+   * Outputs made in another workspace are brought into this one.
+   */
   private async fromCache(e: Entry, cache: RunCache, key: string): Promise<boolean> {
     const hit = await cache.get(key);
     if (!hit) return false;
+    const ws = e.req.workspace;
     for (const id of Object.values(hit.outputs)) {
-      if (!(await this.o.workspaces.get(e.req.workspace, id))) {
+      if (await this.o.workspaces.get(ws, id)) continue;
+      const copied = hit.workspace && hit.workspace !== ws && this.o.workspaces.copy ? await this.o.workspaces.copy(hit.workspace, id, ws).catch(() => null) : null;
+      if (!copied) {
         await cache.delete(key);
         return false;
       }

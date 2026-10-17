@@ -67,6 +67,16 @@ if [ "$status" -ne 0 ]; then
   exit "$status"
 fi
 
+# a time step written incompletely (seen with Docker Desktop's file sharing) holds NUL bytes;
+# drop it, so a damaged result is never handed on or cached
+for dir in [0-9]*; do
+  [ "$dir" = "0" ] && continue
+  if LC_ALL=C grep -qlP '\x00' "$dir"/* 2>/dev/null; then
+    echo "time $dir was written incompletely; leaving it out" >&2
+    rm -rf "$dir"
+  fi
+done
+
 progress 0.97 "writing cell centres"
 postProcess -func writeCellCentres -time 0 > log.writeCellCentres 2>&1 || true
 progress 1.0 "done"

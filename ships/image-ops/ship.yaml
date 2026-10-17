@@ -6,16 +6,19 @@ summary: Everyday image processing - invert, blur, flip, rotate, set the scale, 
 license: MIT
 tags: [microscopy, image-processing, filters, threshold, binary, morphology, measurement, particles]
 requires: { memory_gb: 4, network: none }
+# quick, frequent operations: one container stays up, with scikit-image already imported
+mode: warm
+warm: { start: python /opt/pharos/pharos_warm.py serve /opt/pharos/pharos_image.py }
 operations:
   invert:
     summary: Inverts an image, so bright becomes dark (8-bit over 0-255, other types over their own range).
-    command: python /opt/pharos/pharos_image.py invert --image {in.image}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py invert --image {in.image}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     outputs: [{ name: image, kind: volume, format: ome-zarr, path: /out/image.zarr }]
     cache: { deterministic: true }
   gaussian-blur:
     summary: Smooths an image with a Gaussian, to reduce noise before a threshold; in 3D when given a z sigma.
-    command: python /opt/pharos/pharos_image.py gaussian-blur --image {in.image} --sigma {sigma} --sigma-z {sigma_z}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py gaussian-blur --image {in.image} --sigma {sigma} --sigma-z {sigma_z}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     parameters:
       - { name: sigma, type: number, unit: px, default: 2, min: 0.1, max: 100, description: "Blur radius (standard deviation) in x and y pixels." }
@@ -24,7 +27,7 @@ operations:
     cache: { deterministic: true }
   flip:
     summary: Mirrors an image left to right (horizontal) or top to bottom (vertical).
-    command: python /opt/pharos/pharos_image.py flip --image {in.image} --direction {direction}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py flip --image {in.image} --direction {direction}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     parameters:
       - { name: direction, type: enum, options: [horizontal, vertical], default: horizontal, description: "horizontal mirrors left to right; vertical, top to bottom." }
@@ -32,7 +35,7 @@ operations:
     cache: { deterministic: true }
   rotate:
     summary: Rotates an image by 90 degrees, to the right (clockwise) or the left.
-    command: python /opt/pharos/pharos_image.py rotate --image {in.image} --direction {direction}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py rotate --image {in.image} --direction {direction}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     parameters:
       - { name: direction, type: enum, options: [right, left], default: right, description: "right turns clockwise; left, anticlockwise." }
@@ -40,7 +43,7 @@ operations:
     cache: { deterministic: true }
   set-scale:
     summary: Sets an image's pixel size (and slice spacing), so areas and lengths come out in physical units.
-    command: python /opt/pharos/pharos_image.py set-scale --image {in.image} --pixel-size {pixel_size} --z-size {z_size} --unit {unit}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py set-scale --image {in.image} --pixel-size {pixel_size} --z-size {z_size} --unit {unit}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     parameters:
       - { name: pixel_size, type: number, default: 1, min: 0.000001, description: "Size of one pixel in x and y, in the unit below." }
@@ -50,7 +53,7 @@ operations:
     cache: { deterministic: true }
   threshold:
     summary: Turns an image into a mask of its foreground, with an automatic threshold (Otsu, Li, triangle and others) per time point and channel.
-    command: python /opt/pharos/pharos_image.py threshold --image {in.image} --method {method} --foreground {foreground}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py threshold --image {in.image} --method {method} --foreground {foreground}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     parameters:
       - { name: method, type: enum, options: [otsu, li, triangle, yen, isodata, mean, minimum], default: otsu, description: "How the threshold is chosen; otsu suits most fluorescence, triangle dim objects on a dark background." }
@@ -59,7 +62,7 @@ operations:
     cache: { deterministic: true }
   erode:
     summary: Shrinks the objects in a mask by removing pixels from their edges, slice by slice.
-    command: python /opt/pharos/pharos_image.py erode --mask {in.mask} --iterations {iterations}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py erode --mask {in.mask} --iterations {iterations}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     parameters:
       - { name: iterations, type: integer, default: 1, min: 1, max: 100, description: How many pixels to remove from each edge. }
@@ -67,7 +70,7 @@ operations:
     cache: { deterministic: true }
   dilate:
     summary: Grows the objects in a mask by adding pixels to their edges, slice by slice.
-    command: python /opt/pharos/pharos_image.py dilate --mask {in.mask} --iterations {iterations}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py dilate --mask {in.mask} --iterations {iterations}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     parameters:
       - { name: iterations, type: integer, default: 1, min: 1, max: 100, description: How many pixels to add to each edge. }
@@ -75,7 +78,7 @@ operations:
     cache: { deterministic: true }
   open:
     summary: Erodes then dilates a mask - removes small specks and thin connections and keeps object size.
-    command: python /opt/pharos/pharos_image.py open --mask {in.mask} --iterations {iterations}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py open --mask {in.mask} --iterations {iterations}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     parameters:
       - { name: iterations, type: integer, default: 1, min: 1, max: 100, description: How strongly to open (pixels). }
@@ -83,7 +86,7 @@ operations:
     cache: { deterministic: true }
   close:
     summary: Dilates then erodes a mask - fills small gaps and holes and keeps object size.
-    command: python /opt/pharos/pharos_image.py close --mask {in.mask} --iterations {iterations}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py close --mask {in.mask} --iterations {iterations}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     parameters:
       - { name: iterations, type: integer, default: 1, min: 1, max: 100, description: How strongly to close (pixels). }
@@ -91,19 +94,19 @@ operations:
     cache: { deterministic: true }
   fill-holes:
     summary: Fills background regions completely enclosed by objects in a mask (e.g. hollow nuclei), slice by slice.
-    command: python /opt/pharos/pharos_image.py fill-holes --mask {in.mask}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py fill-holes --mask {in.mask}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     outputs: [{ name: mask, kind: labels, format: ome-zarr, path: /out/mask.zarr }]
     cache: { deterministic: true }
   outline:
     summary: Keeps only a one-pixel outline of each object in a mask.
-    command: python /opt/pharos/pharos_image.py outline --mask {in.mask}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py outline --mask {in.mask}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     outputs: [{ name: mask, kind: labels, format: ome-zarr, path: /out/mask.zarr }]
     cache: { deterministic: true }
   skeletonize:
     summary: Thins the objects in a mask to one-pixel-wide lines, for lengths and branching (e.g. neurites).
-    command: python /opt/pharos/pharos_image.py skeletonize --mask {in.mask}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py skeletonize --mask {in.mask}
     inputs: [{ name: mask, kind: labels, formats: [ome-zarr] }]
     outputs: [{ name: mask, kind: labels, format: ome-zarr, path: /out/mask.zarr }]
     cache: { deterministic: true }
@@ -125,7 +128,7 @@ operations:
     cache: { deterministic: true }
   measure:
     summary: Measures every plane of an image - area, mean, standard deviation, minimum, maximum and integrated density - in physical units when the image has a scale.
-    command: python /opt/pharos/pharos_image.py measure --image {in.image}
+    command: python /opt/pharos/pharos_warm.py run /opt/pharos/pharos_image.py measure --image {in.image}
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, ome-zarr] }]
     outputs: [{ name: table, kind: table, format: csv, path: /out/measurements.csv }]
     cache: { deterministic: true }

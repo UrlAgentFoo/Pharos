@@ -3746,6 +3746,25 @@ dialog.side::backdrop {
   justify-self: start;
 }
 
+.dv-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dv-views .pg {
+  width: 100%;
+}
+
+.dv-page {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--sheet);
+}
+
 .dv-loading {
   margin: auto;
   color: var(--muted);

@@ -114,6 +114,7 @@ export class Orchestration {
     return {
       dirs: (w) => store.dirs(w),
       adopt: (w, path, type, producedBy) => store.adopt(w, path, type, producedBy),
+      copy: (from, id, to) => store.copyArtifact(from, id, to).catch(() => null),
       get: (w, id) =>
         store.get(w, id).catch((e: unknown) => {
           if (e instanceof WorkspaceError && e.status === 404) return null;
@@ -130,6 +131,11 @@ export class Orchestration {
       if (await stat(join(s.dir, "Dockerfile")).then((x) => x.isFile(), () => false)) next.set(`${s.manifest.id}@${s.manifest.version}`, s.dir);
     }
     this.buildContexts = next;
+  }
+
+  /** Stops what keeps running between jobs (warm containers). */
+  async close() {
+    await this.queue?.close();
   }
 
   private async ready(): Promise<{ docker: DockerClient; queue: JobQueue; status: SystemStatus }> {
@@ -242,9 +248,8 @@ export class Orchestration {
       if (!inventory.has(s.image)) continue;
       report.ships.push({ id: s.id, version: s.version, image: s.image, sizeBytes: inventory.sizeBytes?.(s.image) ?? 0, usedBy: this.usedBy(lib, s) });
     }
+    report.cache.usedBytes = await new RunCache(this.workspaces.cacheDir).usage();
     for (const w of await this.workspaces.list()) {
-      const dirs = await this.workspaces.dirs(w.name);
-      report.cache.usedBytes += await new RunCache(dirs.cache).usage();
       report.artifactsBytes += (await this.workspaces.artifacts(w.name)).reduce((n, a) => n + (a.sizeBytes ?? 0), 0);
     }
     return report;
@@ -275,9 +280,7 @@ export class Orchestration {
   }
 
   async clearCache() {
-    let freedBytes = 0;
-    for (const w of await this.workspaces.list()) freedBytes += await new RunCache((await this.workspaces.dirs(w.name)).cache).clear();
-    return { freedBytes };
+    return { freedBytes: await new RunCache(this.workspaces.cacheDir).clear() };
   }
 
   // ---------------------------------------------------------- Test ship

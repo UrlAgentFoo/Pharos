@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { BookManifest } from "@pharos/contracts";
-import { Library, acceptedFormats, checkBook, converters, dependencies, newBook, newShip, planProblems, resolveBook, stepParams } from "@pharos/books";
+import { Library, acceptedFormats, checkBook, checkShip, converters, dependencies, newBook, newShip, planProblems, resolveBook, stepParams } from "@pharos/books";
 
 const BIO_UTILS = `id: bio-utils
 version: 0.1.0
@@ -249,6 +249,19 @@ describe("books with several actions", () => {
     const formats = acceptedFormats(b, lib, converters(lib.shipManifests()));
     expect(formats.map((f) => `${f.action}.${f.input}`)).toEqual(["track.movie", "measure.image"]);
     expect(formats[1].direct).toEqual(["ome-zarr", "tiff"]);
+  });
+});
+
+describe("views", () => {
+  it("take one input and make something a window can show", () => {
+    const ship = parse(CELLPOSE);
+    ship.operations.segment.view = true;
+    ship.operations.segment.outputs[0].format = "parquet";
+    expect(checkShip(ship).map((p) => p.message)).toContain("a view makes one output a window can show (tiff, ome-tiff, ome-zarr, csv, ply, mp4, html, json)");
+    ship.operations.segment.outputs = [{ name: "page", kind: "report", format: "html", path: "/out/view.html" }];
+    expect(checkShip(ship).filter((p) => p.severity === "error")).toEqual([]);
+    ship.operations.segment.inputs.push({ name: "other", kind: "volume", formats: ["tiff"] });
+    expect(checkShip(ship).map((p) => p.message)).toContain("a view takes exactly one input: the data it shows");
   });
 });
 

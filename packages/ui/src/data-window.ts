@@ -23,7 +23,7 @@ import { thumbnailElement } from "./viewer.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
-import { progressHtml } from "./progress.js";
+import { barHtml, clockHtml, progressHtml } from "./progress.js";
 import type { DataDoc, DataStep } from "./workspace.js";
 
 /** Something that can be applied to the shown data: one of a book's actions, or a single ship operation. */
@@ -48,6 +48,10 @@ export interface DataWindowHooks {
   cancel(doc: DataDoc): void;
   /** Shows a job's log. */
   showLog(jobId: string): void;
+  /** Ship operations marked as views that can show `artifact`. */
+  viewsFor(artifact: Artifact): Promise<{ tool: string; title: string; summary: string }[]>;
+  /** Runs a view on `artifact` (cached like any operation) and returns what it made. */
+  runView(doc: DataDoc, artifact: Artifact, tool: string): Promise<Artifact>;
   updateStep(doc: DataDoc, index: number, params: Params): void;
   removeStep(doc: DataDoc, index: number): void;
   apply(doc: DataDoc, s: Suggestion): void;
@@ -92,6 +96,8 @@ export class DataWindow {
   private tiles: Mounted[] = [];
   private gridKey = "";
   private readonly loaded = new Map<string, Loaded | Promise<Loaded>>();
+  /** Data Pharos can't draw itself → what a ship's view made of it, once asked for. */
+  private readonly viewed = new Map<string, string>();
   private readonly artifacts = new Map<string, Artifact>();
   private shownKey = "";
   private drawerKey = "";
@@ -201,7 +207,7 @@ export class DataWindow {
         }
       </div>`;
     }
-    const key = `${artifactId}|${busy ? step!.status : "ok"}`;
+    const key = `${artifactId}|${busy ? step!.status : "ok"}|${artifactId ? (this.viewed.get(artifactId) ?? "") : ""}`;
     if (key === this.shownKey) return;
     this.shownKey = key;
     this.unmount();
@@ -209,10 +215,47 @@ export class DataWindow {
       this.stage.innerHTML = "";
       return;
     }
-    if (!(this.loaded.get(artifactId) && !(this.loaded.get(artifactId) instanceof Promise))) this.stage.innerHTML = `<p class="dv-loading">Loading…</p>`;
-    const entry = await this.entry(artifactId);
+    const showId = this.viewed.get(artifactId) ?? artifactId;
+    if (!(this.loaded.get(showId) && !(this.loaded.get(showId) instanceof Promise))) this.stage.innerHTML = `<p class="dv-loading">Loading…</p>`;
+    const entry = await this.entry(showId);
     if (this.shownKey !== key) return; // the selection moved on while loading
-    this.mounted = mountView(this.stage, entry, await this.artifact(artifactId));
+    const artifact = await this.artifact(showId);
+    this.mounted = mountView(this.stage, entry, artifact);
+    if (entry.type === "info") void this.offerViews(artifact);
+  }
+
+  /** For data Pharos can't draw: the ship views that can show it, as buttons on its card. */
+  private async offerViews(a: Artifact) {
+    const key = this.shownKey;
+    const views = await this.hooks.viewsFor(a);
+    if (!views.length || this.shownKey !== key) return;
+    const card = this.stage.querySelector(".dv-card");
+    const note = card?.querySelector(".muted");
+    if (note) note.textContent = "Pharos can't draw this itself, but a ship can show it. It's stored at:";
+    card?.insertAdjacentHTML(
+      "beforeend",
+      `<div class="dv-views">${views.map((v) => `<button class="chip primary-chip" data-view="${escapeHtml(v.tool)}" title="${escapeHtml(v.summary)}">${icon("ship", 13)} Show with ${escapeHtml(v.title)}</button>`).join("")}</div>`,
+    );
+  }
+
+  /** Runs a ship's view of the data on show and puts what it made in its place. */
+  private async showWith(tool: string) {
+    const { artifactId } = this.shown();
+    if (!artifactId) return;
+    const a = await this.artifact(artifactId);
+    const box = this.stage.querySelector(".dv-views");
+    if (box) box.innerHTML = `<span class="pg"><span class="pg-head"><span class="pg-phase">Preparing the view</span>${clockHtml(Date.now())}</span>${barHtml()}</span>`;
+    try {
+      const out = await this.hooks.runView(this.doc, a, tool);
+      this.artifacts.set(out.id, out);
+      this.viewed.set(artifactId, out.id);
+      this.shownKey = "";
+      await this.renderBody();
+    } catch (e) {
+      this.hooks.notify(e instanceof Error ? e.message : String(e));
+      this.shownKey = "";
+      await this.renderBody();
+    }
   }
 
   private unmount() {
@@ -374,7 +417,7 @@ export class DataWindow {
   // ---------------------------------------------------------- clicks
 
   private onClick(e: Event) {
-    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-index],[data-step],[data-act],[data-output],[data-separate]");
+    const el = (e.target as HTMLElement).closest<HTMLElement>("[data-index],[data-step],[data-act],[data-output],[data-separate],[data-view]");
     if (!el) return;
     const d = this.doc;
     if (el.dataset.index !== undefined) {
@@ -384,6 +427,7 @@ export class DataWindow {
     }
     if (el.dataset.step !== undefined) return this.hooks.select(d, Number(el.dataset.step));
     if (el.dataset.output !== undefined) return this.hooks.select(d, d.marker, el.dataset.output);
+    if (el.dataset.view !== undefined) return void this.showWith(el.dataset.view);
     if (el.dataset.separate !== undefined) {
       void this.artifact(el.dataset.separate).then((a) => this.hooks.openSeparately(d, a));
       return;

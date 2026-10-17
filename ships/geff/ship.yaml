@@ -25,3 +25,10 @@ operations:
       - { name: split, type: integer, default: 50, min: 0, description: "Time point that divides the first half (for tuning) from the second (held out); 0 halves the movie." }
     outputs: [{ name: score, kind: table, format: csv, path: /out/score.csv }]
     cache: { deterministic: true }
+  view:
+    summary: Shows a GEFF track graph - how many cells, tracks and divisions, and every track drawn from above, coloured by time.
+    command: python /opt/pharos/pharos_geff.py view --in {in.graph} --out /out/view.html
+    view: true
+    inputs: [{ name: graph, kind: tracks, formats: [geff] }]
+    outputs: [{ name: page, kind: report, format: html, path: /out/view.html }]
+    cache: { deterministic: true }

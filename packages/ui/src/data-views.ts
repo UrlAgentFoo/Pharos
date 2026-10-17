@@ -22,6 +22,7 @@ export type Loaded =
   | { type: "model"; ply: ArrayBuffer }
   | { type: "case"; summary: CaseSummary }
   | { type: "text"; text: string }
+  | { type: "page"; url: string }
   | { type: "info" }
   | { type: "error"; message: string };
 
@@ -47,6 +48,7 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
     if (a.kind === "mesh" && a.format === "ply") return { type: "model", ply: await s.content(workspace, a.id) };
     if (a.format === "mp4") return { type: "video", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "video/mp4" })) };
     if (a.format === "openfoam-case") return { type: "case", summary: await s.caseSummary(workspace, a.id) };
+    if (a.format === "html") return { type: "page", url: URL.createObjectURL(new Blob([await s.content(workspace, a.id)], { type: "text/html" })) };
     if (a.format === "json") return { type: "text", text: new TextDecoder().decode(await s.content(workspace, a.id)) };
     return { type: "info" };
   } catch (e) {
@@ -56,7 +58,7 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
 
 /** Frees what a loaded entry holds outside the page (video blobs). */
 export function releaseView(entry: Loaded) {
-  if (entry.type === "video") URL.revokeObjectURL(entry.url);
+  if (entry.type === "video" || entry.type === "page") URL.revokeObjectURL(entry.url);
 }
 
 /**
@@ -119,6 +121,10 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
       return none;
     case "text":
       host.innerHTML = `<pre class="code dv-text">${escapeHtml(entry.text)}</pre>`;
+      return none;
+    case "page":
+      // ships are untrusted: their pages get no scripts, no forms and no access to Pharos
+      host.innerHTML = `<iframe class="dv-page" sandbox="" referrerpolicy="no-referrer" src="${entry.url}" title="${escapeHtml(a.name ?? "page")}"></iframe>`;
       return none;
     case "error":
       host.innerHTML = card("Can't show this", escapeHtml(entry.message));

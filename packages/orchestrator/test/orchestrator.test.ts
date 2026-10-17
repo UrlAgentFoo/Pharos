@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { Artifact, Job, ShipManifest } from "@pharos/contracts";
-import { JobQueue, RunCache, type WorkspaceAccess, buildArgv, cacheKey, connect, containerSpec, detectStatus, parseProgress, splitRef, splitWords } from "@pharos/orchestrator";
+import { JobQueue, RunCache, WARM_LABEL, type WorkspaceAccess, buildArgv, cacheKey, connect, containerSpec, contextHash, detectStatus, parseProgress, splitRef, splitWords } from "@pharos/orchestrator";
 
 const HELLO: ShipManifest = parse(await readFile(new URL("../../../ships/hello/ship.yaml", import.meta.url), "utf8"));
 
@@ -117,6 +117,26 @@ describe("cache", () => {
   });
 });
 
+describe("ship images", () => {
+  it("hash what goes into the image, ignoring tests and ship.yaml", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pharos-ctx-"));
+    try {
+      await writeFile(join(dir, "Dockerfile"), "FROM busybox\nCOPY run.sh /\n");
+      await writeFile(join(dir, "run.sh"), "echo 1\n");
+      await writeFile(join(dir, "ship.yaml"), "id: x\n");
+      await mkdir(join(dir, "test"));
+      const first = await contextHash(dir);
+      await writeFile(join(dir, "ship.yaml"), "id: x\nsummary: changed\n");
+      await writeFile(join(dir, "test", "input.csv"), "a\n1\n");
+      expect(await contextHash(dir)).toBe(first);
+      await writeFile(join(dir, "run.sh"), "echo 2\n");
+      expect(await contextHash(dir)).not.toBe(first);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 // ------------------------------------------------------------ with Docker
 
 const docker = connect();
@@ -127,20 +147,29 @@ describe.skipIf(!dockerUp)("with Docker", () => {
   let queue: JobQueue;
   let table: Artifact;
   const adopted = new Map<string, Artifact>();
+  /** Which workspaces hold which artifacts: the cache is shared, the artifacts aren't. */
+  const held = new Map<string, Set<string>>();
+  const hold = (ws: string, id: string) => held.set(ws, new Set([...(held.get(ws) ?? []), id]));
   const events: Job[] = [];
 
   const access: WorkspaceAccess = {
-    dirs: async () => ({ runs: join(root, "runs"), cache: join(root, "cache") }),
-    adopt: async (_ws, path, type, producedBy) => {
+    dirs: async () => ({ runs: join(root, "runs"), cache: join(root, "cache"), artifacts: join(root, "artifacts") }),
+    adopt: async (ws, path, type, producedBy) => {
       const id = String(adopted.size + 1).padStart(64, "0");
       const dest = join(root, "artifacts", id);
       await mkdir(join(root, "artifacts"), { recursive: true });
       await rename(path, dest);
       const a = artifact(dest, { id, ...type, producedBy, sizeBytes: (await stat(dest)).size });
       adopted.set(id, a);
+      hold(ws, id);
       return a;
     },
-    get: async (_ws, id) => adopted.get(id) ?? null,
+    get: async (ws, id) => (held.get(ws)?.has(id) ? (adopted.get(id) ?? null) : null),
+    copy: async (from, id, to) => {
+      if (!held.get(from)?.has(id)) return null;
+      hold(to, id);
+      return adopted.get(id) ?? null;
+    },
   };
 
   beforeAll(async () => {
@@ -179,6 +208,28 @@ describe.skipIf(!dockerUp)("with Docker", () => {
     const again = queue.rerun(job.id)!;
     expect(await queue.finished(again.id)).toMatchObject({ state: "done" });
     expect((await queue.finished(again.id)).cached).toBeUndefined();
+  }, 120_000);
+
+  it("reuses a result made in another workspace, bringing its outputs over", async () => {
+    const job = queue.submit({ workspace: "w2", ship: HELLO, operation: "count", inputs: { table }, params: { seconds: 2 } });
+    const done = await queue.finished(job.id);
+    expect(done).toMatchObject({ state: "done", cached: true });
+    expect(held.get("w2")?.has(done.outputs!.count)).toBe(true);
+  }, 120_000);
+
+  it("runs warm ships inside one container that stays up, and stops it on close", async () => {
+    const warm: ShipManifest = { ...HELLO, mode: "warm" };
+    await mkdir(join(root, "artifacts", "t"), { recursive: true });
+    await writeFile(join(root, "artifacts", "t", "cells.csv"), "label\n1\n2\n");
+    const input = artifact(join(root, "artifacts", "t", "cells.csv"), { id: "b".repeat(64), contentHash: undefined });
+    const first = await queue.finished(queue.submit({ workspace: "w", ship: warm, operation: "count", inputs: { table: input }, params: { seconds: 1 }, force: true }).id);
+    expect(first).toMatchObject({ state: "done" });
+    expect(await readFile(adopted.get(first.outputs!.count)!.uri, "utf8")).toBe("rows\n2\n");
+    const second = await queue.finished(queue.submit({ workspace: "w", ship: warm, operation: "count", inputs: { table: input }, params: { seconds: 0 }, force: true }).id);
+    expect(second).toMatchObject({ state: "done" });
+    expect((await docker!.listContainers(WARM_LABEL)).length).toBe(1);
+    await queue.close();
+    expect(await docker!.listContainers(WARM_LABEL)).toEqual([]);
   }, 120_000);
 
   it("cancels a running job", async () => {

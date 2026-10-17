@@ -95,6 +95,12 @@ npm run build -w @pharos/contracts   # also rewrites packages/contracts/schemas/
 - A book's card shows only its title, `how_to_use`, its actions' titles, the
   file types it accepts and its ships. Everything else in `book.yaml` is for
   Pharos and the assistant; add metadata freely, but keep it off the card.
+- A ship's `view: true` operation shows data Pharos can't draw (one input,
+  one output in a format windows show); its web pages get no scripts.
+- `mode: warm` ships run in a container that stays up between operations
+  (inputs linked into `/in`, outputs copied out of an in-memory `/out`); use it
+  for quick, frequent operations. `ships/image-ops/pharos_warm.py` is a fork
+  server that keeps Python imports warm; copy it into other Python ships.
 - Kinds and formats are open strings. A ship that reads or writes a format
   Pharos doesn't know declares it under `formats` in its `ship.yaml`
   (kind, extensions or folder contents), so files in it are recognised.

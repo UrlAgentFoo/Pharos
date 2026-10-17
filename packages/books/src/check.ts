@@ -6,7 +6,7 @@
  * valid values and are set once; outputs point at real step outputs.
  * Problems carry JSON pointers into the book, e.g. /steps/2/in/labels.
  */
-import type { ArtifactKind, BookAction, BookManifest, BookParam, Format, ParamSpec, ParamValue, ShipManifest, Step } from "@pharos/contracts";
+import { type ArtifactKind, type BookAction, type BookManifest, type BookParam, DISPLAYABLE_FORMATS, type Format, type ParamSpec, type ParamValue, type ShipManifest, type Step } from "@pharos/contracts";
 import { type ManifestProblem, error, warning } from "./problems.js";
 
 /** Finds ship manifests: the best version matching a range, or any version. */
@@ -52,6 +52,12 @@ export function checkShip(ship: ShipManifest): ManifestProblem[] {
     dupes([...params], `${base}/parameters`, "parameter", problems);
     const used = new Set([...op.command.matchAll(/\{([a-z][a-z0-9_]*)\}/g)].map((m) => m[1]));
     for (const u of used) if (!params.has(u)) problems.push(error(`${base}/command`, `uses {${u}}, which isn't one of its parameters`));
+    if (op.view) {
+      if ((op.inputs ?? []).filter((i) => !i.optional).length !== 1) problems.push(error(`${base}/view`, "a view takes exactly one input: the data it shows"));
+      if (op.outputs.length !== 1 || !DISPLAYABLE_FORMATS.includes(op.outputs[0].format)) {
+        problems.push(error(`${base}/view`, `a view makes one output a window can show (${DISPLAYABLE_FORMATS.join(", ")})`));
+      }
+    }
     for (const p of op.parameters ?? []) {
       if (!used.has(p.name)) problems.push(warning(`${base}/parameters`, `parameter "${p.name}" never appears in the command`));
       const bad = p.default === undefined ? null : paramValueProblem(p, p.default);

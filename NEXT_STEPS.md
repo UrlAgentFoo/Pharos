@@ -96,16 +96,22 @@ data and the assistant.
 
 ## 3. Examples that run in seconds
 
-- [ ] Each example ships its parameters (short simulated time, small crop);
-      the start screen uses them instead of book defaults.
-- [ ] One cache shared across workspaces (keyed by content, so it is safe),
-      not one cache per workspace.
-- [ ] Warm the cache for every example (`pharos warm`), and ship precomputed
-      results with the examples so the first run is instant too.
+- [x] Each example has a `run:` (book action and short parameters); the start
+      screen can propose it instead of book defaults (UI: the guided-flow branch).
+- [x] One cache shared across workspaces; a hit made elsewhere copies its
+      artifacts over (same content, same id).
+- [x] `pharos warm` runs every example once: all ten now open in about 1 s.
+      Precomputed results in git: not done; warming covers it without bloating
+      the repo.
 - [ ] Pull prebuilt, multi-arch ship images from a registry, pinned by digest,
-      instead of building from the Dockerfile on first use.
+      instead of building from the Dockerfile on first use. (Needs a registry.)
+      Done instead: images built from a ship folder rebuild when its files change,
+      so a ship never runs stale scripts.
 - [ ] Add data gets a **Samples** section next to "From this computer", listing
-      every example by domain.
+      every example by domain. (UI: the guided-flow branch.)
+- [x] Found on the way: an OpenFOAM time step written incompletely (NUL bytes,
+      Docker Desktop file sharing) is dropped after solving, and rendering
+      skips unreadable steps instead of failing.
 
 ## 4. Finish what's half-built
 
@@ -141,11 +147,16 @@ reproducibly, chained with others, without dependency hell.
    molecules) needs a contract change by the lead. Make kinds and formats a
    registry: EDAM terms plus entries that ships and books can declare, with the
    core enums as the built-in set.
-2. **Viewers are hand-written in the UI, one per kind.** A universal tool
+2. ✅ **Viewers are hand-written in the UI, one per kind** (done: operations
+   marked `view: true` show data Pharos can't draw; `geff.view` is the first, and
+   web pages show sandboxed with no scripts). A universal tool
    can't wait for Pharos to write its viewer. Let ships provide viewers: a
    `view` operation that turns an artifact into something the UI already shows
    (image, table, video, model, HTML), and later a ship that serves its own web view.
-3. **Batch only.** Every operation runs and exits. Many tools are interactive
+3. ✅ **Batch only** (done for speed: `mode: warm` keeps one locked-down
+   container per ship and workspace and runs operations in it, and `image-ops`
+   keeps scikit-image imported with a fork server; an interactive web view a
+   ship serves, like ParaView, is still to do). Every operation runs and exits. Many tools are interactive
    (ParaView, napari, Jupyter, a solver you watch and steer) or are slow to
    start (deep-learning models). "Full OpenFOAM in a window" needs the `http`
    mode the schema already declares but the orchestrator doesn't implement:

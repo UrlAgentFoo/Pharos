@@ -8,6 +8,9 @@ geff: GEFF track graphs for Pharos.
   score    /in/tracks (CSV, as Ultrack writes them) + /in/truth (GEFF) → /out/score.csv, the
            Biohub cell tracking challenge's metric for the first half, the second half and the
            whole movie.
+  view     /in/graph (GEFF) → /out/view.html: a page Pharos shows in a window - how many
+           cells, tracks and divisions, and every track drawn from above (y against x),
+           coloured by time. Self-contained: no scripts, no network.
 
 The metric (as the challenge defines it): per time point, tracked and true cells are paired by
 an optimal assignment on distance in µm, up to max_distance. A tracked edge is a true positive
@@ -94,6 +97,72 @@ def cmd_convert(a):
             v = nodes[n]
             w.writerow([track[n], int(v[time]), *(f"{v[s]:g}" for s in space), parent[track[n]]])
     progress(1.0, f"{len(parent)} tracks")
+
+
+def cmd_view(a):
+    import html
+
+    nodes, edges, axes, scale, meta = read_geff(a.inp)
+    time, space = axis_names(axes)
+    track, parent = chains(nodes, edges, time)
+    progress(0.4, f"{len(nodes)} cells, {len(parent)} tracks")
+    ys, xs = (space[-2], space[-1]) if len(space) >= 2 else (space[0], space[0])
+    ts = [v[time] for v in nodes.values()] or [0.0]
+    t0, t1 = min(ts), max(ts)
+    px = [v[xs] for v in nodes.values()] or [0.0]
+    py = [v[ys] for v in nodes.values()] or [0.0]
+    x0, x1, y0, y1 = min(px), max(px), min(py), max(py)
+    w = 640
+    h = max(120, round(w * (y1 - y0) / (x1 - x0))) if x1 > x0 else w
+    pad = 12
+
+    def at(v):
+        return (pad + (v[xs] - x0) / ((x1 - x0) or 1) * (w - 2 * pad), pad + (v[ys] - y0) / ((y1 - y0) or 1) * (h - 2 * pad))
+
+    def colour(t):
+        f = (t - t0) / ((t1 - t0) or 1)
+        return f"hsl({round(260 - 220 * f)}, 70%, 50%)"
+
+    pos = {n: at(v) for n, v in nodes.items()}
+    lines = [
+        f'<line x1="{pos[s_][0]:.1f}" y1="{pos[s_][1]:.1f}" x2="{pos[d][0]:.1f}" y2="{pos[d][1]:.1f}" stroke="{colour(nodes[s_][time])}"/>'
+        for s_, d in edges
+        if s_ in pos and d in pos
+    ]
+    dots = [f'<circle cx="{pos[n][0]:.1f}" cy="{pos[n][1]:.1f}" r="1.6" fill="{colour(v[time])}"/>' for n, v in nodes.items()]
+    lengths = defaultdict(int)
+    for n in nodes:
+        lengths[track[n]] += 1
+    divisions = sum(1 for p_ in parent.values() if p_ != -1) // 2
+    mean = sum(lengths.values()) / len(lengths) if lengths else 0
+    unit = next((a.get("unit") for a in axes if a.get("type") == "space" and a.get("unit")), None)
+    facts = [
+        ("Cells (nodes)", f"{len(nodes):,}"),
+        ("Links (edges)", f"{len(edges):,}"),
+        ("Tracks", f"{len(parent):,}"),
+        ("Divisions", f"{divisions:,}"),
+        ("Time points", f"{int(t0)}-{int(t1)}"),
+        ("Mean track length", f"{mean:.1f} time points"),
+    ]
+    if meta.get("estimated_number_of_nodes"):
+        facts.append(("Expected cells", f"{meta['estimated_number_of_nodes']:,}"))
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{html.escape(os.path.basename(a.inp))}</title>
+<style>
+body {{ margin: 0; padding: 20px; font: 14px/1.4 system-ui, sans-serif; color: #2b2a27; background: #fbfaf7; }}
+@media (prefers-color-scheme: dark) {{ body {{ color: #ece8e1; background: #21201d; }} svg {{ background: #121110 !important; }} }}
+h1 {{ margin: 0 0 4px; font-size: 18px; }} p {{ margin: 0 0 14px; opacity: .7; }}
+dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin: 0 0 16px; }} dt {{ opacity: .7; }} dd {{ margin: 0; font-variant-numeric: tabular-nums; }}
+svg {{ width: 100%; height: auto; max-width: {w}px; background: #fff; border-radius: 4px; }}
+</style></head><body>
+<h1>{html.escape(os.path.basename(a.inp))}</h1>
+<p>A GEFF track graph, seen from above ({html.escape(ys)} against {html.escape(xs)}{f", {html.escape(unit)}" if unit else ""}); colour runs from the first time point (violet) to the last (orange).</p>
+<dl>{"".join(f"<dt>{html.escape(k)}</dt><dd>{html.escape(v)}</dd>" for k, v in facts)}</dl>
+<svg viewBox="0 0 {w} {h}" xmlns="http://www.w3.org/2000/svg"><g stroke-width="1.2" stroke-linecap="round">{"".join(lines)}</g>{"".join(dots)}</svg>
+</body></html>"""
+    os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
+    with open(a.out, "w") as f:
+        f.write(page)
+    progress(1.0, f"{len(parent)} tracks drawn")
 
 
 def read_tracks(path, space):
@@ -215,6 +284,10 @@ def main():
     s.add_argument("--max-distance", type=float, default=7.0)
     s.add_argument("--split", type=int, default=50)
     s.set_defaults(func=cmd_score)
+    v = sub.add_parser("view")
+    v.add_argument("--in", dest="inp", required=True)
+    v.add_argument("--out", required=True)
+    v.set_defaults(func=cmd_view)
     a = p.parse_args()
     a.func(a)
 

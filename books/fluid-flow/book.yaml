@@ -17,7 +17,7 @@ actions:
         accepts: { kind: sim-case, formats: [openfoam-case] }
     parameters:
       - { name: speed, label: Inlet speed, type: number, unit: m/s, default: 1, min: 0, max: 100, description: "How fast the fluid enters; with the example case, Reynolds number = 100 × speed.", sets: solve.speed }
-      - { name: end_time, label: Simulated time, type: number, unit: s, default: 60, min: 0.01, max: 100000, description: "How long to simulate; vortices take about 20-30 s to develop in the example.", sets: solve.end_time }
+      - { name: end_time, label: Simulated time, type: number, unit: s, default: 30, min: 0.01, max: 100000, description: "How long to simulate; vortices take about 20-30 s to develop in the example.", sets: solve.end_time }
       - { name: field, label: Show, type: enum, options: [vorticity, speed], default: vorticity, description: "vorticity shows the swirling vortices; speed shows how fast the fluid moves.", sets: render.field }
     steps:
       - { id: solve, run: openfoam.solve, in: { case: $case } }

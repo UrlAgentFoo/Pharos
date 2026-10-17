@@ -1,8 +1,9 @@
 /**
  * The run cache: same image, operation, parameters and input content means
- * the outputs of an earlier run are reused, even from another book. Each
- * entry is a small file in the workspace's `cache/` folder pointing at the
- * output artifacts; the artifacts themselves stay in the workspace.
+ * the outputs of an earlier run are reused, even from another book or
+ * another workspace. Each entry is a small file pointing at the output
+ * artifacts and the workspace that holds them; a hit elsewhere brings them
+ * over (artifacts are content-addressed, so they keep their ids).
  */
 import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -16,6 +17,8 @@ export interface CacheEntry {
   /** Total size of the outputs, for the storage view and eviction. */
   bytes: number;
   runId: string;
+  /** The workspace whose artifacts the outputs are; older entries lack it. */
+  workspace?: string;
   createdAt: string;
   lastUsed: string;
 }

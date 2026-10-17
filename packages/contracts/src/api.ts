@@ -109,6 +109,12 @@ export interface Example {
   prompt: string;
   /** The names the files get in the workspace. */
   files: string[];
+  /**
+   * How to run it quickly: a book action and parameter values small enough
+   * to finish in seconds (a short simulated time, say). Its files fill the
+   * action's inputs by kind, in order.
+   */
+  run?: { book: string; action?: string; params?: Params };
 }
 
 /** What the assistant proposes for some data and a request; `plan` is null when nothing fits. */
@@ -180,6 +186,12 @@ export interface ApiRoutes {
   "GET /api/examples": { req: void; res: Example[] };
   /** Copies an example's files into the workspace, as if they'd been dropped in. */
   "POST /api/examples/:id/load": { req: { workspace: string }; res: Artifact[] };
+  /**
+   * Runs an example's `run` in the "examples" workspace, so its results are
+   * cached (the cache is shared) and opening it later is instant. Only when
+   * asked: nothing runs without approval.
+   */
+  "POST /api/examples/:id/prepare": { req: void; res: Plan };
   "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[] }; res: AssistantPlan };
   "GET /api/plans/:id": { req: void; res: Plan };
   "PUT /api/plans/:id": { req: Pick<Plan, "parameters" | "steps" | "inputs">; res: Plan };

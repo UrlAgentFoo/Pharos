@@ -38,7 +38,7 @@ The user has an OpenFOAM case (a folder with `system/`, `constant/` and
   and shows no vortices; 1-2 m/s gives a clear vortex street; much higher
   speeds become unstable for this coarse laminar case.
 - **end_time** (s): long enough for the flow to develop - about 30 / speed
-  seconds before shedding is regular; 60 suits speed 1. Shorter runs are
+  seconds before shedding is regular; the default 30 suits speed 1. Shorter runs are
   faster but may show only the start-up.
 - **field**: `vorticity` to show vortices (the usual choice), `speed` if
   the user asks how fast the fluid moves.

@@ -51,6 +51,12 @@ beforeAll(async () => {
   await writeFile(join(lib, "books", "count-twice", "GUIDE.md"), "# t\n## When to use\n## When not to use\n## Parameters\n## Example\n");
   await writeFile(join(lib, "books", "count-twice", "example", "table.csv"), "a\n1\n2\n3\n");
   await writeFile(join(lib, "books", "count-twice", "example", "expected-summary.csv"), "rows\n1\n");
+  await mkdir(join(lib, "examples"), { recursive: true });
+  await writeFile(join(lib, "examples", "rows.csv"), "a\n1\n2\n");
+  await writeFile(
+    join(lib, "examples", "examples.yaml"),
+    "- { id: rows, title: Some rows, files: [{ path: rows.csv }], run: { book: count-twice, action: once } }\n- { id: plain, title: No run, files: [{ path: rows.csv }] }\n",
+  );
   await mkdir(join(tmp, "ui"));
   await writeFile(join(tmp, "ui", "index.html"), "<!doctype html>");
   await writeFile(join(tmp, "cells.csv"), "label\n1\n2\n");
@@ -122,6 +128,19 @@ describe("plans", () => {
     // books that came with the library don't change
     expect((await send("POST", `/api/plans/${plan.id}/save-as-book`, { ...meta("x"), id: "count-twice" })).status).toBe(409);
   });
+
+  it.skipIf(!dockerUp)("prepares an example by running its book action in the examples workspace", async () => {
+    const examples = await (await api("/api/examples")).json();
+    expect(examples).toEqual([expect.objectContaining({ id: "rows", run: { book: "count-twice", action: "once" } }), expect.not.objectContaining({ run: expect.anything() })]);
+    let plan: Plan = await (await send("POST", "/api/examples/rows/prepare")).json();
+    expect(plan).toMatchObject({ workspace: "examples", book: { id: "count-twice", action: "once" } });
+    for (let i = 0; i < 300 && !["done", "failed", "cancelled"].includes(plan.status); i++) {
+      await new Promise((ok) => setTimeout(ok, 100));
+      plan = await (await api(`/api/plans/${plan.id}`)).json();
+    }
+    expect(plan.status).toBe("done");
+    expect((await send("POST", "/api/examples/plain/prepare")).status).toBe(422);
+  }, 120_000);
 
   it.skipIf(!dockerUp)("tests a book on its example and marks it verified", async () => {
     const r = await (await send("POST", "/api/books/count-twice/test")).json();

@@ -113,7 +113,7 @@
                     "properties": {
                       "kind": {
                         "pattern": "^[a-z][a-z0-9-]*$",
-                        "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                        "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
                         "type": "string"
                       },
                       "formats": {
@@ -122,7 +122,7 @@
                         "type": "array",
                         "items": {
                           "pattern": "^[a-z0-9][a-z0-9-]*$",
-                          "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                          "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
                           "type": "string"
                         }
                       },

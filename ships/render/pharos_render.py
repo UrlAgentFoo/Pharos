@@ -17,6 +17,7 @@ import argparse
 import csv
 import json
 import os
+import sys
 
 import imageio.v3 as iio
 import numpy as np
@@ -196,7 +197,12 @@ def cmd_flow(args):
 
     fields = []
     for i, t in enumerate(times):
-        u = read_foam_field(os.path.join(case, t, "U"))
+        try:
+            u = read_foam_field(os.path.join(case, t, "U"))
+        except (ValueError, OSError) as e:
+            # one damaged time step shouldn't lose the whole video
+            print(f"skipping t = {t}: its velocity field can't be read ({str(e)[:80]})", file=sys.stderr, flush=True)
+            continue
         uv = LinearNDInterpolator(triangulation, u[:, :2])(pixels).reshape(height, width, 2)
         ux, uy = uv[..., 0], uv[..., 1]
         if args.field == "vorticity":
@@ -206,6 +212,8 @@ def cmd_flow(args):
         f[inside | np.isnan(f)] = np.nan
         fields.append(f)
         progress(0.6 * (i + 1) / len(times), f"read t = {t}")
+    if not fields:
+        sys.exit("no time step's velocity field could be read")
     stack = np.stack(fields)
     scale = np.nanpercentile(np.abs(stack), 99) or 1.0
     frames = []

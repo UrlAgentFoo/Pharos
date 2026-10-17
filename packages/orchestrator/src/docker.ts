@@ -4,10 +4,12 @@
  * directly gives byte-level download progress and needs no dependency.
  */
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { readFile, readdir } from "node:fs/promises";
 import { type IncomingMessage, request } from "node:http";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 export class DockerError extends Error {
   constructor(
@@ -24,6 +26,32 @@ export interface ImageInfo {
   RepoTags: string[] | null;
   RepoDigests: string[] | null;
   Size: number;
+  Config?: { Labels?: Record<string, string> | null } | null;
+}
+
+/** The label a built ship image carries: a hash of the folder it was built from. */
+export const CONTEXT_LABEL = "pharos.context";
+
+/**
+ * A hash of what goes into a ship's image: every file in its folder except
+ * its tests and ship.yaml (which Pharos reads, not the image). When it no
+ * longer matches the image's label, the image is out of date.
+ */
+export async function contextHash(dir: string): Promise<string> {
+  const hash = createHash("sha256");
+  const walk = async (d: string) => {
+    const entries = (await readdir(d, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+    for (const e of entries) {
+      if (e.name.startsWith(".") || e.name === "__pycache__") continue;
+      const p = join(d, e.name);
+      const rel = relative(dir, p).split("\\").join("/");
+      if (rel === "test" || rel === "ship.yaml") continue;
+      if (e.isDirectory()) await walk(p);
+      else if (e.isFile()) hash.update(`${rel}\0`).update(await readFile(p)).update("\0");
+    }
+  };
+  await walk(dir);
+  return hash.digest("hex").slice(0, 16);
 }
 
 export interface ContainerSpec {
@@ -48,9 +76,10 @@ export interface ContainerSpec {
  * line (BuildKit), and reports each line of its output. Ship folders hold
  * the Dockerfile of images that aren't published to a registry.
  */
-export function buildImage(context: string, tag: string, onLine: (line: string) => void = () => {}, signal?: AbortSignal): Promise<void> {
+export function buildImage(context: string, tag: string, onLine: (line: string) => void = () => {}, signal?: AbortSignal, labels: Record<string, string> = {}): Promise<void> {
   return new Promise((ok, fail) => {
-    const child = spawn("docker", ["build", "--progress=plain", "--tag", tag, context], { stdio: ["ignore", "pipe", "pipe"], signal });
+    const labelArgs = Object.entries(labels).flatMap(([k, v]) => ["--label", `${k}=${v}`]);
+    const child = spawn("docker", ["build", "--progress=plain", ...labelArgs, "--tag", tag, context], { stdio: ["ignore", "pipe", "pipe"], signal });
     const tail: string[] = [];
     const read = (chunk: Buffer) => {
       for (const line of chunk.toString("utf8").split(/\r?\n/)) {
@@ -229,25 +258,57 @@ export class DockerClient {
   async followLogs(id: string, onLine: (stream: "stdout" | "stderr", line: string) => void): Promise<void> {
     const res = await this.raw("GET", `/containers/${id}/logs?follow=1&stdout=1&stderr=1`);
     if ((res.statusCode ?? 500) >= 300) throw new DockerError(res.statusCode ?? 500, "cannot read the container's output");
-    const pending = { stdout: "", stderr: "" };
-    const emit = (stream: "stdout" | "stderr", text: string, flush = false) => {
-      pending[stream] += text;
-      const parts = pending[stream].split(/\r?\n/);
-      pending[stream] = flush ? "" : parts.pop()!;
-      for (const line of parts) if (line || !flush) onLine(stream, line);
-    };
-    // without a TTY, Docker frames each chunk: [stream, 0, 0, 0, size (4 bytes, big-endian)]
-    let buf = Buffer.alloc(0);
-    for await (const chunk of res) {
-      buf = Buffer.concat([buf, chunk as Buffer]);
-      while (buf.length >= 8) {
-        const size = buf.readUInt32BE(4);
-        if (buf.length < 8 + size) break;
-        emit(buf[0] === 2 ? "stderr" : "stdout", buf.subarray(8, 8 + size).toString("utf8"));
-        buf = buf.subarray(8 + size);
-      }
-    }
-    emit("stdout", "", true);
-    emit("stderr", "", true);
+    await readFrames(res, onLine);
   }
+
+  /** Containers (running or not) that carry `label`. */
+  listContainers(label: string): Promise<{ Id: string; State: string }[]> {
+    return this.call("GET", `/containers/json?all=1&filters=${encodeURIComponent(JSON.stringify({ label: [label] }))}`);
+  }
+
+  /** Whether a container exists and is running. */
+  async running(id: string): Promise<boolean> {
+    try {
+      return (await this.call<{ State: { Running: boolean } }>("GET", `/containers/${id}/json`)).State.Running;
+    } catch (e) {
+      if (e instanceof DockerError && e.status === 404) return false;
+      throw e;
+    }
+  }
+
+  /**
+   * Runs a command inside a running container (as its user, without a
+   * shell), streaming its output line by line; resolves to its exit code.
+   */
+  async exec(id: string, cmd: string[], onLine: (stream: "stdout" | "stderr", line: string) => void = () => {}): Promise<number> {
+    const { Id } = await this.call<{ Id: string }>("POST", `/containers/${id}/exec`, { Cmd: cmd, AttachStdout: true, AttachStderr: true, Tty: false });
+    const res = await this.raw("POST", `/exec/${Id}/start`, { Detach: false, Tty: false });
+    if ((res.statusCode ?? 500) >= 300) throw new DockerError(res.statusCode ?? 500, "cannot run the command in the container");
+    await readFrames(res, onLine);
+    return (await this.call<{ ExitCode: number | null }>("GET", `/exec/${Id}/json`)).ExitCode ?? -1;
+  }
+}
+
+/** Splits Docker's multiplexed stdout/stderr stream (used without a TTY) into lines. */
+async function readFrames(res: IncomingMessage, onLine: (stream: "stdout" | "stderr", line: string) => void) {
+  const pending = { stdout: "", stderr: "" };
+  const emit = (stream: "stdout" | "stderr", text: string, flush = false) => {
+    pending[stream] += text;
+    const parts = pending[stream].split(/\r?\n/);
+    pending[stream] = flush ? "" : parts.pop()!;
+    for (const line of parts) if (line || !flush) onLine(stream, line);
+  };
+  // each chunk is framed: [stream, 0, 0, 0, size (4 bytes, big-endian)]
+  let buf = Buffer.alloc(0);
+  for await (const chunk of res) {
+    buf = Buffer.concat([buf, chunk as Buffer]);
+    while (buf.length >= 8) {
+      const size = buf.readUInt32BE(4);
+      if (buf.length < 8 + size) break;
+      emit(buf[0] === 2 ? "stderr" : "stdout", buf.subarray(8, 8 + size).toString("utf8"));
+      buf = buf.subarray(8 + size);
+    }
+  }
+  emit("stdout", "", true);
+  emit("stderr", "", true);
 }

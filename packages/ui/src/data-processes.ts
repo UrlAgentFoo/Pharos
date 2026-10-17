@@ -394,6 +394,35 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     }
   }
 
+  async viewsFor(artifact: Artifact): Promise<{ tool: string; title: string; summary: string }[]> {
+    await this.loadShips();
+    const out: { tool: string; title: string; summary: string }[] = [];
+    for (const ship of this.ships.values()) {
+      for (const [name, op] of Object.entries(ship.operations)) {
+        if (!op.view) continue;
+        if ((op.inputs ?? []).some((i) => !i.optional && i.kind === artifact.kind && i.formats.includes(artifact.format))) out.push({ tool: `${ship.id}.${name}`, title: ship.id, summary: op.summary });
+      }
+    }
+    return out;
+  }
+
+  /** Runs a view as a job of its own, outside the window's history; the cache makes it instant next time. */
+  async runView(doc: DataDoc, artifact: Artifact, tool: string): Promise<Artifact> {
+    const [shipId, opName] = tool.split(".");
+    const op = this.ships.get(shipId)?.operations[opName];
+    const port = op?.inputs?.find((i) => !i.optional);
+    if (!op || !port) throw new Error(`no view ${tool}`);
+    const s = this.server;
+    let job = await s.runJob({ workspace: doc.workspace, tool, inputs: { [port.name]: artifact.id } });
+    while (job.state !== "done" && job.state !== "failed" && job.state !== "cancelled") {
+      await new Promise((ok) => setTimeout(ok, 500));
+      job = await s.job(job.id);
+    }
+    const id = job.state === "done" ? Object.values(job.outputs ?? {})[0] : undefined;
+    if (!id) throw new Error(`${tool} couldn't show it: ${job.error ?? job.state}`);
+    return s.artifact(doc.workspace, id);
+  }
+
   /** A job's log so far, in a dialog. */
   async showLog(jobId: string) {
     const job = await this.server.job(jobId).catch(() => null);
