@@ -36,9 +36,11 @@ export function alertDialog(title: string, message: string) {
   return showDialog(`<h2>${escapeHtml(title)}</h2><p>${escapeHtml(message)}</p><footer><button class="primary" data-cancel>OK</button></footer>`, () => {}, undefined);
 }
 
-export function confirmDialog(title: string, message: string, ok = "OK") {
+/** With `danger`, a warning over the title and a red confirm button, for removing or forgetting things. */
+export function confirmDialog(title: string, message: string, ok = "OK", danger = false) {
   return showDialog<boolean>(
-    `<h2>${escapeHtml(title)}</h2><p>${escapeHtml(message)}</p><footer><button data-cancel>Cancel</button><button class="primary" data-ok>${escapeHtml(ok)}</button></footer>`,
+    `${danger ? `<p class="eyebrow confirm-warn">${icon("warning", 13)} Warning</p>` : ""}<h2>${escapeHtml(title)}</h2><p>${escapeHtml(message)}</p>
+     <footer><button data-cancel>Cancel</button><button class="primary${danger ? " danger" : ""}" data-ok>${escapeHtml(ok)}</button></footer>`,
     (done, el) => el.querySelector("[data-ok]")!.addEventListener("click", () => done(true)),
     false,
   );

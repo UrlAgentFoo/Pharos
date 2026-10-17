@@ -103,13 +103,18 @@ export function thumbnailElement(img: Image, view: ViewState, max = 240): HTMLCa
   full.width = width;
   full.height = height;
   full.getContext("2d")!.putImageData(renderPixels(img, view), 0, 0);
+  return scaledCopy(full, width, height, max);
+}
+
+/** A copy of what `source` shows (a canvas, a video's current frame), at most `max` pixels on its longer side. */
+export function scaledCopy(source: CanvasImageSource, width: number, height: number, max: number): HTMLCanvasElement {
   const scale = Math.min(1, max / Math.max(width, height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * scale));
   canvas.height = Math.max(1, Math.round(height * scale));
   const ctx = canvas.getContext("2d")!;
   ctx.imageSmoothingQuality = "high";
-  ctx.drawImage(full, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
   return canvas;
 }
 

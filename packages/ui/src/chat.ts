@@ -1,8 +1,9 @@
 /**
- * The assistant, in the left column: the project's name, then the
- * conversation. You say what you want to find out about the active window's
- * data; the assistant picks a recipe (book) that fits and proposes its steps
- * in that window's history, and nothing runs until you approve them there.
+ * The assistant, in the left column: the project's name ("Ask Pharos" until
+ * it has one), then the conversation. You say what you want to find out
+ * about the active window's data; the assistant picks a recipe (book) that
+ * fits and proposes its steps in that window's history, and nothing runs
+ * until you approve them there.
  *
  * Its input sits in the bottom-left corner and doubles as search: as you
  * type, matching actions and windows show above it (arrows pick one, Enter
@@ -36,15 +37,15 @@ export interface AssistantHooks {
   ask(message: string): Promise<AskReply>;
   /** Actions and windows matching `query`, best first. */
   search(query: string): SearchHit[];
-  openSettings(): void;
   /** The project was renamed. */
   renamed(): void;
 }
 
 type Message = { role: "user"; text: string } | { role: "assistant"; reply: AskReply } | { role: "note"; text: string; error?: boolean };
 
-const UNTITLED = "Untitled project";
-const STARTERS = ["Count the nuclei and measure them", "Track the cells over time", "Reduce the noise and find the objects", "Make a video of this"];
+export const UNTITLED = "Untitled project";
+/** What the title shows until the project is named. */
+const ASK = "Ask Pharos";
 
 export class Assistant {
   private readonly log: HTMLElement;
@@ -66,7 +67,7 @@ export class Assistant {
   ) {
     column.innerHTML = `
       <p class="eyebrow assistant-status"></p>
-      <h1 class="display assistant-title" tabindex="0" title="Click to rename the project" spellcheck="false"></h1>
+      <h1 class="display assistant-title" tabindex="0" title="Click to name the project" spellcheck="false"></h1>
       <div class="assistant-log" aria-live="polite"></div>`;
     this.log = column.querySelector(".assistant-log")!;
     this.title = column.querySelector(".assistant-title")!;
@@ -74,9 +75,7 @@ export class Assistant {
     box.innerHTML = `
       <div class="ask-hits" role="listbox" hidden></div>
       <form class="ask">
-        <span class="ask-icon">${icon("sparkle", 15)}</span>
         <textarea rows="1" placeholder="Ask, or search actions and windows" aria-label="Ask the assistant or search"></textarea>
-        <kbd>${formatShortcut("Mod+K")}</kbd>
       </form>`;
     this.input = box.querySelector("textarea")!;
     this.hits = box.querySelector(".ask-hits")!;
@@ -232,18 +231,9 @@ export class Assistant {
   private render() {
     const log = this.log;
     log.innerHTML = "";
-    if (!this.messages.length) {
-      const why = this.hooks.unavailable();
-      const target = this.hooks.target();
-      log.innerHTML = `
-        <div class="assistant-intro">
-          <p class="muted">${target ? `Say what you want to find out about <strong>${escapeHtml(target)}</strong>: the assistant picks a recipe and proposes its steps in that window. Nothing runs until you approve.` : "Add your data, then say what you want to find out: the assistant picks a recipe and proposes its steps. Nothing runs until you approve."}</p>
-          ${why ? `<p class="chat-warn">${escapeHtml(why)}</p><button class="btn" data-settings>${icon("settings", 16)}<span>Open settings</span></button>` : ""}
-          ${target ? `<div class="chat-starters">${STARTERS.map((s) => `<button class="chip" data-starter="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("")}</div>` : ""}
-        </div>`;
-      log.querySelector("[data-settings]")?.addEventListener("click", () => this.hooks.openSettings());
-      log.querySelectorAll<HTMLElement>("[data-starter]").forEach((b) => b.addEventListener("click", () => void this.send(b.dataset.starter!)));
-    }
+    // before the conversation starts, only what stops the assistant; the column above lists what fits the window
+    const why = !this.messages.length && this.hooks.unavailable();
+    if (why) log.innerHTML = `<div class="assistant-intro"><p class="chat-warn">${escapeHtml(why)}</p></div>`;
     for (const m of this.messages) log.append(this.messageEl(m));
     if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Choosing a recipe…</p></div>`);
     log.scrollTop = log.scrollHeight;
@@ -259,13 +249,6 @@ export class Assistant {
     if (m.role === "note") {
       el.className = `msg note${m.error ? " error" : ""}`;
       el.textContent = m.text;
-      if (m.error && /Settings|API key/i.test(m.text)) {
-        const b = document.createElement("button");
-        b.className = "btn";
-        b.innerHTML = `${icon("settings", 16)}<span>Open settings</span>`;
-        b.addEventListener("click", () => this.hooks.openSettings());
-        el.append(b);
-      }
       return el;
     }
     const { reply } = m;
@@ -285,13 +268,14 @@ export class Assistant {
   private editTitle() {
     if (this.title.isContentEditable) return;
     this.title.contentEditable = "true";
-    this.title.textContent = this.name;
+    // an untitled project starts empty, so typing replaces "Ask Pharos"
+    this.title.textContent = this.name === UNTITLED ? "" : this.name;
     this.title.focus();
     getSelection()?.selectAllChildren(this.title);
   }
 
   private renderTitle() {
-    this.title.textContent = `${this.name}.`;
+    this.title.textContent = this.name === UNTITLED ? ASK : `${this.name}.`;
     this.title.classList.toggle("untitled", this.name === UNTITLED);
   }
 }

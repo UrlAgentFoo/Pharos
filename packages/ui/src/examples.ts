@@ -1,9 +1,10 @@
 /**
  * Example cards: a picture of the data, what it is, its name and the
- * question it comes with. On the start screen they wait behind "View
- * examples", then show as one row that scrolls sideways (the arrows, a
- * trackpad, or Tab), until "See more" lays them all out in a grid. The
- * Example data… dialog shows the grid.
+ * question it comes with. On the start screen "View examples" puts them in
+ * the drop area's place, at its height, as one row that scrolls sideways
+ * (the arrows, a trackpad, or Tab) and fades at the sides with more cards,
+ * until "See more", beside "Hide examples", lays them all out in a grid.
+ * The Example data… dialog shows the grid.
  */
 import type { Example } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
@@ -37,52 +38,59 @@ export function showPictures(s: LocalServer, root: ParentNode) {
 }
 
 const GAP = 12; // the list's gap, in px
+const FADE = 48; // each faded edge of the row (`--fade` in the stylesheet), in px
 
 const scrollBehavior = (): ScrollBehavior => (matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth");
 
 /** Wires the start screen's "View examples", "See more" and arrows; `onOpen` runs each time the examples show. */
 export function wireExampleGallery(onOpen: () => void) {
   const toggle = document.getElementById("examples-toggle") as HTMLButtonElement;
+  const stage = document.getElementById("welcome-stage")!;
   const section = document.getElementById("examples")!;
   const list = document.getElementById("example-list")!;
   const more = document.getElementById("examples-more") as HTMLButtonElement;
   const [prev, next] = [...section.querySelectorAll<HTMLButtonElement>("[data-scroll]")];
   toggle.innerHTML = `${icon("flask", 15)}<span>View examples</span><span class="caret" aria-hidden="true">▾</span>`;
+  more.innerHTML = `${icon("overview", 15)}<span>See more</span>`;
   prev.innerHTML = icon("chevron-left", 16);
   next.innerHTML = icon("chevron-right", 16);
 
   const update = () => {
     const grid = list.classList.contains("grid");
     const [end, left] = [list.scrollWidth - list.clientWidth, list.scrollLeft];
-    // nothing to see more of when every card already fits
-    more.hidden = !grid && end <= 1;
+    // only while the examples show, and only when there are more than fit
+    more.hidden = !stage.classList.contains("examples-on") || (!grid && end <= 1);
     prev.hidden = next.hidden = grid || end <= 1;
     prev.disabled = left <= 1;
     next.disabled = left >= end - 1;
+    // each side fades while cards wait beyond it
+    list.classList.toggle("more-before", !grid && !prev.disabled);
     list.classList.toggle("more-after", !grid && !next.disabled);
   };
-  toggle.addEventListener("click", () => {
-    section.hidden = !section.hidden;
-    toggle.setAttribute("aria-expanded", String(!section.hidden));
-    toggle.querySelector("span")!.textContent = section.hidden ? "View examples" : "Hide examples";
-    if (section.hidden) return;
-    onOpen();
-    update();
-    section.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
-  });
-  more.addEventListener("click", () => {
-    const grid = list.classList.toggle("grid");
+  const showGrid = (grid: boolean) => {
+    list.classList.toggle("grid", grid);
     more.setAttribute("aria-expanded", String(grid));
-    more.textContent = grid ? "See less" : "See more";
+    more.querySelector("span")!.textContent = grid ? "See less" : "See more";
     list.scrollLeft = 0;
     update();
-    if (grid) section.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
+  };
+  toggle.addEventListener("click", () => {
+    const on = stage.classList.toggle("examples-on");
+    toggle.setAttribute("aria-expanded", String(on));
+    toggle.querySelector("span")!.textContent = on ? "Hide examples" : "View examples";
+    if (!on) return showGrid(false); // the drop area comes back at the row's height, not the grid's
+    onOpen();
+    update();
+  });
+  more.addEventListener("click", () => {
+    showGrid(!list.classList.contains("grid"));
+    if (list.classList.contains("grid")) section.scrollIntoView({ block: "nearest", behavior: scrollBehavior() });
   });
   for (const b of [prev, next])
     b.addEventListener("click", () => {
-      // a page of whole cards at a time; the snap points line the next one up
+      // a page of the whole cards between the faded edges; the snap points line the next one up
       const card = (list.firstElementChild as HTMLElement | null)?.offsetWidth ?? 0;
-      const page = Math.max(1, Math.floor((list.clientWidth + GAP) / (card + GAP))) * (card + GAP);
+      const page = Math.max(1, Math.floor((list.clientWidth - 2 * FADE + GAP) / (card + GAP))) * (card + GAP);
       list.scrollBy({ left: Number(b.dataset.scroll) * page, behavior: scrollBehavior() });
     });
   // the browser leaves a half-hidden card where it is when Tab reaches it
@@ -90,5 +98,5 @@ export function wireExampleGallery(onOpen: () => void) {
     if (!list.classList.contains("grid")) (e.target as HTMLElement).closest(".example")?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: scrollBehavior() });
   });
   list.addEventListener("scroll", update, { passive: true });
-  window.addEventListener("resize", () => !section.hidden && update());
+  window.addEventListener("resize", () => stage.classList.contains("examples-on") && update());
 }

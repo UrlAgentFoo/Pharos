@@ -1,9 +1,8 @@
 import "./style.css";
-import type { Artifact, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
+import type { Artifact, CatalogueEntry, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
 import { type AiConfig, LocalServer } from "./api.js";
-import { type AskReply, Assistant, type SearchHit } from "./chat.js";
+import { type AskReply, Assistant, type SearchHit, UNTITLED } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
-import type { Suggestion } from "./data-window.js";
 import { alertDialog, browseDialog, confirmDialog, escapeHtml, isDialogOpen, promptDialog, showDialog } from "./dialogs.js";
 import { exampleCards, showPictures, wireExampleGallery } from "./examples.js";
 import { icon } from "./icons.js";
@@ -16,7 +15,8 @@ import { Autosave } from "./session.js";
 import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
 import { type DataDoc, Workspace } from "./workspace.js";
-import { currentWorkspace, isSupported, setFormats, workspacePanel } from "./workspace-panel.js";
+import { WindowSummary } from "./window-summary.js";
+import { currentWorkspace, formatTitle, isSupported, setFormats, workspacePanel } from "./workspace-panel.js";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -112,6 +112,7 @@ const ACTIONS: AppAction[] = [
   act({ id: "settings", title: "Assistant and API key…", menu: ["View"], icon: "sparkle", keywords: ["settings", "preferences", "api key", "assistant", "ai", "model"], enabled: () => true, run: () => settingsDialog() }),
   act({ id: "dark-mode", title: "Toggle dark mode", menu: ["View"], icon: "contrast", keywords: ["theme", "night", "light", "appearance"], enabled: () => true, run: () => setDark(document.documentElement.dataset.theme !== "dark") }),
   act({ id: "controls", title: "Show or hide the side panel", menu: ["Window"], icon: "panel", shortcut: "\\", keywords: ["inspector", "panel", "drawer", "settings"], enabled: hasWindow, run: () => ws.active && windows.toggleControls(ws.active.id) }),
+  act({ id: "fork", title: "Fork from this point", menu: ["Window"], icon: "branch", keywords: ["branch", "copy", "duplicate", "history", "try", "compare"], description: "A new window with the history up to the step on view", enabled: hasWindow, run: () => ws.active && processes.fork(ws.active) }),
   act({ id: "minimize", title: "Minimise window", menu: ["Window"], icon: "collapse", shortcut: "Mod+Shift+M", keywords: ["hide", "window"], enabled: hasWindow, run: () => ws.active && windows.minimize(ws.active.id) }),
   act({ id: "close", title: "Close window", menu: ["Window"], icon: "close", keywords: ["window"], enabled: hasWindow, run: () => ws.active && closeDoc(ws.active) }),
   act({ id: "layout-stack", title: "Stack windows", menu: ["Layout"], icon: "duplicate", keywords: ["cascade", "arrange", "cards"], enabled: hasWindow, run: () => windows.arrange("stack") }),
@@ -207,9 +208,10 @@ function togglePopover(key: string, anchor: DOMRect, html: () => string, wide = 
   pop.hidden = false;
   updateEnabled();
   const r = pop.getBoundingClientRect();
-  // under the anchor, kept on screen (menus from a window's right edge open leftwards)
+  // under the anchor, or above it when there's no room below (a window's history bar), kept on screen
   pop.style.left = `${Math.max(8, Math.min(innerWidth - r.width - 8, anchor.left))}px`;
-  pop.style.top = `${Math.min(innerHeight - r.height - 8, anchor.bottom + 6)}px`;
+  const below = anchor.bottom + 6 + r.height <= innerHeight - 8;
+  pop.style.top = `${below ? anchor.bottom + 6 : Math.max(8, anchor.top - 6 - r.height)}px`;
 }
 
 function closePopover() {
@@ -276,6 +278,38 @@ function updateDesk() {
   const changed = savedPrint !== null && savedPrint !== statePrint();
   const saved = lastSaved ? `saved ${lastSaved.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}${changed ? ", changed since" : ""}` : n ? "not saved yet" : "";
   assistant.setStatus(["Project", n ? `${n} window${n > 1 ? "s" : ""}` : "", saved].filter(Boolean).join(" · "));
+  $("project-label").querySelector("span")!.textContent = assistant.projectName === UNTITLED ? "New project" : assistant.projectName;
+}
+
+/** The project's name, top right of the start screen: click it to name the project; Enter or leaving keeps it, Escape doesn't. */
+function wireProjectLabel() {
+  const label = $<HTMLButtonElement>("project-label");
+  const input = $<HTMLInputElement>("project-label-input");
+  label.insertAdjacentHTML("beforeend", icon("pencil", 13));
+  const finish = (keep: boolean) => {
+    if (input.hidden) return;
+    input.hidden = true;
+    label.hidden = false;
+    if (keep && input.value.trim() !== (assistant.projectName === UNTITLED ? "" : assistant.projectName)) {
+      assistant.setProjectName(input.value.trim());
+      updateDesk();
+      scheduleAutosave();
+    }
+    label.focus();
+  };
+  label.addEventListener("click", () => {
+    input.value = assistant.projectName === UNTITLED ? "" : assistant.projectName;
+    label.hidden = true;
+    input.hidden = false;
+    input.focus();
+    input.select();
+  });
+  input.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== "Escape") return;
+    e.preventDefault(); // or the same Enter, once focus is back on the label, would open the field again
+    finish(e.key === "Enter");
+  });
+  input.addEventListener("blur", () => finish(true));
 }
 
 // ------------------------------------------------------------ projects: save, open, autosave
@@ -447,7 +481,6 @@ async function clearProject() {
   for (const d of [...ws.docs]) ws.close(d.id);
   assistant.setProjectName("");
   assistant.reset();
-  $<HTMLTextAreaElement>("problem").value = "";
   lastSaved = null;
   savedPrint = null;
   ws.touch();
@@ -499,14 +532,26 @@ function refresh() {
   updateDesk();
   scheduleAutosave();
   windows.sync();
+  overview.refresh(); // after sync, so windows added while it's open are in the grid
   assistant.refresh();
-  $("welcome").hidden = ws.docs.length > 0;
+  // with no window on screen (none open, or all minimised) the start screen stands alone;
+  // otherwise the column leads with the active window
+  const shown = ws.docs.filter((d) => !windows.isMinimized(d.id));
+  const active = ws.active && shown.includes(ws.active) ? ws.active : null;
+  $("welcome").hidden = shown.length > 0;
+  $("assistant").hidden = !shown.length;
+  $("assistant").classList.toggle("showing-window", !!active);
+  windowSummary.show(active, active ? shown.indexOf(active) + 1 : 0, shown.length);
   updateEnabled();
 }
 
+/** Closes a window once you've confirmed: its history goes, its data and results stay in the workspace. */
 async function closeDoc(doc: DataDoc) {
   const busy = doc.steps.some((s) => s.status === "running" || s.status === "queued");
-  if (busy && !(await confirmDialog(`Close ${doc.name}?`, "Some of its steps are still running; they carry on, and their results stay in the workspace.", "Close"))) return;
+  const why = busy
+    ? "Some of its steps are still running; they carry on, and their results stay in the workspace."
+    : `The window and its history close. The data${doc.steps.length ? " and its results stay" : " stays"} in the workspace.`;
+  if (!(await confirmDialog(`Close ${doc.name}?`, why, "Close window"))) return;
   ws.close(doc.id);
 }
 
@@ -522,6 +567,11 @@ const processes: DataProcesses = new DataProcesses(ws, {
 async function dataMenu(doc: DataDoc, anchor: DOMRect) {
   const html = await processes.menuHtml(doc);
   togglePopover(`data:${doc.id}`, anchor, () => html);
+}
+
+async function suggestMenu(doc: DataDoc, anchor: DOMRect) {
+  const html = await processes.suggestHtml(doc);
+  togglePopover(`suggest:${doc.id}`, anchor, () => html);
 }
 
 async function openWorkspace() {
@@ -581,23 +631,24 @@ async function ask(text: string): Promise<AskReply> {
 function aiUnavailable(): string | null {
   if (!server) return NO_SERVER;
   if (!aiConfig) return "Assistant settings are unavailable.";
-  if (!aiConfig.keySource) return "Add an Anthropic API key in Settings to use the assistant.";
+  if (!aiConfig.keySource) return "To use the assistant, add an Anthropic API key in Settings › Assistant and API key…, top right.";
   return null;
 }
 
-// ------------------------------------------------------------ data first: add data, examples, the problem statement
-
-/** The optional problem statement on the start screen. */
-const problemText = () => $<HTMLTextAreaElement>("problem").value.trim();
+// ------------------------------------------------------------ data first: add data, or an example and its question
 
 /**
  * Once data is in the workspace, each item opens in its own window; with a
- * problem statement (and the assistant set up) the assistant proposes a plan.
+ * question (an example's, and the assistant set up) the assistant proposes a plan.
  */
-async function dataFlow(workspace: string, artifacts: Artifact[]) {
+async function dataFlow(workspace: string, artifacts: Artifact[], text = "") {
   if (!server || !artifacts.length) return;
-  for (const a of artifacts) ws.open(a, workspace);
-  const text = problemText();
+  for (const a of artifacts) {
+    const fresh = !ws.docs.some((d) => d.source.id === a.id && d.workspace === workspace);
+    const doc = ws.open(a, workspace);
+    // a window new to this data opens with its book's opening action (an OpenFOAM case: its 3D model)
+    if (fresh) void processes.openWith(doc).catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
+  }
   if (text && !aiUnavailable()) return assistant.focus(text);
   if (text && aiConfig && !aiConfig.keySource) notify("Add an API key in Settings and the assistant will propose the steps; for now, pick a suggestion in the window or its ⋯ menu.");
 }
@@ -648,8 +699,7 @@ async function loadExample(s: LocalServer, e: Example) {
   const workspace = currentWorkspace();
   const added = await run(`Loading ${e.title}`, () => s.loadExample(e.id, workspace));
   if (!added) return;
-  $<HTMLTextAreaElement>("problem").value = e.prompt;
-  await dataFlow(workspace, added);
+  await dataFlow(workspace, added, e.prompt);
 }
 
 async function showExamples(s: LocalServer) {
@@ -717,7 +767,10 @@ async function connectShips(s: LocalServer) {
         if (e.done) pulls.delete(e.ship);
         else pulls.set(e.ship, e);
         updateActivity();
+        if (e.done) windowSummary.invalidate();
+        else windowSummary.render();
       }
+      if (e.type === "library") windowSummary.invalidate();
     },
     (reconnect) => {
       if (reconnect) void processes.resync();
@@ -788,19 +841,43 @@ const assistant = new Assistant($("assistant"), $("ask-box"), {
   target: () => ws.active?.name ?? null,
   ask,
   search: searchHits,
-  openSettings: () => void settingsDialog(),
   renamed: () => {
     updateDesk();
     scheduleAutosave();
   },
 });
 
+// the active window, atop the left column in the project's place (its name is top right)
+const summaryEl = document.createElement("section");
+summaryEl.className = "window-summary";
+summaryEl.setAttribute("aria-label", "The active window");
+$("assistant").insertBefore(summaryEl, $("assistant").querySelector(".assistant-log"));
+const windowSummary = new WindowSummary(summaryEl, {
+  server: () => server,
+  pulls: () => pulls,
+  formatTitle,
+  getReady: (book) => void getReady(book),
+  useBook: (doc, book, action) => void processes.useBook(doc, book, action),
+  select: (doc, marker) => processes.select(doc, marker),
+  showLog: (jobId) => void processes.showLog(jobId),
+});
+
+/** Downloads or sets up a book's missing ships now, so its first run doesn't wait (as Books… › Get ready). */
+async function getReady(book: CatalogueEntry) {
+  const s = server;
+  if (!s) return;
+  const r = await run(`Getting ${book.title} ready`, () => s.getReady(book.id));
+  if (r) notify(r.pulling.length ? `Getting ${r.pulling.map((p) => p.id).join(", ")} ready; follow it under Running in the top bar.` : `${book.title} is ready.`);
+}
+
 const windows: WindowManager = new WindowManager($("desktop"), ws, {
   dataMenu: (doc, anchor) => void dataMenu(doc, anchor),
+  close: (doc) => void closeDoc(doc),
   data: {
     server: () => server,
     notify,
     select: (doc, marker, output) => processes.select(doc, marker, output),
+    fork: (doc) => processes.fork(doc),
     approve: (doc) => processes.approve(doc),
     rerun: (doc) => processes.rerun(doc),
     cancel: (doc) => processes.cancel(doc),
@@ -808,11 +885,13 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     viewsFor: (a) => processes.viewsFor(a),
     runView: (doc, a, tool) => processes.runView(doc, a, tool),
     updateStep: (doc, i, params) => processes.updateStep(doc, i, params),
+    runControls: (doc, first) => processes.runControls(doc, first),
+    updateRun: (doc, first, values) => void processes.updateRun(doc, first, values),
+    nextActions: (doc) => processes.nextActions(doc),
+    runNext: (doc, book, action, values) => void processes.runNext(doc, book, action, values),
     removeStep: (doc, i) => processes.removeStep(doc, i),
-    apply: (doc, s) => void processes.apply(doc, s),
-    suggestions: (doc, a): Promise<Suggestion[]> => processes.suggestions(doc, a),
+    suggestMenu: (doc, anchor) => void suggestMenu(doc, anchor),
     stepSpec: (r) => processes.stepSpec(r),
-    openSeparately: (doc, a) => processes.openSeparately(doc, a),
   },
   insets,
   expandArea: () => {
@@ -846,10 +925,6 @@ document.addEventListener("keydown", (e) => {
   if (isDialogOpen() || overview.isOpen) return;
   const target = e.target as HTMLElement;
   const typing = target.matches("input, select, textarea") || target.isContentEditable;
-  if (matchesShortcut(e, "Mod+K")) {
-    e.preventDefault();
-    return assistant.focus();
-  }
   if (e.key === "Escape" && !pop.hidden) return closePopover();
   if (typing) return;
   // Tab shows every open window (like Mission Control) unless focus is on a control,
@@ -898,11 +973,7 @@ document.addEventListener("drop", (e) => {
   void dropData(files, folders);
 });
 
-$("formats-toggle").addEventListener("click", () => {
-  const f = $("formats");
-  f.hidden = !f.hidden;
-  $("formats-toggle").setAttribute("aria-expanded", String(!f.hidden));
-});
+wireProjectLabel();
 wireExampleGallery(() => {
   if (server) showPictures(server, $("example-list"));
 });
@@ -913,7 +984,6 @@ bar.querySelector('[data-action="save-project"]')!.innerHTML = `${icon("save", 1
 bar.querySelector('[data-action="open-project"]')!.innerHTML = `${icon("open", 15)}<span>Open</span>`;
 bar.querySelector('[data-action="clear-project"]')!.innerHTML = `${icon("new", 15)}<span>Clear</span>`;
 $("drop-icon").innerHTML = icon("upload", 40);
-$("welcome-hint").innerHTML = `<kbd>Tab</kbd> shows every window · <kbd>${formatShortcut("Mod+K")}</kbd> finds any action or asks the assistant`;
 document.documentElement.classList.toggle("mac", isMac);
 buildToolbar();
 document.addEventListener("visibilitychange", () => {

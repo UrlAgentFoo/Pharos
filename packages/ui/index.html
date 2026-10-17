@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Pharos</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%232b2a27'/%3E%3Cpath d='M11 8v16M11 16l8-8M13.5 14l6.5 10' stroke='%23f3f0eb' stroke-width='2.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%232b2a27'/%3E%3Cg stroke='%23f3f0eb' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.5 9 16 6.5 19.5 9Z'/%3E%3Cpath d='M13.5 9v3.5h5V9'/%3E%3Cpath d='M12.5 12.5h7'/%3E%3Cpath d='M14 12.5 12.5 24.5h7L18 12.5'/%3E%3Cpath d='M13.2 18.5h5.6'/%3E%3Cpath d='M10 24.5h12'/%3E%3Cpath d='M10.5 10.2 7 9.2M21.5 10.2l3.5-1'/%3E%3C/g%3E%3C/svg%3E" />
   </head>
   <body>
     <header class="topbar" id="toolbar" aria-label="Pharos"></header>
@@ -22,42 +22,38 @@
       </div>
 
       <div class="welcome" id="welcome">
-        <p class="eyebrow">Pharos · New project</p>
         <h1 class="display">Drop your data.</h1>
         <p class="chat-warn" id="no-server" hidden>Pharos runs its tools on this computer through its local server. Start it with <code>npx pharos-lab</code> and open the address it prints.</p>
-        <button class="dropzone" data-action="add-data" aria-describedby="formats-line">
-          <span class="dropzone-icon" id="dropzone-icon"></span>
-          <span class="dropzone-title">Drag and drop files here</span>
-          <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, tables · or click to choose</span>
-        </button>
-        <label class="problem">
-          <span>What do you want to find out? <small>optional</small></span>
-          <textarea id="problem" rows="2" placeholder="e.g. Track the nuclei and measure how fast they move"></textarea>
-        </label>
-        <p class="formats-line" id="formats-line">Pharos finds the books that can run on your data. <button class="link" id="formats-toggle" aria-expanded="false" aria-controls="formats">What data can I use?</button></p>
-        <div class="formats" id="formats" hidden>
-          <p class="eyebrow">Accepted data</p>
-          <ul>
-            <li>Microscopy: TIFF, OME-TIFF, Zeiss <code>.czi</code>, Nikon <code>.nd2</code>, Leica <code>.lif</code>, OME-Zarr folders; 2D, 3D, channels and time</li>
-            <li>Simulation: OpenFOAM case folders (<code>system/</code>, <code>constant/</code>, <code>0/</code>)</li>
-            <li>Tables (<code>.csv</code>, <code>.parquet</code>), meshes (<code>.ply</code>, <code>.vtk</code>) and videos (<code>.mp4</code>)</li>
-          </ul>
-          <p class="muted small">Folders (OpenFOAM cases, OME-Zarr) can't be dragged in yet: click the box above and choose the folder.</p>
+        <!-- the drop area, or the examples in its place -->
+        <div class="welcome-stage" id="welcome-stage">
+          <button class="dropzone" data-action="add-data">
+            <span class="dropzone-icon" id="dropzone-icon"></span>
+            <span class="dropzone-title">Drag and drop files here</span>
+            <span class="dropzone-sub">microscopy images and time-lapses, simulation cases, tables · or click to choose</span>
+          </button>
+          <section class="examples" id="examples" aria-labelledby="examples-title">
+            <header class="examples-head">
+              <h2 class="examples-title" id="examples-title">Get started from our examples</h2>
+              <span class="examples-nav">
+                <button class="icon-btn" data-scroll="-1" aria-label="Previous examples" title="Previous examples"></button>
+                <button class="icon-btn" data-scroll="1" aria-label="Next examples" title="Next examples"></button>
+              </span>
+            </header>
+            <div class="example-list" id="example-list"></div>
+          </section>
         </div>
-        <button class="tb-text examples-toggle" id="examples-toggle" aria-expanded="false" aria-controls="examples" hidden>View examples</button>
-        <section class="examples" id="examples" aria-labelledby="examples-title" hidden>
-          <header class="examples-head">
-            <p class="eyebrow" id="examples-title">Examples</p>
-            <p class="muted small">Synthetic data, each with a question to try. Pick one to open it.</p>
-            <span class="spacer"></span>
-            <button class="link" id="examples-more" aria-expanded="false" aria-controls="example-list">See more</button>
-            <button class="icon-btn" data-scroll="-1" aria-label="Previous examples" title="Previous examples"></button>
-            <button class="icon-btn" data-scroll="1" aria-label="Next examples" title="Next examples"></button>
-          </header>
-          <div class="example-list" id="example-list"></div>
-        </section>
-        <p class="welcome-hint" id="welcome-hint"></p>
+        <div class="examples-actions">
+          <button class="tb-text examples-toggle" id="examples-toggle" aria-expanded="false" aria-controls="examples" hidden>View examples</button>
+          <button class="tb-text" id="examples-more" aria-expanded="false" aria-controls="example-list" hidden>See more</button>
+        </div>
       </div>
+
+      <!-- bottom centre, between the ask box and the project buttons; windows can cover it -->
+      <p class="desk-hint"><kbd>Tab</kbd> shows every window</p>
+
+      <!-- top right: the project's name, always; click it to name the project -->
+      <button class="project-label" id="project-label" title="Click to name the project">Pharos · <span>New project</span></button>
+      <input class="project-label-input" id="project-label-input" aria-label="Project name" placeholder="Name this project" spellcheck="false" hidden />
     </main>
 
     <div class="busy" id="busy" hidden>Working…</div>

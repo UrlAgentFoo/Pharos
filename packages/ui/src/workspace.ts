@@ -17,6 +17,8 @@ export interface DataStep {
   with: Params;
   /** The recipe (book) the step came from, shown as a label over its steps. */
   book?: { id: string; title: string; action?: string };
+  /** The run that added the step: a book action's steps share one, and show as one block in the history. */
+  block?: string;
   /** proposed: waiting for Approve; stale: changed, re-runs on the next run. */
   status: "proposed" | "stale" | "queued" | "running" | "done" | "failed" | "cancelled";
   progress?: number;
@@ -48,8 +50,8 @@ export interface DataDoc {
   output?: string;
   /** Why the assistant proposed these steps, when it did. */
   rationale?: string;
-  /** Side panel open, history line full or slim, and which view fills the body: the selected step, or every result as a grid. */
-  ui: { controls: boolean; history: "full" | "slim"; mode?: "history" | "results" };
+  /** Side panel open, history line full or slim, and the Controls' results section open. */
+  ui: { controls: boolean; history: "full" | "slim"; results?: boolean };
 }
 
 let nextDoc = 0;
@@ -135,4 +137,51 @@ export class Workspace {
   private emit() {
     for (const fn of this.listeners) fn();
   }
+}
+
+/** One run in a window's history: the steps one action added, shown as a single block. */
+export interface TimeBlock {
+  /** Its steps, as indices into `doc.steps`. */
+  first: number;
+  last: number;
+  title: string;
+  status: DataStep["status"];
+}
+
+/** A new run's id, shared by the steps it adds. */
+export const newBlock = (): string => Math.random().toString(36).slice(2, 10);
+
+/** The window's history as runs, in order. Steps saved before runs had ids group by the book action they came from. */
+export function timeBlocks(doc: DataDoc): TimeBlock[] {
+  const out: TimeBlock[] = [];
+  const key = (s: DataStep) => s.block ?? (s.book ? `${s.book.id}/${s.book.action ?? ""}` : undefined);
+  doc.steps.forEach((s, i) => {
+    const prev = out[out.length - 1];
+    if (prev && key(s) !== undefined && key(s) === key(doc.steps[prev.last])) prev.last = i;
+    else out.push({ first: i, last: i, title: "", status: s.status });
+  });
+  for (const b of out) {
+    const steps = doc.steps.slice(b.first, b.last + 1);
+    b.title = steps[0].book?.title ?? stepTitle(steps[0]);
+    b.status = blockStatus(steps);
+  }
+  return out;
+}
+
+/** The run that holds step `marker` (1-based); -1 for the data itself. */
+export function blockAt(blocks: TimeBlock[], marker: number): number {
+  return marker === 0 ? -1 : blocks.findIndex((b) => marker - 1 >= b.first && marker - 1 <= b.last);
+}
+
+/** A step's name for people: its operation, in words ("gaussian blur"). */
+export function stepTitle(step: DataStep): string {
+  const op = step.run.split(".")[1] ?? step.run;
+  const words = op.replace(/[-_]+/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** A run's status: what's under way first, then what went wrong, then what's waiting. */
+function blockStatus(steps: DataStep[]): DataStep["status"] {
+  for (const s of ["running", "queued", "failed", "proposed", "stale", "cancelled"] as const) if (steps.some((x) => x.status === s)) return s;
+  return "done";
 }

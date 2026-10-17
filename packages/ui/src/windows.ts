@@ -26,6 +26,8 @@ interface Win {
   rect: Rect;
   z: number;
   minimized: boolean;
+  /** What it showed when it was minimised, for its card on the shelf. */
+  thumb: HTMLCanvasElement | null;
   /** The rect to restore when un-zooming. */
   zoomedFrom: Rect | null;
 }
@@ -39,12 +41,16 @@ export interface WindowHooks {
   expandArea(): Rect;
   /** Opens a window's ⋯ menu under `anchor`. */
   dataMenu(doc: DataDoc, anchor: DOMRect): void;
+  /** Closes a window, once you've confirmed. */
+  close(doc: DataDoc): void;
   data: DataWindowHooks;
 }
 
 const TITLE_H = 36;
 const MIN_W = 300;
 const MIN_H = 220;
+/** Where a window can be resized from: the bottom and side edges, and both bottom corners (the top is its title bar). */
+const EDGES = ["s", "e", "w", "se", "sw"] as const;
 
 export class WindowManager {
   private wins = new Map<string, Win>();
@@ -80,13 +86,8 @@ export class WindowManager {
     for (const doc of docs) {
       const w = this.wins.get(doc.id) ?? this.create(doc);
       w.el.classList.toggle("controls-open", doc.ui.controls);
-      w.el.classList.toggle("history-slim", doc.ui.history === "slim");
       w.el.querySelector(".win-title-text")!.textContent = doc.name;
       w.el.setAttribute("aria-label", doc.name);
-      const results = doc.ui.mode === "results";
-      const mode = w.el.querySelector("[data-win=\"mode\"]")!;
-      mode.textContent = results ? "View history" : "View results";
-      mode.setAttribute("aria-pressed", String(results));
       const side = w.el.querySelector("[data-win=\"controls\"]")!;
       side.setAttribute("aria-pressed", String(doc.ui.controls));
       side.setAttribute("title", doc.ui.controls ? "Hide the side panel" : "Show the side panel");
@@ -122,14 +123,12 @@ export class WindowManager {
         <div class="win-left">
           <div class="win-name"><span class="win-kind">${icon(kindIcon(doc.source.kind), 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
         </div>
-        <div class="win-center">
-          <button class="win-ctl-toggle" data-win="mode" title="Switch between the history and a grid of every result"></button>
-        </div>
         <div class="win-right">
           <button class="win-icon" data-win="controls" aria-label="Side panel">${icon("panel", 16)}</button>
           <button class="win-icon" data-win="menu" title="Tools for this data" aria-label="Tools for this data">${icon("more", 16)}</button>
           <button class="win-icon" data-win="min" title="Minimise (⇧⌘M)" aria-label="Minimise window">${icon("minimize", 15)}</button>
           <button class="win-icon win-zoom" data-win="zoom" title="Expand" aria-label="Expand window">${icon("expand", 15)}</button>
+          <button class="win-icon" data-win="close" title="Close" aria-label="Close window">${icon("close", 15)}</button>
         </div>
       </header>
       <div class="win-main">
@@ -137,13 +136,12 @@ export class WindowManager {
       </div>
       <footer class="win-history">
         <div class="win-history-bar"></div>
-        <button class="win-history-toggle" data-win="history" title="Slim or full history" aria-label="Toggle history size">${icon("collapse", 14)}</button>
       </footer>
-      <div class="win-resize" aria-hidden="true"></div>`;
+      ${EDGES.map((e) => `<div class="win-resize" data-edge="${e}" aria-hidden="true"></div>`).join("")}`;
     this.desktop.append(el);
     const view = new DataWindow(doc, el.querySelector<HTMLElement>(".win-body")!, el.querySelector<HTMLElement>(".win-history-bar")!, this.hooks.data);
     el.querySelector(".win-main")!.append(view.drawer);
-    const w: Win = { doc, el, view, rect: { x: 0, y: 0, w: 0, h: 0 }, z: ++this.topZ, minimized: false, zoomedFrom: null };
+    const w: Win = { doc, el, view, rect: { x: 0, y: 0, w: 0, h: 0 }, z: ++this.topZ, minimized: false, thumb: null, zoomedFrom: null };
     w.rect = this.initialRect();
     this.wins.set(doc.id, w);
     this.place(w, w.rect);
@@ -229,6 +227,8 @@ export class WindowManager {
   minimize(id: string) {
     const w = this.wins.get(id);
     if (!w || w.minimized) return;
+    // its card shows what you were looking at, so take the picture while it's still on screen
+    w.thumb = w.view.thumbnail(120);
     w.minimized = true;
     // hand focus to the topmost visible window, or to none if this was the last one
     const next = [...this.wins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
@@ -241,6 +241,7 @@ export class WindowManager {
     const w = this.wins.get(id);
     if (!w) return;
     w.minimized = false;
+    w.thumb = null;
     w.z = ++this.topZ;
     this.ws.activate(id);
     this.sync();
@@ -367,7 +368,7 @@ export class WindowManager {
     if (animate) setTimeout(() => w.el.classList.remove("animate"), 260);
   }
 
-  /** Activate on press, title-bar buttons, drag by the title, resize from the corner. */
+  /** Activate on press, title-bar buttons, drag by the title, resize from the bottom and side edges. */
   private wire(w: Win) {
     const { el, doc } = w;
     const id = doc.id;
@@ -384,15 +385,9 @@ export class WindowManager {
       const anchor = target.getBoundingClientRect();
       if (what === "zoom") this.toggleZoom(id);
       else if (what === "min") this.minimize(id);
+      else if (what === "close") this.hooks.close(doc);
       else if (what === "menu") this.hooks.dataMenu(doc, anchor);
-      else if (what === "mode") {
-        doc.ui.mode = doc.ui.mode === "results" ? "history" : "results";
-        this.ws.touch();
-      } else if (what === "controls") this.toggleControls(id);
-      else if (what === "history") {
-        doc.ui.history = doc.ui.history === "full" ? "slim" : "full";
-        this.ws.touch();
-      }
+      else if (what === "controls") this.toggleControls(id);
     });
 
     // drag by the title bar
@@ -423,24 +418,36 @@ export class WindowManager {
       if (!this.overviewOn && !(e.target as HTMLElement).closest("button")) this.toggleZoom(id);
     });
 
-    // resize from the bottom-right corner
-    const grip = el.querySelector<HTMLElement>(".win-resize")!;
-    grip.addEventListener("pointerdown", (e) => {
-      if (this.overviewOn) return;
-      e.preventDefault();
-      const start = { px: e.clientX, py: e.clientY, ...w.rect };
-      grip.setPointerCapture(e.pointerId);
-      const move = (ev: PointerEvent) => {
-        w.zoomedFrom = null;
-        this.place(w, { ...w.rect, w: Math.max(MIN_W, start.w + ev.clientX - start.px), h: Math.max(MIN_H, start.h + ev.clientY - start.py) });
-      };
-      const up = () => {
-        grip.removeEventListener("pointermove", move);
-        grip.removeEventListener("pointerup", up);
-      };
-      grip.addEventListener("pointermove", move);
-      grip.addEventListener("pointerup", up);
-    });
+    // resize from an edge or a bottom corner: each edge moves only its own side
+    for (const grip of el.querySelectorAll<HTMLElement>(".win-resize")) {
+      const edge = grip.dataset.edge!;
+      grip.addEventListener("pointerdown", (e) => {
+        if (this.overviewOn) return;
+        e.preventDefault();
+        const start = { px: e.clientX, py: e.clientY, ...w.rect };
+        grip.setPointerCapture(e.pointerId);
+        const move = (ev: PointerEvent) => {
+          w.zoomedFrom = null;
+          const dx = ev.clientX - start.px;
+          const dy = ev.clientY - start.py;
+          const r = { ...w.rect };
+          if (edge.includes("e")) r.w = Math.max(MIN_W, start.w + dx);
+          if (edge.includes("w")) {
+            // the left edge follows the pointer and the right one stays put, down to the narrowest window
+            r.w = Math.max(MIN_W, start.w - dx);
+            r.x = start.x + start.w - r.w;
+          }
+          if (edge.includes("s")) r.h = Math.max(MIN_H, start.h + dy);
+          this.place(w, r);
+        };
+        const up = () => {
+          grip.removeEventListener("pointermove", move);
+          grip.removeEventListener("pointerup", up);
+        };
+        grip.addEventListener("pointermove", move);
+        grip.addEventListener("pointerup", up);
+      });
+    }
   }
 
   /** Minimised windows as a small stack of cards in the bottom-left corner. */
@@ -454,12 +461,13 @@ export class WindowManager {
       card.style.setProperty("--i", String(mins.length - 1 - i));
       card.title = `Restore ${w.doc.name}`;
       card.setAttribute("aria-label", `Restore ${w.doc.name}`);
-      const thumb = w.view.thumbnail(120);
+      // minimised as the project opened, it had no picture yet: draw one once its view has loaded
+      const thumb = (w.thumb ??= w.view.thumbnail(120));
       if (thumb) card.append(thumb);
       else {
         const glyph = document.createElement("span");
         glyph.className = "shelf-glyph";
-        glyph.innerHTML = icon(kindIcon(w.doc.source.kind), 28);
+        glyph.innerHTML = icon(kindIcon(w.view.shownKind()), 28);
         card.append(glyph);
       }
       const label = document.createElement("span");

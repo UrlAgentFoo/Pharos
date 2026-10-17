@@ -11,14 +11,14 @@
  * from the cache, so only new or changed steps actually run; job events
  * then update each history node as it runs.
  */
-import { type Artifact, type BookAction, type BookCard, type BookManifest, type Job, type ParamSpec, type Params, type Plan, type ServerEvent, type ShipManifest, type Step, bookAction } from "@pharos/contracts";
+import { type Artifact, type BookAction, type BookCard, type BookManifest, type BookMatch, type ControlWhen, type DataSummary, type Job, type ParamSpec, type Params, type Plan, type ServerEvent, type ShipManifest, type Step, bookAction } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
-import type { DataWindowHooks, StepSpec, Suggestion } from "./data-window.js";
+import type { DataWindowHooks, NextAction, RunControls, StepSpec, Suggestion } from "./data-window.js";
 import { escapeHtml, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import { type Phase, heardFrom } from "./progress.js";
-import type { DataDoc, DataStep, Workspace } from "./workspace.js";
+import { type DataDoc, type DataStep, type Workspace, blockAt, newBlock, timeBlocks } from "./workspace.js";
 
 export interface ProcessHooks {
   server(): LocalServer | null;
@@ -38,7 +38,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "suggestMenu"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -127,6 +127,20 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     ];
   }
 
+  /** The Suggested menu in a window's history bar: what takes the data on view, books first. The ⋯ menu has every tool. */
+  async suggestHtml(doc: DataDoc): Promise<string> {
+    const shown = (await this.hooks.shownArtifact(doc)) ?? doc.source;
+    const list = await this.suggestions(doc, shown).catch(() => [] as Suggestion[]);
+    this.lastMenu = { doc, list };
+    const head = `<h4>${doc.marker > 0 ? "Next, with this result" : "Suggested for this data"}</h4>`;
+    if (!list.length) return `<section>${head}<p class="pop-note">Nothing in the library takes ${escapeHtml(shown.name ?? shown.kind)} yet.</p></section>`;
+    const row = (s: Suggestion, i: number) => {
+      const title = s.type === "book" ? s.title : s.id.split(".")[1].replace(/[-_]+/g, " ");
+      return `<button data-dp="apply:${i}" role="menuitem" title="${escapeHtml(s.summary)}">${icon(s.type === "book" ? "script" : "plug", 16)}<span>${escapeHtml(title)}</span><small>${escapeHtml(s.type === "book" ? s.book : s.id.split(".")[0])}</small></button>`;
+    };
+    return `<section>${head}${list.map(row).join("")}</section>`;
+  }
+
   /** The ⋯ menu of a data window: recipes, then every tool for what's on view (by ship), then window actions. */
   async menuHtml(doc: DataDoc): Promise<string> {
     const shown = (await this.hooks.shownArtifact(doc)) ?? doc.source;
@@ -148,6 +162,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
       ${[...byBook].map(([book, items]) => `<section><h4>${icon("book", 13)} ${escapeHtml(book)}</h4>${items.map(([i, s]) => item(i, s)).join("")}</section>`).join("") || `<section><h4>Books</h4><p class="pop-note">No book takes ${escapeHtml(shown.name ?? shown.kind)} yet.</p></section>`}
       ${[...byShip].map(([ship, ops]) => `<section><h4>${escapeHtml(ship)}${this.trust.get(ship) === "verified" ? " <small>verified</small>" : ""}</h4>${ops.map(([i, s]) => tool(i, s)).join("")}</section>`).join("") || `<section><h4>Tools</h4><p class="pop-note">No tool takes this yet.</p></section>`}
       <section>
+        <button data-dp="fork" role="menuitem">${icon("branch", 16)}<span>Fork from this point</span></button>
         ${doc.marker > 0 ? `<button data-dp="separate" role="menuitem">${icon("duplicate", 16)}<span>Open this result in its own window</span></button>` : ""}
         ${this.savable(doc).length ? `<button data-dp="save-book" role="menuitem">${icon("book", 16)}<span>Save these steps as a book…</span></button>` : ""}
         <button data-dp="controls" role="menuitem">${icon("panel", 16)}<span>${doc.ui.controls ? "Hide" : "Show"} controls</span></button>
@@ -166,6 +181,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
       const a = await this.hooks.shownArtifact(doc);
       if (a) this.openSeparately(doc, a);
     }
+    if (value === "fork") this.fork(doc);
     if (value === "controls") {
       doc.ui.controls = !doc.ui.controls;
       this.ws.touch();
@@ -281,7 +297,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     }
     const params = await this.paramsDialog(`${ship.id} › ${opName}`, op.summary, op.parameters ?? [], {}, "");
     if (!params) return;
-    const step: DataStep = { id: this.uniqueId(doc, opName.replace(/-/g, "_")), run: tool, in: wires, with: params, status: "stale" };
+    const step: DataStep = { id: this.uniqueId(doc, opName.replace(/-/g, "_")), run: tool, in: wires, with: params, status: "stale", block: newBlock() };
     doc.steps.push(step);
     doc.marker = doc.steps.length;
     doc.output = undefined;
@@ -310,6 +326,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     const inputWire: Record<string, string> = {};
     for (const input of action.inputs ?? []) inputWire[input.name] = this.pick(doc, input.accepts.kind, input.accepts.formats, used, `"${action.title}"`);
     const rename = new Map<string, string>();
+    const block = newBlock();
     for (const s of action.steps) {
       const id = this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id);
       rename.set(s.id, id);
@@ -317,7 +334,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     for (const s of action.steps) {
       const wires: Record<string, string> = {};
       for (const [port, w] of Object.entries(s.in ?? {})) wires[port] = w.startsWith("$") ? inputWire[w.slice(1)] : `${rename.get(w.split(".")[0])}.${w.split(".")[1]}`;
-      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, action, values), book: bookLabel(book, action), status });
+      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, action, values), book: bookLabel(book, action), block, status });
     }
   }
 
@@ -561,6 +578,200 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     return out;
   }
 
+  // ---------------------------------------------------------- a book's Controls design
+
+  private manifests = new Map<string, Promise<BookManifest>>();
+  private summaries = new Map<string, Promise<DataSummary | undefined>>();
+
+  private manifest(id: string): Promise<BookManifest> {
+    let m = this.manifests.get(id);
+    if (!m) {
+      m = this.server.book(id).then((r) => r.manifest);
+      m.catch(() => this.manifests.delete(id)); // try again next time
+      this.manifests.set(id, m);
+    }
+    return m;
+  }
+
+  /** What the window's data is (axes, time points, channels), read once. */
+  private summary(doc: DataDoc): Promise<DataSummary | undefined> {
+    const known = doc.source.meta.summary as DataSummary | undefined;
+    if (known) return Promise.resolve(known);
+    const key = `${doc.workspace}/${doc.source.id}`;
+    let s = this.summaries.get(key);
+    if (!s) {
+      s = this.server.match(doc.workspace, [doc.source.id]).then((r) => r.summaries[0], () => undefined);
+      this.summaries.set(key, s);
+    }
+    return s;
+  }
+
+  /** The book step behind each step of the run starting at `first`, when the run is still the action's steps in order. */
+  private async bookRun(doc: DataDoc, first: number) {
+    const block = timeBlocks(doc).find((b) => b.first === first);
+    const head = doc.steps[first];
+    if (!block || !head?.book) return null;
+    const action = bookAction(await this.manifest(head.book.id), head.book.action);
+    const steps = doc.steps.slice(block.first, block.last + 1);
+    if (!action || action.steps.length !== steps.length || action.steps.some((s, j) => s.run !== steps[j].run)) return null;
+    return { action, at: (target: string) => first + action.steps.findIndex((s) => s.id === target.split(".")[0]) };
+  }
+
+  /**
+   * The Controls for a run of a book action: its design's sections that fit
+   * the window's data, with the run's values. Null for a run of one operation,
+   * or a run whose steps no longer match the action.
+   */
+  async runControls(doc: DataDoc, first: number): Promise<RunControls | null> {
+    const run = await this.bookRun(doc, first).catch(() => null);
+    if (!run) return null;
+    const { action } = run;
+    const summary = await this.summary(doc);
+    const specs = new Map((action.parameters ?? []).map(({ sets: _sets, ...spec }) => [spec.name, spec as ParamSpec]));
+    const design = action.controls ?? [{ title: "Settings", params: [...specs.keys()] }];
+    const placed = new Set(design.flatMap((sec) => sec.params ?? []));
+    const sections: RunControls["sections"] = design
+      .filter((sec) => fits(sec.when, doc.source, summary))
+      .map((sec) => ({ title: sec.title, note: sec.note, params: (sec.params ?? []).flatMap((p) => specs.get(p) ?? []) }));
+    const rest = [...specs.values()].filter((p) => !placed.has(p.name));
+    if (rest.length) sections.push({ title: "More settings", params: rest, folded: true });
+    const values: Params = {};
+    for (const p of action.parameters ?? []) {
+      const target = Array.isArray(p.sets) ? p.sets[0] : p.sets;
+      const v = doc.steps[run.at(target)]?.with[target.split(".")[1]];
+      if (v !== undefined) values[p.name] = v;
+      else if (p.default !== undefined) values[p.name] = p.default;
+    }
+    return { sections, values };
+  }
+
+  private fitsLoading = new Map<string, Promise<BookMatch[]>>();
+
+  /** The books that can run on the window's data, best first, read once. */
+  private fitting(doc: DataDoc): Promise<BookMatch[]> {
+    const key = `${doc.workspace}/${doc.source.id}`;
+    let m = this.fitsLoading.get(key);
+    if (!m) {
+      m = this.server.match(doc.workspace, [doc.source.id]).then(
+        (r) => r.matches.filter((x) => x.tier !== "excluded"),
+        () => [],
+      );
+      this.fitsLoading.set(key, m);
+    }
+    return m;
+  }
+
+  /** An action laid out by its Controls design for the window's data, with its defaults: ready to run. */
+  private async offer(doc: DataDoc, book: BookManifest, name: string): Promise<NextAction | null> {
+    const action = bookAction(book, name);
+    if (!action) return null;
+    // only what the window has something for: the data itself, or a result of the right kind
+    const used = new Set<string>();
+    try {
+      for (const input of action.inputs ?? []) this.pick(doc, input.accepts.kind, input.accepts.formats, used, action.title);
+    } catch {
+      return null;
+    }
+    const summary = await this.summary(doc);
+    const specs = new Map((action.parameters ?? []).map(({ sets: _sets, ...spec }) => [spec.name, spec as ParamSpec]));
+    const design = action.controls ?? [{ title: "Settings", params: [...specs.keys()] }];
+    const placed = new Set(design.flatMap((sec) => sec.params ?? []));
+    const sections: RunControls["sections"] = design
+      .filter((sec) => fits(sec.when, doc.source, summary))
+      .map((sec) => ({ title: sec.title, note: sec.note, params: (sec.params ?? []).flatMap((p) => specs.get(p) ?? []) }));
+    const rest = [...specs.values()].filter((p) => !placed.has(p.name));
+    if (rest.length) sections.push({ title: "More settings", params: rest, folded: true });
+    const values = Object.fromEntries((action.parameters ?? []).flatMap((p) => (p.default === undefined ? [] : [[p.name, p.default]])));
+    return { book: { id: book.id, title: book.title }, action: action.name, title: action.title, summary: action.summary, sections, values };
+  }
+
+  /**
+   * What the Controls offer to run next: on the data itself, every book
+   * action that fits it; after a finished run of a book action, the actions
+   * that one names as `next`.
+   */
+  async nextActions(doc: DataDoc): Promise<NextAction[]> {
+    await this.loadShips();
+    if (doc.marker === 0) {
+      const out: NextAction[] = [];
+      for (const m of await this.fitting(doc)) {
+        const book = await this.manifest(m.book.id).catch(() => null);
+        for (const name of book ? m.actions : []) {
+          const a = await this.offer(doc, book!, name);
+          if (a) out.push(a);
+        }
+      }
+      return out;
+    }
+    const step = doc.steps[doc.marker - 1];
+    const block = timeBlocks(doc)[blockAt(timeBlocks(doc), doc.marker)];
+    if (!step?.book || !block || doc.steps.slice(block.first, block.last + 1).some((s) => s.status !== "done")) return [];
+    const book = await this.manifest(step.book.id).catch(() => null);
+    const names = book ? (bookAction(book, step.book.action)?.next ?? []) : [];
+    return (await Promise.all(names.map((n) => this.offer(doc, book!, n)))).filter((a): a is NextAction => !!a);
+  }
+
+  /** Runs a book action from the Controls, with the values set there: the click is the approval. */
+  async runNext(doc: DataDoc, bookId: string, actionName: string, values: Params) {
+    try {
+      this.appendBook(doc, await this.manifest(bookId), actionName, values, "stale");
+    } catch (e) {
+      return this.hooks.notify(e instanceof Error ? e.message : String(e));
+    }
+    doc.marker = doc.steps.length;
+    doc.output = undefined;
+    this.ws.touch();
+    await this.run(doc);
+  }
+
+  /**
+   * As data opens in a window: the opening action of the best book that has
+   * one and fits. It runs straight away when it's quick and its ships are on
+   * this computer (opening the data approves it); otherwise it waits, proposed.
+   */
+  async openWith(doc: DataDoc) {
+    if (doc.steps.length || !this.hooks.server()) return;
+    for (const m of await this.fitting(doc)) {
+      const book = await this.manifest(m.book.id).catch(() => null);
+      const name = book?.opens_with;
+      if (!book || !name || !m.actions.includes(name) || doc.steps.length) continue;
+      const card = (await this.cards()).find((c) => c.entry.id === book.id);
+      const ready = !!book.actions[name]?.quick && !!card && card.ships.every((s) => s.downloaded);
+      try {
+        this.appendBook(doc, book, name, {}, ready ? "stale" : "proposed");
+      } catch {
+        continue; // nothing in the window it can take after all
+      }
+      doc.marker = doc.steps.length;
+      doc.output = undefined;
+      this.ws.touch();
+      if (ready) await this.run(doc);
+      return;
+    }
+  }
+
+  /** Sets a book run's parameters into its steps; the changed steps and what uses them run again. */
+  async updateRun(doc: DataDoc, first: number, values: Params) {
+    const run = await this.bookRun(doc, first).catch(() => null);
+    if (!run) return;
+    const changed = new Set<number>();
+    for (const p of run.action.parameters ?? []) {
+      if (!(p.name in values)) continue;
+      for (const target of Array.isArray(p.sets) ? p.sets : [p.sets]) {
+        const i = run.at(target);
+        const name = target.split(".")[1];
+        if (doc.steps[i] && doc.steps[i].with[name] !== values[p.name]) {
+          doc.steps[i].with = { ...doc.steps[i].with, [name]: values[p.name] };
+          changed.add(i);
+        }
+      }
+    }
+    if (!changed.size) return this.hooks.notify("Nothing changed: these are the settings it ran with.");
+    for (const index of changed) for (const i of this.dependents(doc, index)) if (doc.steps[i].status !== "proposed") Object.assign(doc.steps[i], { status: "stale", jobId: undefined });
+    this.ws.touch();
+    void this.run(doc);
+  }
+
   updateStep(doc: DataDoc, index: number, params: Params) {
     doc.steps[index].with = params;
     // forget the old job, so a restored window doesn't mistake its result for this change's
@@ -583,6 +794,19 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     this.ws.touch();
   }
 
+  /** A new window with this one's history up to the step on view, to try something else from there. */
+  fork(doc: DataDoc): DataDoc {
+    const steps = doc.steps.slice(0, doc.marker).map((s): DataStep => {
+      const { live: _live, progress: _progress, ...copy } = structuredClone(s);
+      // a step still at work carries on in its own window; here it runs again on the next run
+      return copy.status === "running" || copy.status === "queued" ? { ...copy, status: "stale", jobId: undefined } : copy;
+    });
+    const names = new Set(this.ws.docs.map((d) => d.name));
+    let name = `${doc.name} (fork)`;
+    for (let n = 2; names.has(name); n++) name = `${doc.name} (fork ${n})`;
+    return this.ws.restore({ name, workspace: doc.workspace, source: doc.source, steps, marker: steps.length, output: doc.output, ui: { ...doc.ui, results: false } });
+  }
+
   openSeparately(doc: DataDoc, artifact: Artifact) {
     this.ws.open(artifact, doc.workspace);
   }
@@ -601,6 +825,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     const action = book && bookAction(book, plan.book!.action);
     const inputNames = Object.keys(plan.inputs);
     const rename = new Map<string, string>();
+    const block = newBlock();
     for (const s of plan.steps) rename.set(s.id, this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id));
     for (const s of plan.steps) {
       const wires: Record<string, string> = {};
@@ -616,6 +841,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
         in: wires,
         with: action ? bookStepParams(s, action, plan.parameters) : { ...(s.with ?? {}) },
         ...(book && action ? { book: bookLabel(book, action) } : {}),
+        block,
         status: "proposed",
       });
     }
@@ -641,6 +867,16 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     });
     return this.cardsLoading;
   }
+}
+
+/** Whether the window's data fits a controls section's `when`. */
+function fits(when: ControlWhen | undefined, a: Artifact, s: DataSummary | undefined): boolean {
+  if (!when) return true;
+  if (when.kind && !when.kind.includes(a.kind)) return false;
+  if (when.formats && !when.formats.includes(a.format)) return false;
+  const size = (axis: string) => (s?.axes && s.shape ? (s.shape[s.axes.indexOf(axis)] ?? 1) : 1);
+  const has = { time: Math.max(s?.timepoints ?? 1, size("t")) > 1, z: size("z") > 1, channels: Math.max(s?.channels ?? 1, size("c")) > 1 };
+  return (when.has ?? []).every((x) => has[x]) && (when.lacks ?? []).every((x) => !has[x]);
 }
 
 /** How a step names where it came from: the book, and the action when the book has several. */

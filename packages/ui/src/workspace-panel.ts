@@ -21,6 +21,9 @@ export function setFormats(f: Record<string, FormatInfo>) {
   formats = f;
 }
 
+/** A format as people know it ("OME-Zarr"), once the server has said; its id until then. */
+export const formatTitle = (format: string) => formats?.[format]?.title ?? format;
+
 /** Names the server knows how to store; folders without a telling name can still be chosen whole. */
 export const isSupported = (e: Pick<DirEntry, "name" | "isDir">) => !!sniffFormat(e.name, e.isDir, [], formats);
 

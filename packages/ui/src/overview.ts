@@ -90,10 +90,7 @@ export class Overview {
       this.render();
     });
     this.input.addEventListener("keydown", (e) => this.onKey(e));
-    hooks.workspace.subscribe(() => {
-      if (this.isOpen) this.layout();
-    });
-    window.addEventListener("resize", () => this.isOpen && this.layout());
+    window.addEventListener("resize", () => this.refresh());
 
     // while open, a click on a window picks it
     document.addEventListener("click", (e) => {
@@ -142,6 +139,15 @@ export class Overview {
   toggle() {
     if (this.isOpen) this.close();
     else this.open();
+  }
+
+  /**
+   * Lays the windows out again after the workspace changes. Call it once the
+   * windows have caught up (after `WindowManager.sync`), or a window added
+   * while the overview is open has nothing to place yet.
+   */
+  refresh() {
+    if (this.isOpen) this.layout();
   }
 
   private pick(docId: string) {

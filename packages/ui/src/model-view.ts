@@ -6,6 +6,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { PLYLoader } from "three/examples/jsm/loaders/PLYLoader.js";
+import { scaledCopy } from "./viewer.js";
 
 export class ModelView {
   private readonly renderer: THREE.WebGLRenderer;
@@ -58,6 +59,14 @@ export class ModelView {
       this.frame = requestAnimationFrame(tick);
     };
     tick();
+  }
+
+  /** The model as it's framed now (for the minimised-window shelf); drawn fresh, as WebGL keeps no frame between renders. */
+  snapshot(max: number): HTMLCanvasElement | null {
+    const canvas = this.renderer.domElement;
+    if (!canvas.width || !canvas.height) return null;
+    this.renderer.render(this.scene, this.camera);
+    return scaledCopy(canvas, canvas.width, canvas.height, max);
   }
 
   private fit() {

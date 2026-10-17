@@ -12,7 +12,7 @@ import type { LocalServer } from "./api.js";
 import { parseCsv } from "./csv.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { ModelView } from "./model-view.js";
-import { type ViewState, Viewer, newViewState, setRanges } from "./viewer.js";
+import { type ViewState, Viewer, newViewState, scaledCopy, setRanges } from "./viewer.js";
 
 /** What a viewer needs for one artifact, fetched once and kept while its window is open. */
 export type Loaded =
@@ -29,6 +29,8 @@ export type Loaded =
 /** A viewer drawn into an element; destroy it before reusing the element. */
 export interface Mounted {
   destroy(): void;
+  /** What it shows right now as a small picture, for viewers that draw pixels (videos, models). */
+  snapshot?(max: number): HTMLCanvasElement | null;
 }
 
 export async function loadView(s: LocalServer, workspace: string, a: Artifact): Promise<Loaded> {
@@ -103,9 +105,12 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
         <tbody>${entry.rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
         ${compact ? "" : `<p class="dv-foot">${entry.total} rows${entry.total > 500 ? " · first 500 shown" : ""} · ${formatSize(a.sizeBytes ?? 0)}</p>`}`;
       return none;
-    case "video":
+    case "video": {
       host.innerHTML = `<video class="dv-video" src="${entry.url}" ${compact ? "" : "controls"} autoplay loop muted playsinline></video>`;
-      return none;
+      const video = host.querySelector("video")!;
+      // the frame on screen now; the video is a blob of our own, so the canvas stays readable
+      return { destroy() {}, snapshot: (max) => (video.readyState >= 2 && video.videoWidth ? scaledCopy(video, video.videoWidth, video.videoHeight, max) : null) };
+    }
     case "model": {
       host.classList.add("has-model");
       host.innerHTML = `<div class="dv-model"></div>${compact ? "" : `<p class="dv-hint">Drag to turn · scroll to zoom · right-drag to move</p>`}`;
