@@ -116,7 +116,17 @@ def main():
     config.linking_config.max_distance = args.max_distance
     config.tracking_config.time_limit = 600
 
-    progress(0.05, "building candidate segments")
+    # track() runs three long stages without a word; report each as it starts
+    stages = sys.modules[track.__module__]
+    for name, (p, message) in {
+        "segment": (0.1, "finding candidate cells in each frame"),
+        "link": (0.45, "linking candidates between frames"),
+        "solve": (0.65, "choosing the best tracks"),
+    }.items():
+        original = getattr(stages, name)
+        setattr(stages, name, lambda *a, _f=original, _p=p, _m=message, **k: (progress(_p, _m), _f(*a, **k))[1])
+
+    progress(0.05, "preparing the labels")
     closed = close_each_cell(labels)
     track(config, foreground=(closed > 0).astype(np.float32), contours=boundaries_between_cells(closed), scale=spatial, overwrite=True)
     progress(0.8, "exporting tracks")

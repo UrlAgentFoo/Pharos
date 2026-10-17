@@ -17,6 +17,7 @@ import type { DataWindowHooks, StepSpec, Suggestion } from "./data-window.js";
 import { escapeHtml, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
+import { type Phase, heardFrom } from "./progress.js";
 import type { DataDoc, DataStep, Workspace } from "./workspace.js";
 
 export interface ProcessHooks {
@@ -308,12 +309,14 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
 
   /** Marks the steps still waiting as `status` (after a failure or cancel). */
   private settle(doc: DataDoc, status: "failed" | "cancelled", message: string) {
-    for (const step of doc.steps) if (step.status === "queued" || step.status === "running") Object.assign(step, { status, error: status === "failed" ? message : undefined });
+    for (const step of doc.steps) if (step.status === "queued" || step.status === "running") Object.assign(step, { status, error: status === "failed" ? message : undefined, live: undefined });
     this.ws.touch();
   }
 
   handle(e: ServerEvent) {
     if (e.type === "job") this.onJob(e.job);
+    if (e.type === "pull") this.onPull(e);
+    if (e.type === "job-log") heardFrom(e.jobId);
     if (e.type === "plan") this.onPlan(e.plan);
     if (e.type === "library") {
       this.cardsLoading = null;
@@ -325,6 +328,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     const doc = job.planId ? this.running.get(job.planId) : undefined;
     const step = doc?.steps.find((x) => x.id === job.stepId);
     if (!doc || !step) return;
+    const changed = step.progress !== job.progress || step.message !== job.message;
     step.jobId = job.id;
     step.progress = job.progress;
     step.message = job.message;
@@ -333,7 +337,104 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     if (job.state === "done") Object.assign(step, { status: "done", outputs: job.outputs, cached: !!job.cached, error: undefined });
     if (job.state === "failed") Object.assign(step, { status: "failed", error: job.error ?? "failed" });
     if (job.state === "cancelled") step.status = "cancelled";
+    if (step.status === "queued" || step.status === "running") {
+      const prev = step.live;
+      const ship = step.run.split(".")[0];
+      const phase: Phase =
+        job.state === "downloading" ? (prev?.phase === "building" ? "building" : "downloading") : job.state === "queued" ? "waiting" : job.progress === undefined && !job.message ? "starting" : "running";
+      const since = Date.parse(job.state === "running" && job.startedAt ? job.startedAt : job.createdAt);
+      step.live = {
+        phase,
+        ship,
+        job: job.id,
+        since: prev?.phase === phase && prev.since ? prev.since : since,
+        ...(job.progress !== undefined ? { fraction: job.progress } : {}),
+        ...(job.message ? { message: job.message } : {}),
+        ...(prev?.bytes && (phase === "downloading" || phase === "building") ? { bytes: prev.bytes } : {}),
+        lastOutput: changed ? Date.now() : (prev?.lastOutput ?? since),
+      };
+    } else step.live = undefined;
     this.ws.touch();
+  }
+
+  /** A ship is downloading or building: every waiting step that needs it shows how far along it is. */
+  private onPull(e: Extract<ServerEvent, { type: "pull" }>) {
+    let touched = false;
+    for (const doc of this.running.values()) {
+      for (const step of doc.steps) {
+        if (step.status !== "queued" || step.run.split(".")[0] !== e.ship) continue;
+        const building = !e.totalBytes && !!e.message;
+        step.live = {
+          ...(step.live ?? { since: Date.now() }),
+          phase: e.done ? "starting" : building ? "building" : "downloading",
+          ship: e.ship,
+          ...(e.message ? { message: e.message } : {}),
+          ...(!building ? { bytes: { received: e.receivedBytes, ...(e.totalBytes ? { total: e.totalBytes } : {}) } } : {}),
+          lastOutput: Date.now(),
+        };
+        if (e.error) Object.assign(step, { status: "failed", error: `couldn't get the ${e.ship} ship: ${e.error}`, live: undefined });
+        touched = true;
+      }
+    }
+    if (touched) this.ws.touch();
+  }
+
+  /**
+   * After the event stream reconnects: what happened to the jobs and plans
+   * we were following while it was down.
+   */
+  async resync() {
+    if (!this.running.size) return;
+    const s = this.server;
+    const jobs = await s.jobs().catch(() => [] as Job[]);
+    for (const j of jobs) if (j.planId && this.running.has(j.planId)) this.onJob(j);
+    for (const id of [...this.running.keys()]) {
+      const plan = await s.plan(id).catch(() => null);
+      if (plan) this.onPlan(plan);
+    }
+  }
+
+  /** A job's log so far, in a dialog. */
+  async showLog(jobId: string) {
+    const job = await this.server.job(jobId).catch(() => null);
+    await showDialog(
+      `<p class="eyebrow">Log</p><h2>${escapeHtml(job ? `${job.ship} › ${job.operation}` : jobId)}</h2>
+       <pre class="code log-text">${escapeHtml(job?.log || "Nothing printed yet.")}</pre>
+       <footer><button class="primary" data-cancel>Close</button></footer>`,
+      (_done, el) => {
+        const pre = el.querySelector("pre")!;
+        pre.scrollTop = pre.scrollHeight;
+      },
+      undefined,
+    );
+  }
+
+  /**
+   * A restored window whose steps were running when it was saved: steps
+   * whose job is still going are followed again, finished ones take their
+   * results, and the rest stay changed so the next run starts them.
+   */
+  async reattach(doc: DataDoc) {
+    const s = this.hooks.server();
+    if (!s) return;
+    for (const step of doc.steps) {
+      if (step.status !== "stale" || !step.jobId) continue;
+      const job = await s.job(step.jobId).catch(() => null);
+      if (!job || job.state === "failed" || job.state === "cancelled") {
+        step.jobId = undefined;
+        continue;
+      }
+      if (job.planId) this.running.set(job.planId, doc);
+      this.onJob(job);
+    }
+    this.ws.touch();
+  }
+
+  /** Everything queued or running, in every window, for the toolbar's activity list. */
+  active(): { doc: DataDoc; step: DataStep; index: number }[] {
+    return this.ws.docs.flatMap((doc) =>
+      doc.steps.flatMap((step, index) => (step.status === "queued" || step.status === "running" ? [{ doc, step, index }] : [])),
+    );
   }
 
   private onPlan(plan: Plan) {
@@ -368,7 +469,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
 
   updateStep(doc: DataDoc, index: number, params: Params) {
     doc.steps[index].with = params;
-    for (const i of this.dependents(doc, index)) if (doc.steps[i].status !== "proposed") doc.steps[i].status = "stale";
+    // forget the old job, so a restored window doesn't mistake its result for this change's
+    for (const i of this.dependents(doc, index)) if (doc.steps[i].status !== "proposed") Object.assign(doc.steps[i], { status: "stale", jobId: undefined });
     this.ws.touch();
     void this.run(doc);
   }

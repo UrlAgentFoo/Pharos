@@ -23,6 +23,7 @@ import { thumbnailElement } from "./viewer.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
+import { progressHtml } from "./progress.js";
 import type { DataDoc, DataStep } from "./workspace.js";
 
 /** Something that can be applied to the shown data: one of a book's actions, or a single ship operation. */
@@ -45,6 +46,8 @@ export interface DataWindowHooks {
   approve(doc: DataDoc): void;
   rerun(doc: DataDoc): void;
   cancel(doc: DataDoc): void;
+  /** Shows a job's log. */
+  showLog(jobId: string): void;
   updateStep(doc: DataDoc, index: number, params: Params): void;
   removeStep(doc: DataDoc, index: number): void;
   apply(doc: DataDoc, s: Suggestion): void;
@@ -177,13 +180,25 @@ export class DataWindow {
     const busy = step && step.status !== "done";
     status.hidden = !busy;
     if (busy && step) {
-      const pct = step.progress !== undefined ? Math.round(step.progress * 100) : undefined;
+      const live = step.status === "running" || step.status === "queued";
+      // a step waiting on earlier ones shows the one actually working
+      const working = live && step.status === "queued" && (step.live?.phase ?? "waiting") === "waiting" ? (d.steps.find((s) => s.status === "running") ?? d.steps.find((s) => s.status === "queued" && s.live && s.live.phase !== "waiting")) : undefined;
+      const focus = working ?? step;
+      // the run as a whole: how many of the steps that ran or run this time are done
+      const run = d.steps.filter((s) => s.status !== "proposed" && s.status !== "stale");
+      const done = run.filter((s) => s.status === "done").length;
+      const title = `Step ${d.steps.indexOf(focus) + 1} of ${d.steps.length} · ${this.title(focus)}`;
       status.innerHTML = `<div class="dv-status-card ${step.status}">
-        <strong>${escapeHtml(this.title(step))}</strong>
-        <span>${escapeHtml(step.status === "failed" ? (step.error ?? "failed") : step.status === "proposed" ? "Proposed: approve to run it" : (step.message ?? STATUS_LABEL[step.status]))}</span>
-        ${step.status === "running" || step.status === "queued" ? `<span class="job-bar"><span style="width:${pct ?? 0}%"></span></span>` : ""}
-        ${step.status === "proposed" ? `<button class="primary" data-act="approve">${icon("batch", 14)} Approve and run</button>` : ""}
-        ${step.status === "running" || step.status === "queued" ? `<button data-act="cancel">Cancel</button>` : ""}
+        ${
+          live
+            ? `${progressHtml(focus.live ?? { phase: focus.status === "running" ? "starting" : "waiting" }, { title, logAction: focus.jobId ? `<button class="link-btn" data-act="log" data-job="${escapeHtml(focus.jobId)}">View log</button>` : "" })}
+               ${run.length > 1 ? `<span class="pg-overall">${done} of ${run.length} steps done</span>` : ""}
+               <button data-act="cancel">Cancel</button>`
+            : `<strong>${escapeHtml(title)}</strong>
+               <span>${escapeHtml(step.status === "failed" ? (step.error ?? "failed") : step.status === "proposed" ? "Proposed: approve to run it" : (step.message ?? STATUS_LABEL[step.status]))}</span>
+               ${step.status === "failed" && step.jobId ? `<button class="link-btn" data-act="log" data-job="${escapeHtml(step.jobId)}">View log</button>` : ""}
+               ${step.status === "proposed" ? `<button class="primary" data-act="approve">${icon("batch", 14)} Approve and run</button>` : ""}`
+        }
       </div>`;
     }
     const key = `${artifactId}|${busy ? step!.status : "ok"}`;
@@ -378,6 +393,8 @@ export class DataWindow {
         return this.hooks.approve(d);
       case "cancel":
         return this.hooks.cancel(d);
+      case "log":
+        return this.hooks.showLog(el.dataset.job!);
       case "rerun":
         return this.hooks.rerun(d);
       case "remove":

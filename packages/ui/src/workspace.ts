@@ -4,6 +4,7 @@
  * on that window's data.
  */
 import type { Artifact, Params } from "@pharos/contracts";
+import type { Progress } from "./progress.js";
 
 /** One process in a data window's history: a ship operation, wired to the data or earlier steps. */
 export interface DataStep {
@@ -20,6 +21,8 @@ export interface DataStep {
   status: "proposed" | "stale" | "queued" | "running" | "done" | "failed" | "cancelled";
   progress?: number;
   message?: string;
+  /** Live progress while queued or running: the phase, the clock, downloads (not saved). */
+  live?: Progress;
   jobId?: string;
   cached?: boolean;
   /** Output name → artifact id, once done. */

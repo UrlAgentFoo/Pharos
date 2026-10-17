@@ -1,5 +1,5 @@
 import "./style.css";
-import type { Artifact, Example, SystemStatus } from "@pharos/contracts";
+import type { Artifact, Example, ServerEvent, SystemStatus } from "@pharos/contracts";
 import { type AiConfig, LocalServer } from "./api.js";
 import { type AskReply, Assistant, type SearchHit } from "./chat.js";
 import { DataProcesses } from "./data-processes.js";
@@ -8,6 +8,7 @@ import { alertDialog, browseDialog, confirmDialog, escapeHtml, isDialogOpen, pro
 import { icon } from "./icons.js";
 import { formatShortcut, isMac, matchesShortcut } from "./keys.js";
 import { libraryPanel } from "./library-panel.js";
+import { barHtml, clockHtml, progressHtml, startClock } from "./progress.js";
 import { type Action, Overview, score } from "./overview.js";
 import { PROJECT_EXT, type ProjectDoc, type ProjectFile, packProject, unpackProject } from "./project.js";
 import { Autosave } from "./session.js";
@@ -63,7 +64,7 @@ function notify(text: string) {
 /** Runs a possibly slow change with a busy indicator; errors become a dialog. */
 async function run<T>(label: string, fn: () => Promise<T> | T): Promise<T | undefined> {
   const el = $("busy");
-  el.textContent = `${label}…`;
+  el.innerHTML = `<span class="pg-head"><span>${escapeHtml(label)}…</span>${clockHtml(Date.now())}</span>${barHtml()}`;
   const timer = setTimeout(() => (el.hidden = false), 150); // only show it for slow work
   await new Promise((r) => requestAnimationFrame(() => setTimeout(r)));
   try {
@@ -126,6 +127,7 @@ async function runAction(id: string, from?: HTMLElement) {
   if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "examples", "workspace"]));
   if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]));
   if (id === "settings-menu" && anchor) return togglePopover(id, anchor, settingsHtml);
+  if (id === "activity" && anchor) return togglePopover(id, anchor, activityHtml, true);
   const a = actionById.get(id);
   if (a?.enabled()) await a.run();
 }
@@ -161,6 +163,7 @@ function buildToolbar() {
       ${text("overview", "overview", "Overview", { shortcut: "Tab" })}
     </nav>
     <div class="tb-right">
+      <button class="tb-text activity" data-action="activity" aria-haspopup="menu" title="What's running" hidden><span class="pg-spin" aria-hidden="true"></span><span class="activity-text"></span></button>
       ${text("settings-menu", "settings", "Settings", { menu: true })}
     </div>`;
 }
@@ -224,6 +227,12 @@ pop.addEventListener("change", (e) => {
 });
 
 pop.addEventListener("click", (e) => {
+  const row = (e.target as HTMLElement).closest<HTMLElement>("[data-activity-win]");
+  if (row) {
+    closePopover();
+    const id = row.dataset.activityWin!;
+    return windows.isMinimized(id) ? windows.restore(id) : ws.activate(id);
+  }
   const dp = (e.target as HTMLElement).closest<HTMLElement>("[data-dp]");
   if (!dp) return;
   closePopover();
@@ -313,8 +322,9 @@ function gatherProject(): ProjectFile {
       name: d.name,
       workspace: d.workspace,
       source: d.source,
-      // a step still running when saved runs again when the project is reopened
-      steps: d.steps.map((s) => (s.status === "running" || s.status === "queued" ? { ...s, status: "stale" as const, progress: undefined, jobId: undefined } : s)),
+      // a step still running when saved is followed again on reopening if its job is still
+      // going (a reload), and runs again otherwise
+      steps: d.steps.map(({ live: _, ...s }) => (s.status === "running" || s.status === "queued" ? { ...s, status: "stale" as const, progress: undefined } : s)),
       marker: d.marker,
       output: d.output,
       rationale: d.rationale,
@@ -372,6 +382,7 @@ async function restoreProject(project: ProjectFile) {
     const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps: pd.steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, ui: pd.ui });
     windows.sync();
     windows.restorePlacement(doc.id, pd.rect, pd.minimized);
+    void processes.reattach(doc);
   }
   ws.touch();
   if (missing.length) void alertDialog("Some windows weren't restored", `Their data is no longer in its workspace:\n${missing.map((n) => `• ${n}`).join("\n")}`);
@@ -383,10 +394,19 @@ let autosaveReady = false;
 let autosaveTimer: ReturnType<typeof setTimeout> | undefined;
 let autosavedPrint = "";
 
+/** When the oldest unsaved change was made: a running step changes the windows every few
+ * hundred milliseconds, so waiting for a quiet moment alone would never save during a run. */
+let autosavePendingSince = 0;
+
 function scheduleAutosave() {
   if (!autosaveReady) return;
   clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(() => void autosaveNow(), 1200);
+  autosavePendingSince ||= Date.now();
+  const wait = Date.now() - autosavePendingSince > 5000 ? 0 : 1200;
+  autosaveTimer = setTimeout(() => {
+    autosavePendingSince = 0;
+    void autosaveNow();
+  }, wait);
 }
 
 async function autosaveNow() {
@@ -436,7 +456,45 @@ async function clearProject() {
 
 // ------------------------------------------------------------ syncing everything with the workspace
 
+// ------------------------------------------------------------ activity: everything running, in one place
+
+/** Ship downloads and builds by ship id, including ones no open window waits for (Get ready). */
+const pulls = new Map<string, Extract<ServerEvent, { type: "pull" }>>();
+
+function activityHtml(): string {
+  const steps = processes.active();
+  const rows = steps.map(({ doc, step, index }) => {
+    const p = step.live ?? { phase: step.status === "running" ? ("starting" as const) : ("waiting" as const) };
+    return `<button class="activity-row" data-activity-win="${escapeHtml(doc.id)}" role="menuitem">
+      <small class="eyebrow">${escapeHtml(doc.name)} · step ${index + 1} of ${doc.steps.length}</small>
+      ${progressHtml(p, { title: processes.stepSpec(step.run)?.title ?? step.run })}</button>`;
+  });
+  const waitingFor = new Set(steps.map((s) => s.step.run.split(".")[0]));
+  for (const [ship, e] of pulls) {
+    if (waitingFor.has(ship)) continue;
+    const building = !e.totalBytes && !!e.message;
+    rows.push(`<div class="activity-row"><small class="eyebrow">Getting ready</small>${progressHtml({ phase: building ? "building" : "downloading", ship, ...(e.message ? { message: e.message } : {}), bytes: { received: e.receivedBytes, ...(e.totalBytes ? { total: e.totalBytes } : {}) } })}</div>`);
+  }
+  return `<section><h4>Running</h4>${rows.join("") || `<p class="pop-note">Nothing is running.</p>`}</section>`;
+}
+
+/** The toolbar's activity button: hidden when idle; the open list follows along. */
+function updateActivity() {
+  const btn = document.querySelector<HTMLElement>(".activity");
+  if (!btn) return;
+  const steps = processes.active();
+  const running = steps.filter((s) => s.step.status === "running").length;
+  const busy = steps.length + [...pulls.keys()].filter((ship) => !steps.some((s) => s.step.run.startsWith(`${ship}.`))).length;
+  btn.hidden = busy === 0;
+  btn.querySelector(".activity-text")!.textContent = running ? `${running} running${busy > running ? ` · ${busy - running} waiting` : ""}` : `${busy} waiting`;
+  if (popKey === "activity") {
+    if (!busy) closePopover();
+    else pop.innerHTML = activityHtml();
+  }
+}
+
 function refresh() {
+  updateActivity();
   updateDesk();
   scheduleAutosave();
   windows.sync();
@@ -659,10 +717,20 @@ async function openStorage() {
 async function connectShips(s: LocalServer) {
   void s.formats().then(setFormats, () => {});
   showStatus(null);
-  s.events((e) => {
-    processes.handle(e);
-    if (e.type === "status") showStatus(e.status);
-  });
+  s.events(
+    (e) => {
+      processes.handle(e);
+      if (e.type === "status") showStatus(e.status);
+      if (e.type === "pull") {
+        if (e.done) pulls.delete(e.ship);
+        else pulls.set(e.ship, e);
+        updateActivity();
+      }
+    },
+    (reconnect) => {
+      if (reconnect) void processes.resync();
+    },
+  );
   showStatus(await s.status().catch(() => null));
 }
 
@@ -744,6 +812,7 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     approve: (doc) => processes.approve(doc),
     rerun: (doc) => processes.rerun(doc),
     cancel: (doc) => processes.cancel(doc),
+    showLog: (jobId) => void processes.showLog(jobId),
     updateStep: (doc, i, params) => processes.updateStep(doc, i, params),
     removeStep: (doc, i) => processes.removeStep(doc, i),
     apply: (doc, s) => void processes.apply(doc, s),
@@ -856,6 +925,7 @@ document.addEventListener("visibilitychange", () => {
 refresh();
 
 async function boot() {
+  startClock();
   server = await LocalServer.connect();
   if (server) {
     aiConfig = await server.aiConfig().catch(() => null);

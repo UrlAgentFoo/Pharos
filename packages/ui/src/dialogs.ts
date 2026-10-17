@@ -1,16 +1,11 @@
 /** Modal dialogs built on <dialog>: alerts, confirmations, prompts and a file browser. */
 import type { DirEntry, LocalServer } from "./api.js";
+import { escapeHtml, formatSize } from "./format.js";
 import { icon } from "./icons.js";
 
 const dialog = document.getElementById("dialog") as HTMLDialogElement;
 
-export function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-}
-
-export function formatSize(n: number) {
-  return n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
-}
+export { escapeHtml, formatSize } from "./format.js";
 
 export function isDialogOpen() {
   return dialog.open;

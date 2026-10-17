@@ -1852,6 +1852,162 @@ body.has-expanded .ask-box {
   display: none;
 }
 
+.busy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 220px;
+}
+
+.busy .pg-bar {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.busy .pg-bar span {
+  background: var(--paper);
+}
+
+/* ---- progress: the same block for steps, the activity list and the busy line */
+
+.pg {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pg-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-phase {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.busy .pg-phase,
+.busy .pg-clock {
+  color: inherit;
+}
+
+.pg-clock {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pg-bar {
+  position: relative;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.pg-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+
+/* nothing reported a fraction yet: a stripe sweeps across, so it never looks stuck */
+.pg-bar.indeterminate span {
+  position: absolute;
+  width: 35%;
+  animation: pg-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes pg-sweep {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-bar.indeterminate span {
+    width: 100%;
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
+.pg-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-quiet {
+  color: var(--warn-text);
+  font-size: 12px;
+}
+
+.pg-overall {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tb-text.activity {
+  gap: 6px;
+}
+
+.pg-spin {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.activity-row:hover {
+  background: var(--hover);
+}
+
+.log-text {
+  max-height: 55vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
 /* ---- overview (Mission Control) */
 
 .overview {

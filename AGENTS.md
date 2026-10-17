@@ -69,6 +69,8 @@ npm run build        # contracts → books → orchestrator → core → catalog
 npm run typecheck
 npm test             # vitest, run against sources (no build needed)
 npm start            # local server on 127.0.0.1 with this repo's ships/ and books/; prints the launch URL
+                     # it serves the UI copied into packages/server/ui by the full build, so after UI
+                     # changes run `npm run build` (not just the ui package) before reloading
 node packages/server/bin/pharos.js check            # validate and type-check ships/ and books/ (file:line errors)
 node packages/server/bin/pharos.js ship new <id>    # also: book new <id> --ship <ship>
 node packages/server/bin/pharos.js mcp --library .  # the catalogue as an MCP server on stdio

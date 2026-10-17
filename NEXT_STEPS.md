@@ -79,17 +79,20 @@ actions:
 One progress component used everywhere: step cards, the history strip, Add
 data and the assistant.
 
-- [ ] Phases, not just a percentage: waiting → downloading or building (bytes,
+- [x] Phases, not just a percentage: waiting → downloading or building (bytes,
       or the latest build line, from `pull` events) → starting → running (%) →
       done or cached.
-- [ ] An animated, indeterminate bar when progress is unknown, plus elapsed time.
-- [ ] Overall progress for a run: "2 of 4 · segment · 41% · 1:12".
-- [ ] After the event stream reconnects, fetch job states again so bars don't freeze.
-- [ ] "No output for 30 s · view log", so a real hang can be told apart from slow work.
-- [ ] A global place for jobs (the Jobs panel was removed): what's running,
+- [x] An animated, indeterminate bar when progress is unknown, plus elapsed time.
+- [x] Overall progress for a run: "2 of 4 · segment · 41% · 1:12".
+- [x] After the event stream reconnects, fetch job states again so bars don't freeze.
+- [x] "No output for 30 s · view log", so a real hang can be told apart from slow work.
+- [x] A global place for jobs (the Jobs panel was removed): what's running,
       what's downloading, across closed windows.
-- [ ] D: ships report progress often enough to move the bar (per frame, per tile,
+- [x] D: ships report progress often enough to move the bar (per frame, per tile,
       per time step), not just at start and end.
+- [x] Found on the way: a reloaded page re-attaches to runs still going (and picks up
+      ones that finished), and autosave no longer waits forever while a run keeps
+      the windows changing.
 
 ## 3. Examples that run in seconds
 

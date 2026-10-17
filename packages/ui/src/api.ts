@@ -287,12 +287,15 @@ export class LocalServer {
    * `stop` is called, reconnecting after a dropped connection. Uses fetch
    * rather than EventSource so the token travels in a header.
    */
-  events(onEvent: (e: ServerEvent) => void): { stop: () => void } {
+  events(onEvent: (e: ServerEvent) => void, onConnect?: (reconnect: boolean) => void): { stop: () => void } {
+    let connections = 0;
     const abort = new AbortController();
     const loop = async () => {
       while (!abort.signal.aborted) {
         try {
           const res = await this.call("/api/events", { signal: abort.signal });
+          // events sent while the stream was down are gone: the caller catches up
+          onConnect?.(connections++ > 0);
           const reader = res.body!.getReader();
           const decoder = new TextDecoder();
           let buf = "";
