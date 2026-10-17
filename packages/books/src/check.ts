@@ -100,6 +100,27 @@ export function checkBook(book: BookManifest, ships: ShipLookup): ManifestProble
   const problems: ManifestProblem[] = [];
   for (const [name, action] of Object.entries(book.actions)) {
     for (const p of checkPipeline(actionPipeline(book, action), ships)) problems.push({ ...p, path: `/actions/${name}${p.path}` });
+    // the Controls design places the action's own parameters, each once
+    const params = new Set((action.parameters ?? []).map((x) => x.name));
+    const placed = new Set<string>();
+    (action.controls ?? []).forEach((sec, i) =>
+      (sec.params ?? []).forEach((param, j) => {
+        const path = `/actions/${name}/controls/${i}/params/${j}`;
+        if (!params.has(param)) problems.push(error(path, `"${name}" has no parameter "${param}"`));
+        else if (placed.has(param)) problems.push(warning(path, `"${param}" is already in an earlier section`));
+        placed.add(param);
+      }),
+    );
+    (action.next ?? []).forEach((other, i) => {
+      if (!book.actions[other]) problems.push(error(`/actions/${name}/next/${i}`, `the book has no action "${other}"`));
+      else if (other === name) problems.push(warning(`/actions/${name}/next/${i}`, `"${name}" offers itself next; its own Controls already re-run it`));
+    });
+  }
+  // the opening action runs without a click only when quick, so say when it won't
+  if (book.opens_with !== undefined) {
+    const opener = book.actions[book.opens_with];
+    if (!opener) problems.push(error("/opens_with", `the book has no action "${book.opens_with}"`));
+    else if (!opener.quick) problems.push(warning("/opens_with", `"${book.opens_with}" isn't marked quick, so opening data only proposes it`));
   }
   // a ship listed but used by no action still gets downloaded for the book
   const used = new Set(Object.values(book.actions).flatMap((a) => a.steps.map((s) => s.run.split(".")[0])));

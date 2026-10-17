@@ -9,6 +9,12 @@
  * types it accepts and its ships; everything else is for Pharos and the
  * assistant.
  *
+ * An action's `controls` lays out the Controls panel for a run of it in a
+ * window: titled sections of its parameters, each shown only when the
+ * window's data fits its `when`. The same layout offers the action, ready
+ * to run, on data it takes and after a run of an action that names it in
+ * `next`; the book's `opens_with` action is applied as its data opens.
+ *
  * Step wiring, within an action: `in` values are `$<action input>` or
  * `<step id>.<output name>`; outputs are `<step id>.<output name>`. A
  * parameter's `sets` names the `<step id>.<parameter>` it fills.
@@ -83,6 +89,40 @@ export const StepSchema = Type.Object(
 );
 export type Step = Static<typeof StepSchema>;
 
+/** What the window's data must be for a controls section to show; every field given must hold. */
+export const ControlWhenSchema = Type.Object(
+  {
+    kind: Type.Optional(Type.Array(ArtifactKindSchema, { minItems: 1 })),
+    formats: Type.Optional(Type.Array(FormatSchema, { minItems: 1 })),
+    has: Type.Optional(
+      Type.Array(Type.Union([Type.Literal("time"), Type.Literal("z"), Type.Literal("channels")]), {
+        minItems: 1,
+        description: "More than one time point, z slice or channel.",
+      }),
+    ),
+    lacks: Type.Optional(
+      Type.Array(Type.Union([Type.Literal("time"), Type.Literal("z"), Type.Literal("channels")]), {
+        minItems: 1,
+        description: "Only one time point, z slice or channel.",
+      }),
+    ),
+  },
+  { additionalProperties: false },
+);
+export type ControlWhen = Static<typeof ControlWhenSchema>;
+
+/** A section of the Controls panel: a title, an optional note, and some of the action's parameters. */
+export const ControlSectionSchema = Type.Object(
+  {
+    title: Type.String({ minLength: 1, description: "Names what the section changes: \"Flow\", \"Tracking\"." }),
+    note: Type.Optional(Type.String({ description: "One plain sentence of help, shown under the title." })),
+    params: Type.Optional(Type.Array(Type.String({ pattern: NAME_PATTERN }), { description: "The action's parameters, in the order shown." })),
+    when: Type.Optional(ControlWhenSchema),
+  },
+  { additionalProperties: false },
+);
+export type ControlSection = Static<typeof ControlSectionSchema>;
+
 /** One thing a book does: a pipeline with its own inputs, parameters and outputs. */
 export const BookActionSchema = Type.Object(
   {
@@ -90,8 +130,24 @@ export const BookActionSchema = Type.Object(
     summary: Type.Optional(Type.String({ description: "One sentence more, for the assistant and tooltips." })),
     inputs: Type.Optional(Type.Array(BookInputSchema, { description: "Empty for actions that start from parameters alone." })),
     parameters: Type.Optional(Type.Array(BookParamSchema)),
+    controls: Type.Optional(
+      Type.Array(ControlSectionSchema, {
+        minItems: 1,
+        description:
+          "How the Controls panel lays out a run of this action. Parameters in no section show under \"More settings\"; a section whose `when` doesn't fit the window's data hides its parameters. Without it, every parameter shows in one section.",
+      }),
+    ),
     steps: Type.Array(StepSchema, { minItems: 1 }),
     outputs: KeyedMap(Type.String({ pattern: NAME_PATTERN }), Type.String({ pattern: STEP_PARAM_PATTERN }), { minProperties: 1 }),
+    quick: Type.Optional(
+      Type.Boolean({ description: "It finishes in seconds, so as the book's `opens_with` it may run as soon as its data opens, without a click." }),
+    ),
+    next: Type.Optional(
+      Type.Array(Type.String({ pattern: NAME_PATTERN }), {
+        minItems: 1,
+        description: "The book's actions to offer in the Controls panel after a run of this one, on the window's data: what to do next.",
+      }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -112,6 +168,13 @@ export const BookManifestSchema = Type.Object(
       minProperties: 1,
       description: "Action name (lowercase_snake) → what it does; the first is the book's main action.",
     }),
+    opens_with: Type.Optional(
+      Type.String({
+        pattern: NAME_PATTERN,
+        description:
+          "The action to apply when data it takes opens in a window: it runs straight away when it's `quick` and its ships are on this computer (opening the data approves it), and is proposed for one click otherwise.",
+      }),
+    ),
   },
   { additionalProperties: false, $id: "book.schema.json", title: "Pharos book" },
 );

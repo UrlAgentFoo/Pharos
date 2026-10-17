@@ -21,8 +21,11 @@ machine. People see only books and ships: no shelves or other groupings. Read `R
 4. **Finish with green checks.** `npm run build`, `npm run typecheck` and
    `npm test` pass, and you leave a short note: what changed, what's mocked.
 5. **Nothing runs without approval.** Plans are proposed, the user approves,
-   then jobs run. Ship downloads are listed before they start; never offer
-   "download everything".
+   then jobs run. One exception: a book's `opens_with` action runs as its
+   data opens when the action is `quick` and its ships are already on this
+   computer (opening the data is the approval); otherwise it's proposed.
+   Ship downloads are listed before they start; never offer "download
+   everything".
 6. **Ships are untrusted code.** Inputs mount read-only at `/in`, outputs go
    to an empty `/out`, models to a shared `/weights` volume. No network by
    default, the host user's uid, memory and GPU limits from `requires`. Never

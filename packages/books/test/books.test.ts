@@ -160,6 +160,18 @@ describe("checkBook", () => {
     expect(problems(book())).toEqual([]);
   });
 
+  it("checks that the Controls design places the action's own parameters", () => {
+    const b = book();
+    track(b).controls = [
+      { title: "Nuclei", params: ["diameter"] },
+      { title: "Stain", params: ["diameter", "colour"], when: { has: ["channels"] } },
+    ];
+    expect(problems(b)).toEqual([
+      'warning /actions/track/controls/1/params/0: "diameter" is already in an earlier section',
+      'error /actions/track/controls/1/params/1: "track" has no parameter "colour"',
+    ]);
+  });
+
   it("catches kind and format mismatches on wires", () => {
     const b = book();
     track(b).steps[2].in = { labels: "convert.zarr" }; // a volume into a labels port
@@ -249,6 +261,25 @@ describe("books with several actions", () => {
     const formats = acceptedFormats(b, lib, converters(lib.shipManifests()));
     expect(formats.map((f) => `${f.action}.${f.input}`)).toEqual(["track.movie", "measure.image"]);
     expect(formats[1].direct).toEqual(["ome-zarr", "tiff"]);
+  });
+
+  it("checks what opens with the data and what comes next", () => {
+    const b = book();
+    b.actions.measure = {
+      title: "Count and measure",
+      inputs: [{ name: "image", accepts: { kind: "volume" } }],
+      steps: [{ id: "segment", run: "cellpose.segment", in: { image: "$image" } }],
+      outputs: { masks: "segment.masks" },
+      next: ["track", "trace", "measure"],
+    };
+    b.opens_with = "measure";
+    const p = checkBook(b, lib).map((x) => `${x.severity} ${x.path}: ${x.message}`);
+    expect(p).toContain('error /actions/measure/next/1: the book has no action "trace"');
+    expect(p).toContain('warning /actions/measure/next/2: "measure" offers itself next; its own Controls already re-run it');
+    expect(p).toContain('warning /opens_with: "measure" isn\'t marked quick, so opening data only proposes it');
+    b.actions.measure.quick = true;
+    b.opens_with = "count";
+    expect(checkBook(b, lib).map((x) => `${x.severity} ${x.path}: ${x.message}`)).toContain('error /opens_with: the book has no action "count"');
   });
 });
 

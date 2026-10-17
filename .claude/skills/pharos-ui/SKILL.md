@@ -103,8 +103,11 @@ Fixed sizes:
 - **Ellipses:** a title that opens a dialog ends with `…` ("Add data…"). One
   that acts immediately doesn't.
 - **Nothing runs without approval.** New or changed steps show as
-  *proposed*, with a single "Approve and run". Ship downloads are listed
-  with their sizes before they start. Never offer "download everything".
+  *proposed*, with a single "Approve and run"; a button in Controls named
+  for an action (its settings right above it) is approval too. The one
+  exception is a book's quick `opens_with` action, which runs as its data
+  opens when its ships are here. Ship downloads are listed with their
+  sizes before they start. Never offer "download everything".
 - **Running work is never silent.** It shows its phase, a live clock, a
   progress bar (or the indeterminate stripe), and ways to view the log and
   to cancel. After `QUIET_MS` (30 seconds) with no news, it says so.
