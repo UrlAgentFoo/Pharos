@@ -57,6 +57,7 @@ Requires Node 22.13 or later.
 npm install
 npm run build        # contracts → books → orchestrator → core → catalogue → ui → server
 npm start            # serves on 127.0.0.1 with this repo's ships and books, and opens the browser
+npm run dev          # the same, with changes showing live as you edit
 npm test
 npm run typecheck
 ```
