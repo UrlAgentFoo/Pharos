@@ -9,6 +9,7 @@ import { Library, type TrustLookup, hasErrors, resolveBook } from "@pharos/books
 import type { ChatTurn, ControlsLayout, Step } from "@pharos/contracts";
 import { layoutControls } from "./controls.js";
 import { AiError, type AiClientFactory, apiKeyFor, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
+import { cleanWindows } from "./planner.js";
 import { TokenMeter, metered } from "./token-usage.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
@@ -276,7 +277,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case "GET /api/examples":
         return sendJson(res, 200, (await loadExamples(libraryDirs)).map(publicExample));
       case "POST /api/assistant/plan": {
-        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown; history?: unknown }>(req);
+        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown; history?: unknown; windows?: unknown }>(req);
         if (typeof body.workspace !== "string" || typeof body.text !== "string" || !Array.isArray(body.artifacts)) throw new HttpError(400, "workspace, text and artifacts are required");
         // the conversation so far: its last turns, each kept short
         const history: ChatTurn[] = (Array.isArray(body.history) ? body.history : [])
@@ -291,7 +292,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         } catch {
           throw new HttpError(400, "No API key configured. Add one in Settings.");
         }
-        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }, history));
+        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }, history, cleanWindows(body.windows)));
       }
       case "POST /api/assistant/controls": {
         const body = await readJson<{ workspace?: unknown; artifact?: unknown; book?: unknown; action?: unknown; request?: unknown }>(req);
