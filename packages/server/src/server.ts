@@ -93,6 +93,9 @@ export function defaultDataDir(): string {
 
 const MAX_JSON_BODY = 1 << 20;
 const MAX_FILE_BODY = 4 * 1024 ** 3;
+/** A dropped folder (a .zarr store) can be bigger, and hold many small files. */
+const MAX_FOLDER_BODY = 64 * 1024 ** 3;
+const MAX_FOLDER_FILES = 2_000_000;
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = opts.token ?? newToken();
@@ -504,6 +507,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       const body = await readJson<{ path?: unknown; name?: unknown }>(req);
       const path = requirePath(typeof body.path === "string" ? body.path : null);
       return sendJson(res, 200, await workspaces.importPath(name, path, typeof body.name === "string" ? body.name : undefined));
+    }
+    if (req.method === "PUT" && id === "upload-folder" && !content) {
+      const declared = Number(req.headers["content-length"] ?? 0);
+      if (declared > MAX_FOLDER_BODY) throw new HttpError(413, "folder too large to upload; add it by path instead");
+      return sendJson(res, 200, await workspaces.importFolder(name, url.searchParams.get("name") ?? "", req, { maxBytes: MAX_FOLDER_BODY, maxFiles: MAX_FOLDER_FILES }));
     }
     if (req.method === "PUT" && id === "upload" && !content) {
       const filename = url.searchParams.get("name") ?? "";

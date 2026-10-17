@@ -167,6 +167,38 @@ describe("inspect", () => {
     expect(await inspect({ uri: join(example, "truth.geff"), kind: "tracks", format: "geff" })).toMatchObject({ axes: "tzyx", columns: ["t", "z", "y", "x"], rows: 72, timepoints: 12 });
   });
 
+  it("reads other tools' Zarr: bioformats2raw's layout and named plain arrays; an array that names nothing keeps its axes unknown", async () => {
+    const put = async (dir: string, file: string, json: unknown) => {
+      await mkdir(join(root, dir), { recursive: true });
+      await writeFile(join(root, dir, file), JSON.stringify(json));
+    };
+    const zarr = (name: string) => inspect({ uri: join(root, name), kind: "volume", format: "ome-zarr" });
+    // bioformats2raw: the image in 0/, with capital axis names
+    await put("b2r.zarr", ".zattrs", { "bioformats2raw.layout": 3 });
+    await put("b2r.zarr/0", ".zattrs", { multiscales: [{ axes: ["T", "C", "Z", "Y", "X"].map((name) => ({ name })), datasets: [{ path: "0" }] }] });
+    await put("b2r.zarr/0/0", ".zarray", { shape: [12, 1, 1, 96, 96], dtype: "<u2" });
+    expect(await zarr("b2r.zarr")).toMatchObject({ axes: "tyx", shape: [12, 96, 96], dtype: "uint16", timepoints: 12 });
+    // xarray's way (Zarr 2) and Zarr 3's dimension names
+    await put("named.zarr", ".zarray", { shape: [12, 96, 96], dtype: "|u1" });
+    await put("named.zarr", ".zattrs", { _ARRAY_DIMENSIONS: ["time", "y", "x"] });
+    expect(await zarr("named.zarr")).toMatchObject({ axes: "tyx", shape: [12, 96, 96], dtype: "uint8", timepoints: 12, channels: 1 });
+    await put("named3.zarr", "zarr.json", { zarr_format: 3, node_type: "array", shape: [2, 12, 96, 96], data_type: "uint16", dimension_names: ["c", "t", "y", "x"] });
+    expect(await zarr("named3.zarr")).toMatchObject({ axes: "ctyx", channels: 2, timepoints: 12 });
+    // nothing named: no axes (so a book that needs a movie still offers itself), but its data type
+    await put("bare.zarr", "zarr.json", { zarr_format: 3, node_type: "array", shape: [12, 96, 96], data_type: "uint16" });
+    const bare = await zarr("bare.zarr");
+    expect(bare).toMatchObject({ dtype: "uint16" });
+    expect(bare.axes).toBeUndefined();
+    expect(acceptProblems({ kind: "volume", axes: "tyx" }, bare)).toEqual([]);
+    // a group of arrays without OME metadata: its largest
+    await put("group.zarr", ".zgroup", { zarr_format: 2 });
+    await put("group.zarr/mask", ".zarray", { shape: [1, 96, 96], dtype: "|u1" });
+    await put("group.zarr/mask", ".zattrs", { _ARRAY_DIMENSIONS: ["t", "y", "x"] });
+    await put("group.zarr/movie", ".zarray", { shape: [12, 96, 96], dtype: "<u2" });
+    await put("group.zarr/movie", ".zattrs", { _ARRAY_DIMENSIONS: ["t", "y", "x"] });
+    expect(await zarr("group.zarr")).toMatchObject({ axes: "tyx", shape: [12, 96, 96], dtype: "uint16" });
+  });
+
   it("reads a CSV's columns and rows, and falls back to kind and size for the rest", async () => {
     await writeFile(join(root, "t.csv"), "label,\"area\"\n1,2\n3,4\n\n");
     expect(await inspect({ uri: join(root, "t.csv"), kind: "table", format: "csv" })).toMatchObject({ columns: ["label", "area"], rows: 2, sizeBytes: 22 });

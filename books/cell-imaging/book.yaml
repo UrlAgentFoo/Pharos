@@ -47,7 +47,8 @@ actions:
       - { title: Tracking, note: "If tracks break, raise the largest move; if debris is tracked, raise the smallest cell.", params: [max_distance, min_size] }
       - { title: Stain, note: "This movie has several channels: pick the one with the nuclear stain.", params: [channel], when: { has: [channels] } }
     steps:
-      - { id: convert, run: bio-utils.convert, in: { image: $movie } }
+      # a plain Zarr array that doesn't name its axes is read as a movie here
+      - { id: convert, run: bio-utils.convert, in: { image: $movie }, with: { axes_if_unknown: tyx } }
       - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
       - { id: track, run: ultrack.track, in: { labels: segment.masks } }
       - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }

@@ -4,6 +4,7 @@
  * does goes through it; without one the page can only say how to start it.
  */
 import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, ChatTurn, ControlsLayout, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WindowRef, WorkspaceInfo } from "@pharos/contracts";
+import { type FolderFile, tarBlob } from "./tar.js";
 
 export interface ServerInfo {
   version: string;
@@ -159,6 +160,12 @@ export class LocalServer {
   /** Uploads a dropped or picked file into the workspace. */
   async upload(workspace: string, file: File): Promise<Artifact> {
     const r = await this.call(`${artifactsPath(workspace)}/upload?name=${encodeURIComponent(file.name)}`, { method: "PUT", body: file });
+    return r.json();
+  }
+
+  /** A dropped folder (a .zarr store) as one upload: its files, by their paths inside it, sent as tar. */
+  async uploadFolder(workspace: string, name: string, files: FolderFile[]): Promise<Artifact> {
+    const r = await this.call(`${artifactsPath(workspace)}/upload-folder?name=${encodeURIComponent(name)}`, { method: "PUT", body: tarBlob(files) });
     return r.json();
   }
 

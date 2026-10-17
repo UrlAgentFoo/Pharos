@@ -152,28 +152,76 @@ def read_czi(path):
         return Image(data, axes)
 
 
-def read_zarr(path):
+# axis names other tools give plain Zarr arrays (xarray's _ARRAY_DIMENSIONS, Zarr 3's dimension_names)
+DIM_NAMES = {"t": "t", "time": "t", "frame": "t", "frames": "t", "c": "c", "ch": "c", "channel": "c", "channels": "c", "z": "z", "depth": "z", "y": "y", "x": "x"}
+# a plain array that names none: its axes by how many it has
+GUESSED = {2: "yx", 3: "zyx", 4: "tzyx", 5: "tczyx"}
+
+
+def read_zarr(path, axes_if_unknown=""):
+    """
+    The image in a Zarr store, format 2 or 3: OME-Zarr (NGFF 0.4 or 0.5), with
+    the image a level down as bioformats2raw writes it (in 0/), or a plain
+    array, or a group of arrays without OME metadata (its largest). A plain
+    array's axes come from its dimension names, else `axes_if_unknown`, else a
+    guess from how many it has.
+    """
     import zarr
 
-    group = zarr.open_group(path, mode="r")
-    attrs = dict(group.attrs)
-    ome = attrs.get("ome", attrs)
+    node = zarr.open(path, mode="r")
+    if isinstance(node, zarr.Array):
+        return _plain_zarr(node, axes_if_unknown)
+    ome = dict(node.attrs)
+    ome = ome.get("ome", ome)
+    if "multiscales" in ome:
+        return _ome_zarr(node, ome)
+    # bioformats2raw keeps each image in a numbered group, with OME metadata of its own
+    if "0" in node and isinstance(node["0"], zarr.Group):
+        inner = dict(node["0"].attrs)
+        inner = inner.get("ome", inner)
+        if "multiscales" in inner:
+            log("bioformats2raw layout: reading its first image, 0/")
+            return _ome_zarr(node["0"], inner)
+    arrays = sorted(node.arrays(), key=lambda na: -math.prod(na[1].shape))
+    if not arrays:
+        raise SystemExit(f"{os.path.basename(path.rstrip('/'))} holds no arrays")
+    log(f"no OME metadata: reading its largest array, {arrays[0][0]}")
+    return _plain_zarr(arrays[0][1], axes_if_unknown)
+
+
+def _ome_zarr(group, ome):
     ms = ome["multiscales"][0]
-    names = "".join(a["name"] if isinstance(a, dict) else a for a in ms["axes"])
+    # some writers name axes in capitals (T, Z, Y, X)
+    names = "".join((a["name"] if isinstance(a, dict) else a).lower() for a in ms["axes"])
     level = ms["datasets"][0]
-    data = np.asarray(zarr.open_array(os.path.join(path, level["path"]), mode="r")[...])
+    data = np.asarray(group[level["path"]][...])
     scale = {}
     for t in level.get("coordinateTransformations", []):
         if t.get("type") == "scale":
             scale = {a: s for a, s in zip(names, t["scale"]) if a in "zyx"}
-    unit = next((a.get("unit") for a in ms["axes"] if isinstance(a, dict) and a.get("name") == "x" and a.get("unit")), "pixel")
+    unit = next((a.get("unit") for a in ms["axes"] if isinstance(a, dict) and a.get("name", "").lower() == "x" and a.get("unit")), "pixel")
     return Image(data, names, scale, {"micrometer": "µm"}.get(unit, unit))
 
 
-def read_image(path):
+def _plain_zarr(array, axes_if_unknown):
+    dims = array.attrs.get("_ARRAY_DIMENSIONS") or getattr(array.metadata, "dimension_names", None)
+    if dims and all(d is not None and str(d).lower() in DIM_NAMES for d in dims):
+        axes = "".join(DIM_NAMES[str(d).lower()] for d in dims)
+    elif axes_if_unknown:
+        axes = axes_if_unknown.strip().lower()
+    else:
+        axes = GUESSED.get(array.ndim, "")
+        if axes:
+            log(f"the array doesn't name its axes: taking {axes} from its {array.ndim} dimensions (set 'Axes, if the file doesn't say' if that's wrong)")
+    if len(axes) != array.ndim or len(set(axes)) != len(axes) or not set(axes) <= set(CANONICAL):
+        raise SystemExit(f"can't tell the axes of this {array.ndim}-dimensional array: set 'Axes, if the file doesn't say' to one letter of t, c, z, y, x per dimension (tyx for a movie)")
+    return Image(np.asarray(array[...]), axes)
+
+
+def read_image(path, axes_if_unknown=""):
     p = path.lower().rstrip("/")
     if os.path.isdir(path) or p.endswith(".zarr"):
-        return read_zarr(path).canonical()
+        return read_zarr(path, axes_if_unknown).canonical()
     if p.endswith((".tif", ".tiff")):
         return read_tiff(path).canonical()
     if p.endswith(".nd2"):
@@ -242,7 +290,7 @@ def summary(image, name, size):
 
 def cmd_convert(args):
     progress(0.05, "reading")
-    image = read_image(args.input)
+    image = read_image(args.input, args.axes_if_unknown)
     log(f"read {os.path.basename(args.input)}: axes {image.axes}, shape {list(image.data.shape)}, {image.data.dtype}")
     progress(0.6, "writing OME-Zarr")
     write_ome_zarr(args.out, image, Path(args.input).stem)
@@ -318,6 +366,7 @@ def main():
     p = sub.add_parser("convert")
     p.add_argument("--in", dest="input", required=True)
     p.add_argument("--out", required=True)
+    p.add_argument("--axes-if-unknown", dest="axes_if_unknown", default="")
     p = sub.add_parser("inspect")
     p.add_argument("--in", dest="input", required=True)
     p.add_argument("--out", required=True)

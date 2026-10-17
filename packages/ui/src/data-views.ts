@@ -26,7 +26,8 @@ export type Loaded =
   | { type: "case"; summary: CaseSummary }
   | { type: "text"; text: string }
   | { type: "page"; url: string; bytes: number }
-  | { type: "info" }
+  /** Data the window can't draw itself; `reason` when it tried (a Zarr it can't read), and ship views may still show it. */
+  | { type: "info"; reason?: string }
   | { type: "error"; message: string };
 
 /** A viewer drawn into an element; destroy it before reusing the element. */
@@ -39,7 +40,15 @@ export interface Mounted {
 export async function loadView(s: LocalServer, workspace: string, a: Artifact): Promise<Loaded> {
   try {
     if (a.kind === "volume" || a.kind === "labels") {
-      const image = await readTiff(await s.artifactImage(workspace, a.id), a.name);
+      let tiff: ArrayBuffer;
+      try {
+        tiff = await s.artifactImage(workspace, a.id);
+      } catch (e) {
+        // what the preview can't read (a Blosc-compressed or Zarr 3 store, a plain array): a ship's view can still show it
+        if ((e as { status?: number }).status === 415) return { type: "info", reason: e instanceof Error ? e.message : String(e) };
+        throw e;
+      }
+      const image = await readTiff(tiff, a.name);
       const view = newViewState(image);
       view.labels = a.kind === "labels";
       // open stacks in the middle, where the objects usually are, not on the (often empty) first slice
@@ -165,6 +174,7 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
       return none;
     default:
       host.innerHTML = `<div class="dv-card"><p class="eyebrow">${escapeHtml(a.kind)} · ${escapeHtml(a.format)}</p><h3>${escapeHtml(a.name ?? a.id)}</h3>
+        ${entry.type === "info" && entry.reason ? `<p class="small">${escapeHtml(entry.reason.charAt(0).toUpperCase() + entry.reason.slice(1))}.</p>` : ""}
         <p class="muted">Pharos can't show this kind of data inside a window yet. It's stored at:</p><pre class="code">${escapeHtml(a.uri)}</pre></div>`;
       return none;
   }

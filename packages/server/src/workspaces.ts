@@ -13,6 +13,7 @@ import { constants, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } 
 import { basename, join, relative, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { sniff } from "@pharos/catalogue";
+import { TarError, extractTar } from "./tar.js";
 import type { Artifact, ArtifactKind, Format, FormatInfo, WorkspaceInfo } from "@pharos/contracts";
 
 export class WorkspaceError extends Error {
@@ -152,6 +153,23 @@ export class WorkspaceStore {
   async importStream(name: string, filename: string, body: NodeJS.ReadableStream): Promise<Artifact> {
     if (!filename || filename !== basename(filename)) throw new WorkspaceError(400, `invalid file name "${filename}"`);
     return this.ingest(name, filename, (dest) => pipeline(body, createWriteStream(dest)));
+  }
+
+  /**
+   * Stores a dropped folder (a .zarr store, an OpenFOAM case) sent as a tar
+   * stream, unpacked under `foldername`; what it is comes from its name and
+   * what's in it, as for a folder added by path.
+   */
+  async importFolder(name: string, foldername: string, body: AsyncIterable<Buffer | string>, limits: { maxBytes: number; maxFiles: number }): Promise<Artifact> {
+    if (!foldername || foldername !== basename(foldername) || foldername === "." || foldername === "..") throw new WorkspaceError(400, `invalid folder name "${foldername}"`);
+    return this.ingest(name, foldername, async (dest) => {
+      await mkdir(dest);
+      try {
+        await extractTar(body, dest, limits);
+      } catch (e) {
+        throw e instanceof TarError ? new WorkspaceError(400, `couldn't unpack ${foldername}: ${e.message}`) : e;
+      }
+    });
   }
 
   /**

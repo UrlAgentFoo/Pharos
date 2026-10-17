@@ -96,12 +96,39 @@ async function readJson(path: string): Promise<Record<string, unknown> | null> {
 
 const ZARR_DTYPES: Record<string, string> = { "|u1": "uint8", "<u2": "uint16", ">u2": "uint16", "<u4": "uint32", "<f4": "float32", ">f4": "float32", "<f8": "float64", "|i1": "int8", "<i2": "int16" };
 
-async function inspectZarr(path: string): Promise<Partial<DataSummary>> {
+/** Axis names other tools give plain Zarr arrays (xarray's _ARRAY_DIMENSIONS, Zarr 3's dimension_names). */
+const DIM_NAMES: Record<string, string> = { t: "t", time: "t", frame: "t", frames: "t", c: "c", ch: "c", channel: "c", channels: "c", z: "z", depth: "z", y: "y", x: "x" };
+
+/**
+ * A Zarr store, format 2 or 3: OME-Zarr (with the image a level down, in
+ * 0/, as bioformats2raw writes it), or a plain array or group of arrays,
+ * whose axes are known only when it names its dimensions; otherwise they're
+ * left out, so books that need particular axes still offer themselves and
+ * bio-utils › convert settles them.
+ */
+async function inspectZarr(path: string, depth = 0): Promise<Partial<DataSummary>> {
   // v3 keeps attributes in zarr.json under "attributes" (OME under "ome"); v2 in .zattrs
   const v3 = await readJson(join(path, "zarr.json"));
   const attrs = (v3 ? ((v3.attributes as Record<string, unknown>)?.ome ?? v3.attributes) : await readJson(join(path, ".zattrs"))) as Record<string, unknown> | null;
   const ms = (attrs?.multiscales as { axes?: (string | { name: string })[]; datasets: { path: string; coordinateTransformations?: { type: string; scale?: number[] }[] }[] }[] | undefined)?.[0];
-  if (!ms) return {};
+  if (!ms) {
+    if (v3?.node_type === "array" || (!v3 && (await readJson(join(path, ".zarray"))))) return inspectPlainZarr(path, v3);
+    // bioformats2raw: the image in a numbered group of its own
+    if (depth === 0) {
+      const inner = await inspectZarr(join(path, "0"), 1);
+      if (inner.axes) return inner;
+    }
+    // a group of arrays without OME metadata: its largest
+    const arrays: { dir: string; meta: Record<string, unknown> | null; size: number }[] = [];
+    for (const e of await readdir(path, { withFileTypes: true }).catch(() => [])) {
+      if (!e.isDirectory()) continue;
+      const v3a = await readJson(join(path, e.name, "zarr.json"));
+      const meta = v3a?.node_type === "array" ? v3a : v3a ? null : await readJson(join(path, e.name, ".zarray"));
+      if (meta) arrays.push({ dir: join(path, e.name), meta: v3a, size: ((meta.shape as number[]) ?? []).reduce((a, b) => a * b, 1) });
+    }
+    const largest = arrays.sort((a, b) => b.size - a.size)[0];
+    return largest ? inspectPlainZarr(largest.dir, largest.meta) : {};
+  }
   // some writers name axes in capitals (T, Z, Y, X)
   const names = (ms.axes ?? ["t", "c", "z", "y", "x"]).map((a) => (typeof a === "string" ? a : a.name).toLowerCase()).join("");
   const level0 = ms.datasets[0];
@@ -122,6 +149,20 @@ async function inspectZarr(path: string): Promise<Partial<DataSummary>> {
       ? { voxelSize: { x: scale[at("x")], y: scale[at("y")], ...(at("z") >= 0 ? { z: scale[at("z")] } : {}), unit: (unitOf ?? "micrometer").replace("micrometer", "µm") } }
       : {}),
   };
+}
+
+/** A plain Zarr array: its data type, and its axes and shape when it names its dimensions. */
+async function inspectPlainZarr(dir: string, v3: Record<string, unknown> | null): Promise<Partial<DataSummary>> {
+  const meta = v3 ?? (await readJson(join(dir, ".zarray")));
+  if (!meta) return {};
+  const rawType = (v3 ? meta.data_type : meta.dtype) as string | undefined;
+  const dims = (v3 ? meta.dimension_names : ((await readJson(join(dir, ".zattrs")))?._ARRAY_DIMENSIONS as unknown)) as (string | null)[] | undefined;
+  const fullShape = (meta.shape as number[] | undefined) ?? [];
+  const names = Array.isArray(dims) && dims.length === fullShape.length && dims.every((d) => typeof d === "string" && DIM_NAMES[d.toLowerCase()]) ? dims.map((d) => DIM_NAMES[d!.toLowerCase()]).join("") : null;
+  const out: Partial<DataSummary> = rawType ? { dtype: ZARR_DTYPES[rawType] ?? rawType } : {};
+  if (!names || new Set(names).size !== names.length) return out;
+  const { axes, shape } = squeeze(names, fullShape);
+  return { ...out, axes, shape, channels: names.includes("c") ? fullShape[names.indexOf("c")] : 1, timepoints: names.includes("t") ? fullShape[names.indexOf("t")] : 1 };
 }
 
 /** A GEFF graph (a zarr group of nodes and edges): its axes, node count and node properties, from metadata alone. */

@@ -220,6 +220,11 @@ export interface ApiRoutes {
   "POST /api/workspaces/:name/artifacts": { req: { path: string; name?: string }; res: Artifact };
   /** Raw file bytes as the body; `?name=<file name>` gives the name and, from its extension, the kind. */
   "PUT /api/workspaces/:name/artifacts/upload": { req: ArrayBuffer; res: Artifact };
+  /**
+   * A folder (a .zarr store, an OpenFOAM case) as a tar stream for the body;
+   * `?name=<folder name>` names it, and its name and contents say what it is.
+   */
+  "PUT /api/workspaces/:name/artifacts/upload-folder": { req: ArrayBuffer; res: Artifact };
   "GET /api/workspaces/:name/artifacts/:id": { req: void; res: Artifact };
   /** The artifact's bytes (files only; folders such as OME-Zarr answer 400). */
   "GET /api/workspaces/:name/artifacts/:id/content": { req: void; res: ArrayBuffer };

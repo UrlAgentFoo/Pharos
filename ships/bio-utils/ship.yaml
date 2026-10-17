@@ -8,9 +8,12 @@ tags: [microscopy, conversion, measurement]
 requires: { memory_gb: 4, network: none }
 operations:
   convert:
-    summary: Converts TIFF, OME-TIFF, Zeiss CZI, Nikon ND2 and Leica LIF images to OME-Zarr, with axes in t, c, z, y, x order; rewrites other OME-Zarr the same way.
-    command: python /opt/pharos/pharos_bio.py convert --in {in.image} --out /out/image.zarr
+    summary: Converts TIFF, OME-TIFF, Zeiss CZI, Nikon ND2 and Leica LIF images to OME-Zarr, with axes in t, c, z, y, x order; rewrites any other Zarr the same way (OME-Zarr in Zarr format 2 or 3 and any compression, bioformats2raw's layout, or a plain array). Windows use it to show what they can't draw themselves.
+    command: python /opt/pharos/pharos_bio.py convert --in {in.image} --out /out/image.zarr --axes-if-unknown {axes_if_unknown}
+    view: true
     inputs: [{ name: image, kind: volume, formats: [tiff, ome-tiff, czi, nd2, lif, ome-zarr] }]
+    parameters:
+      - { name: axes_if_unknown, label: "Axes, if the file doesn't say", type: string, default: "", description: "For a plain Zarr array that doesn't name its axes: one letter of t, c, z, y, x per dimension, in order (tyx for a movie, zyx for a stack). Empty guesses from how many it has." }
     outputs: [{ name: zarr, kind: volume, format: ome-zarr, path: /out/image.zarr }]
     cache: { deterministic: true }
   inspect:

@@ -12,6 +12,7 @@ import { browseDialog, escapeHtml, formatSize, promptDialog, showDialog } from "
 import { diskUsage, diskUsageText, homePath } from "./format.js";
 import { icon } from "./icons.js";
 import { kindLabel } from "./viewers.js";
+import { droppedFolders, folderFiles } from "./dropped-folders.js";
 
 const CURRENT_KEY = "pharos.workspace";
 const DEFAULT_WORKSPACE = "default";
@@ -123,7 +124,7 @@ function showPanel(
             <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button></li>`,
         )
         .join("")
-    : `<li class="none">No data yet. Add files from this computer, or drop them here.</li>`;
+    : `<li class="none">No data yet. Add files or folders (a .zarr store) from this computer, or drop them here.</li>`;
   return showDialog<PanelResult>(
     `<p class="eyebrow">Workspace</p>
      <div class="ws-head"><select data-ws aria-label="Workspace">${options}</select><button class="chip" data-new>${icon("plus", 14)} New</button></div>
@@ -164,9 +165,10 @@ function showPanel(
         e.preventDefault();
         e.stopPropagation(); // the desktop would open the files as windows
         drop.classList.remove("over");
-        const files = [...(e.dataTransfer?.files ?? [])];
+        const folders = e.dataTransfer ? droppedFolders(e.dataTransfer.items) : [];
+        const files = [...(e.dataTransfer?.files ?? [])].filter((f) => !folders.some((d) => d.name === f.name));
         try {
-          await uploadAll(server, name, files);
+          await uploadAll(server, name, files, folders);
         } catch (err) {
           notify(err instanceof Error ? err.message : String(err));
         }
@@ -193,8 +195,10 @@ function addByUpload(server: LocalServer, name: string): Promise<Artifact[]> {
   });
 }
 
-async function uploadAll(server: LocalServer, name: string, files: File[]): Promise<Artifact[]> {
+async function uploadAll(server: LocalServer, name: string, files: File[], folders: FileSystemDirectoryEntry[] = []): Promise<Artifact[]> {
   const out: Artifact[] = [];
   for (const f of files) out.push(await server.upload(name, f));
+  // a folder goes up whole, as one item (a .zarr store, an OpenFOAM case)
+  for (const d of folders) out.push(await server.uploadFolder(name, d.name, await folderFiles(d)));
   return out;
 }

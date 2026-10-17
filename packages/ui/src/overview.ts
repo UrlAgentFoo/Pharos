@@ -9,6 +9,7 @@ import { icon } from "./icons.js";
 import { formatShortcut } from "./keys.js";
 import type { WindowManager } from "./windows.js";
 import type { DataDoc, Workspace } from "./workspace.js";
+import { droppedFolders } from "./dropped-folders.js";
 
 /** Anything the palette can run. */
 export interface Action {
@@ -33,7 +34,8 @@ export interface OverviewHooks {
   aiUnavailable(): string | null;
   closeDoc(doc: DataDoc): void;
   /** Adds dropped files to the workspace. */
-  addFiles(files: File[]): void;
+  /** Dropped files and folders (a .zarr store), added as data. */
+  addFiles(files: File[], folders: FileSystemDirectoryEntry[]): void;
 }
 
 interface Item {
@@ -110,7 +112,8 @@ export class Overview {
       if (!e.dataTransfer?.files.length) return;
       e.preventDefault();
       e.stopPropagation();
-      hooks.addFiles([...e.dataTransfer.files]);
+      const folders = droppedFolders(e.dataTransfer.items);
+      hooks.addFiles([...e.dataTransfer.files].filter((f) => !folders.some((d) => d.name === f.name)), folders);
     });
   }
 

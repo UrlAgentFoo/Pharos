@@ -18,6 +18,7 @@ import { WindowManager } from "./windows.js";
 import { type DataDoc, Workspace, blockAt, timeBlocks, underWay } from "./workspace.js";
 import { kindLabel } from "./viewers.js";
 import { chainHtml, chainModel, layoutChain, tableLine } from "./chain-graph.js";
+import { droppedFolders, folderFiles } from "./dropped-folders.js";
 import { SuggestedControls } from "./suggested-controls.js";
 import { localDay, tokenUsageHtml } from "./token-usage.js";
 import { WindowSummary } from "./window-summary.js";
@@ -906,15 +907,15 @@ async function addData() {
 }
 
 /** Dropped files go into the workspace; projects open as projects. */
-async function dropData(files: File[], folders: string[]) {
+async function dropData(files: File[], folders: FileSystemDirectoryEntry[] = []) {
   const project = files.find((f) => f.name.toLowerCase().endsWith(PROJECT_EXT));
   if (project) return openProject(new Uint8Array(await project.arrayBuffer()), project.name);
   const s = server;
   if (!s) return alertDialog("Add data", NO_SERVER);
-  if (folders.length) notify(`Folders can't be dropped yet (${folders.join(", ")}): use Add data… and choose the folder.`);
-  if (!files.length) return;
+  const count = files.length + folders.length;
+  if (!count) return;
   const workspace = currentWorkspace();
-  const added = await run(`Adding ${files.length === 1 ? files[0].name : `${files.length} files`}`, async () => {
+  const added = await run(`Adding ${count === 1 ? (files[0]?.name ?? folders[0].name) : `${count} items`}`, async () => {
     await s.createWorkspace(workspace);
     const out: Artifact[] = [];
     const skipped: string[] = [];
@@ -923,6 +924,14 @@ async function dropData(files: File[], folders: string[]) {
         out.push(await s.upload(workspace, f));
       } catch (e) {
         skipped.push(`${f.name}: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    // a folder goes up whole, as one item (a .zarr store, an OpenFOAM case)
+    for (const d of folders) {
+      try {
+        out.push(await s.uploadFolder(workspace, d.name, await folderFiles(d)));
+      } catch (e) {
+        skipped.push(`${d.name}: ${e instanceof Error ? e.message : e}`);
       }
     }
     if (skipped.length) void alertDialog("Some files weren't added", skipped.join("\n"));
@@ -1204,7 +1213,7 @@ const overview = new Overview({
   ask: (q) => assistant.focus(q),
   aiUnavailable,
   closeDoc: (doc) => void closeDoc(doc),
-  addFiles: (files) => void dropData(files, []),
+  addFiles: (files, folders) => void dropData(files, folders),
 });
 
 ws.subscribe(refresh);
@@ -1263,10 +1272,9 @@ document.addEventListener("drop", (e) => {
   $("drop").hidden = true;
   if (!e.dataTransfer?.files.length) return;
   e.preventDefault();
-  // folders arrive as entries without readable content; note them, add the files
-  const items = [...e.dataTransfer.items];
-  const folders = items.map((i) => i.webkitGetAsEntry?.()).filter((x) => x?.isDirectory).map((x) => x!.name);
-  const files = [...e.dataTransfer.files].filter((f) => !folders.includes(f.name));
+  // folders (a .zarr store) arrive as entries, read now and walked for their files once the drop is over
+  const folders = droppedFolders(e.dataTransfer.items);
+  const files = [...e.dataTransfer.files].filter((f) => !folders.some((d) => d.name === f.name));
   void dropData(files, folders);
 });
 
