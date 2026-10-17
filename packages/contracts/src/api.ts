@@ -119,7 +119,31 @@ export interface Example {
   run?: { book: string; action?: string; params?: Params };
 }
 
-/** What the assistant proposes for some data and a request; `plan` is null when nothing fits. */
+/**
+ * The assistant's layout of the Controls panel for one book action on a
+ * window's data, for the panel's Suggested tab: what the action does there,
+ * the one or two settings worth changing, and the rest folded away.
+ */
+export interface ControlsLayout {
+  /** What the action does to this data, in about eight words. */
+  summary: string;
+  /** The settings shown at once, at most two, each with a hint of about eight words. */
+  shown: { param: string; hint: string }[];
+  /** Every other setting, folded under More settings in titled groups. */
+  more: { title: string; params: string[] }[];
+  /** Values it suggests for this data, where the defaults won't do. */
+  values: Params;
+  /** Why those values, in one sentence; empty when it suggests none. */
+  rationale: string;
+}
+
+/** One earlier message in the conversation with the assistant, oldest first. */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+/** What the assistant says to a message, and the plan it proposes when asked to do something; `plan` is null otherwise. */
 export interface AssistantPlan {
   plan: Plan | null;
   message: string;
@@ -196,7 +220,17 @@ export interface ApiRoutes {
    * asked: nothing runs without approval.
    */
   "POST /api/examples/:id/prepare": { req: void; res: Plan };
-  "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[] }; res: AssistantPlan };
+  /**
+   * The assistant answers a message about the active window's data, with the
+   * conversation so far in `history`; when asked to do something it proposes a plan.
+   */
+  "POST /api/assistant/plan": { req: { workspace: string; text: string; artifacts: string[]; history?: ChatTurn[] }; res: AssistantPlan };
+  /**
+   * The assistant lays out the Controls for a book action on an artifact,
+   * starting from the book's own design; `request` is what the user asked
+   * for, when the action answers a message. Kept while the server runs.
+   */
+  "POST /api/assistant/controls": { req: { workspace: string; artifact: string; book: string; action: string; request?: string }; res: { layout: ControlsLayout; model?: string } };
   "GET /api/plans/:id": { req: void; res: Plan };
   "PUT /api/plans/:id": { req: Pick<Plan, "parameters" | "steps" | "inputs">; res: Plan };
   /** Answers 422 with the problems while the plan has errors. */

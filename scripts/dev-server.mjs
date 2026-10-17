@@ -17,5 +17,6 @@ const server = await startServer({
   uiDir: join(root, "packages", "ui"), // never served: Vite serves the page
   dataDir: process.env.PHAROS_DEV_DATA || defaultDataDir(),
   libraryDirs: [root],
+  envFile: join(root, ".env"), // an Anthropic key there counts when Settings and the environment have none
 });
 process.on("SIGTERM", () => void server.close().then(() => process.exit(0)));

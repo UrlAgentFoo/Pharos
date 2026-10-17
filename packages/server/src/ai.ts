@@ -1,12 +1,14 @@
 /**
  * The assistant's settings: which model, and the API key (from the settings
- * file or the environment), which lives here on the server and never reaches
- * the browser. The assistant itself is the planner (planner.ts): it picks a
+ * file, the environment, or a `.env` file), which lives here on the server and
+ * never reaches the browser. The assistant itself is the planner (planner.ts): it picks a
  * book and proposes a plan, which the user approves before anything runs.
  */
+import { readFileSync } from "node:fs";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { parseEnv } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
 
 export const AI_MODELS = [
@@ -26,9 +28,11 @@ export interface AiConfigView {
   models: typeof AI_MODELS;
   model: string;
   /** Where the key comes from; null when none is configured. */
-  keySource: "settings" | "environment" | null;
+  keySource: "settings" | "environment" | "file" | null;
   /** Last characters of a saved key, so users can tell which one is set. */
   keyHint?: string;
+  /** The `.env` file the key comes from, when it does. */
+  keyFile?: string;
 }
 
 /** The slice of the Anthropic client this module uses (tests pass a fake). */
@@ -69,13 +73,36 @@ export async function saveSettings(dir: string, ai: AiSettings): Promise<void> {
   await chmod(file, 0o600); // writeFile's mode only applies when creating the file
 }
 
-export function configView(s: AiSettings): AiConfigView {
-  const env = process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+const environmentKey = () => process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN;
+
+/** ANTHROPIC_API_KEY from a `.env` file, or null; only that line is read, so nothing else in the file changes how Pharos runs. */
+export function keyFromEnvFile(file: string): string | null {
+  try {
+    return parseEnv(readFileSync(file, "utf8")).ANTHROPIC_API_KEY?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The key to give the Anthropic client: the one saved in Settings, else
+ * undefined when the environment has one (the client reads it there), else
+ * the one in `envFile`.
+ */
+export function apiKeyFor(s: AiSettings, envFile?: string): string | undefined {
+  if (s.apiKey) return s.apiKey;
+  if (environmentKey()) return undefined;
+  return (envFile && keyFromEnvFile(envFile)) || undefined;
+}
+
+export function configView(s: AiSettings, envFile?: string): AiConfigView {
+  const fromFile = !s.apiKey && !environmentKey() && !!envFile && !!keyFromEnvFile(envFile);
   return {
     models: AI_MODELS,
     model: s.model,
-    keySource: s.apiKey ? "settings" : env ? "environment" : null,
+    keySource: s.apiKey ? "settings" : environmentKey() ? "environment" : fromFile ? "file" : null,
     keyHint: s.apiKey ? `…${s.apiKey.slice(-4)}` : undefined,
+    ...(fromFile ? { keyFile: envFile } : {}),
   };
 }
 

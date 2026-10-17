@@ -66,6 +66,11 @@ Running ships needs Docker (Docker Desktop on macOS and Windows); GPU steps
 need Linux with an NVIDIA GPU and the NVIDIA Container Toolkit. Data lives in
 `~/Pharos` (set `PHAROS_HOME` or `--data` to change it).
 
+The assistant needs an Anthropic API key: save one in its Settings, or set
+`ANTHROPIC_API_KEY` in the environment or in a `.env` file in the folder you
+start Pharos from (this repo ignores `.env`). A key saved in Settings wins,
+then the environment, then `.env`.
+
 To use the catalogue from Claude Code, Claude Desktop or another MCP client,
 add a stdio server that runs `pharos mcp --library <this repo>`.
 

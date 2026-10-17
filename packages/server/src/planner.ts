@@ -1,7 +1,8 @@
 /**
- * The assistant's planning turn: from the user's data and a sentence, pick
- * a book from the shortlist and fill its parameters, or, when no book fits,
- * chain ship operations into an improvised pipeline.
+ * The assistant's turn in the conversation: it answers a message about the
+ * user's data, and when asked to do something, picks a book from the
+ * shortlist and fills its parameters, or, when no book fits, chains ship
+ * operations into an improvised pipeline. Earlier turns come as plain text.
  *
  * The shortlist comes from file-based matching, before the model sees
  * anything; the model sees data summaries (never pixels), the shortlisted
@@ -13,7 +14,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { Library } from "@pharos/books";
 import type { McpContext } from "@pharos/catalogue";
-import type { BookMatch, DataSummary, Plan, Step } from "@pharos/contracts";
+import type { BookMatch, ChatTurn, DataSummary, Plan, Step } from "@pharos/contracts";
 import { type AiClient, AiError } from "./ai.js";
 
 const CHOOSE_BOOK = "choose_book";
@@ -25,6 +26,8 @@ export interface PlannerInput {
   text: string;
   /** The user's data, in the order they chose it: artifact id and summary. */
   data: { id: string; summary: DataSummary }[];
+  /** The conversation so far, oldest first. */
+  history?: ChatTurn[];
 }
 
 export interface PlannerResult {
@@ -41,16 +44,18 @@ export interface PlanMaker {
   improvised(title: string, rationale: string, inputs: Record<string, string>, steps: Step[]): Promise<Plan>;
 }
 
-const SYSTEM = `You are the planner inside Pharos, a local app that runs scientific tools in containers on the user's computer.
+const SYSTEM = `You are Pharos, the assistant in a local app that runs scientific tools in containers on the user's computer. You talk with the user in a panel beside the window they're working in, about that window's data.
 
-Ships are container images with typed operations. Books are tested apps for a domain; each offers one or more actions, and each action chains ship operations for a task. The user has chosen some data and described what they want. Pharos has already matched their data against every book; you get the books that can run on it (direct, or after a conversion step), each with its guide.
+Ships are container images with typed operations. Books are tested apps for a domain; each offers one or more actions, and each action chains ship operations for a task. Pharos has already matched the window's data against every book; you get the books that can run on it (direct, or after a conversion step), each with its guide.
 
-Decide, in this order:
+Many messages are conversation: a greeting, thanks, a question about Pharos, the data, a book or a result. Answer those in one to three plain, friendly sentences without calling a tool; when it helps, say what you could do with this data (by the books' action titles).
+
+When the user asks for something to be done with the data, decide in this order:
 1. If a shortlisted book has an action that fits the request, call ${CHOOSE_BOOK} with the book and that action (only actions listed as fitting the data can run). Prefer verified books and direct matches. Fill parameters from the data summaries and the book's guide (for example a diameter in pixels from the voxel size and the typical object size); leave out parameters whose default suits. Assign each of the action's inputs the number of the data item it should get.
 2. Only if no book fits, call ${IMPROVISE} to chain the listed ship operations. Every step's input must come from a data item (as "$<input name>") or an earlier step's output ("<step id>.<output name>"), with matching kinds and formats.
 3. If neither works, call no tool and say briefly what is missing (a ship, a book or different data).
 
-Call at most one tool. Pharos checks the plan you propose and shows it to the user, who edits and approves it before anything runs. Your rationale is shown to the user: one or two plain sentences on why this book or pipeline, and any parameter you guessed. You see data summaries only, never the data itself; don't claim to have looked at it.`;
+Call at most one tool, and only when asked to do something. Pharos checks the plan you propose and shows it in the window, where the user edits and approves it before anything runs. Your rationale is shown to the user: one or two plain sentences on why this book or pipeline, and any parameter you guessed. You see data summaries only, never the data itself; don't claim to have looked at it.`;
 
 function tools(): Anthropic.Beta.BetaTool[] {
   return [
@@ -153,6 +158,20 @@ function describeOperations(ctx: McpContext, library: Library, text: string): st
   return lines.join("\n") || "(no ships in the library)";
 }
 
+/** Earlier turns as alternating messages, starting with the user's (the API wants that), same-role neighbours joined. */
+function conversation(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
+  const out: { role: ChatTurn["role"]; text: string }[] = [];
+  for (const t of history) {
+    if (!out.length && t.role !== "user") continue;
+    const last = out[out.length - 1];
+    if (last?.role === t.role) last.text += `\n\n${t.text}`;
+    else out.push({ ...t });
+  }
+  // the message being answered is the user's, so the history before it ends with the assistant
+  if (out[out.length - 1]?.role === "user") out.pop();
+  return out.map((t) => ({ role: t.role, content: t.text }));
+}
+
 function describeData(data: PlannerInput["data"]): string {
   return data.map((d, i) => `${i + 1}. ${JSON.stringify(d.summary)}`).join("\n") || "(no data chosen)";
 }
@@ -202,6 +221,7 @@ export async function planWithAssistant(
   maker: PlanMaker,
 ): Promise<PlannerResult> {
   const messages: Anthropic.Beta.BetaMessageParam[] = [
+    ...conversation(input.history ?? []),
     {
       role: "user",
       content: [
@@ -209,7 +229,7 @@ export async function planWithAssistant(
         `<shortlist>\n${describeBooks(ctx.matches, ctx.library)}\n</shortlist>`,
         `<operations>\n${describeOperations(ctx, ctx.library, input.text)}\n</operations>`,
         `<machine gpu="${ctx.gpu}"/>`,
-        `Request: ${input.text}`,
+        `Message: ${input.text}`,
       ].join("\n\n"),
     },
   ];

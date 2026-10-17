@@ -6,8 +6,9 @@ import type { AddressInfo } from "node:net";
 import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { Library, type TrustLookup, hasErrors, resolveBook } from "@pharos/books";
-import type { Step } from "@pharos/contracts";
-import { AiError, type AiClientFactory, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
+import type { ChatTurn, ControlsLayout, Step } from "@pharos/contracts";
+import { layoutControls } from "./controls.js";
+import { AiError, type AiClientFactory, apiKeyFor, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
@@ -30,6 +31,8 @@ export interface ServerOptions {
   configDir?: string;
   /** Creates the Anthropic client; tests pass a fake. */
   aiClient?: AiClientFactory;
+  /** A `.env` file whose ANTHROPIC_API_KEY counts when neither Settings nor the environment has a key; read each time it's needed. */
+  envFile?: string;
   /** Where workspaces (artifacts, runs, cache) live. Defaults to $PHAROS_HOME or ~/Pharos. */
   dataDir?: string;
   /**
@@ -88,6 +91,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = opts.token ?? newToken();
   const settingsDir = opts.configDir ?? configDir();
   const makeClient = opts.aiClient ?? defaultClientFactory;
+  /** The assistant's Controls layouts, by book version, action, artifact, request and model. */
+  const controlLayouts = new Map<string, Promise<{ layout: ControlsLayout; model?: string }>>();
   const dataDir = opts.dataDir ?? defaultDataDir();
   // library is set up just below; files are only imported once the server runs
   const workspaces = new WorkspaceStore(dataDir, async () => (await library.get()).formats());
@@ -176,11 +181,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, { path: file, bytes: body.length });
       }
       case "GET /api/ai/config":
-        return sendJson(res, 200, configView(await loadSettings(settingsDir)));
+        return sendJson(res, 200, configView(await loadSettings(settingsDir), opts.envFile));
       case "PUT /api/ai/config": {
         const next = updateSettings(await loadSettings(settingsDir), await readJson(req));
         await saveSettings(settingsDir, next);
-        return sendJson(res, 200, configView(next));
+        return sendJson(res, 200, configView(next, opts.envFile));
       }
       case "GET /api/workspaces":
         return sendJson(res, 200, await workspaces.list());
@@ -246,16 +251,48 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       case "GET /api/examples":
         return sendJson(res, 200, (await loadExamples(libraryDirs)).map(publicExample));
       case "POST /api/assistant/plan": {
-        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown }>(req);
+        const body = await readJson<{ workspace?: unknown; text?: unknown; artifacts?: unknown; history?: unknown }>(req);
         if (typeof body.workspace !== "string" || typeof body.text !== "string" || !Array.isArray(body.artifacts)) throw new HttpError(400, "workspace, text and artifacts are required");
+        // the conversation so far: its last turns, each kept short
+        const history: ChatTurn[] = (Array.isArray(body.history) ? body.history : [])
+          .flatMap((t: { role?: unknown; text?: unknown }): ChatTurn[] =>
+            (t?.role === "user" || t?.role === "assistant") && typeof t.text === "string" && t.text.trim() ? [{ role: t.role, text: t.text.trim().slice(0, 4000) }] : [],
+          )
+          .slice(-20);
         const settings = await loadSettings(settingsDir);
         let client;
         try {
-          client = makeClient(settings.apiKey);
+          client = makeClient(apiKeyFor(settings, opts.envFile));
         } catch {
           throw new HttpError(400, "No API key configured. Add one in Settings.");
         }
-        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }));
+        return sendJson(res, 200, await plans.withAssistant(body.workspace, body.text.trim().slice(0, 4000), body.artifacts.map(String), { client, model: settings.model }, history));
+      }
+      case "POST /api/assistant/controls": {
+        const body = await readJson<{ workspace?: unknown; artifact?: unknown; book?: unknown; action?: unknown; request?: unknown }>(req);
+        if (typeof body.workspace !== "string" || typeof body.artifact !== "string" || typeof body.book !== "string" || typeof body.action !== "string") {
+          throw new HttpError(400, "workspace, artifact, book and action are required");
+        }
+        const loaded = (await library.get()).book(body.book);
+        if (!loaded?.manifest) throw new HttpError(404, `no book "${body.book}"`);
+        const settings = await loadSettings(settingsDir);
+        const request = typeof body.request === "string" ? body.request.trim().slice(0, 2000) : undefined;
+        // artifact ids are content hashes, so one layout serves the same data wherever it opens
+        const key = JSON.stringify([loaded.manifest.id, loaded.manifest.version, body.action, body.artifact, request ?? "", settings.model]);
+        let laid = controlLayouts.get(key);
+        if (!laid) {
+          let client;
+          try {
+            client = makeClient(apiKeyFor(settings, opts.envFile));
+          } catch {
+            throw new HttpError(400, "No API key configured. Add one in Settings.");
+          }
+          const summary = await catalogue.summary(workspaces, body.workspace, body.artifact).catch(() => undefined);
+          laid = layoutControls(client, settings.model, { book: loaded.manifest, action: body.action, guide: loaded.guide, summary, request });
+          laid.catch(() => controlLayouts.delete(key)); // a failure isn't kept
+          controlLayouts.set(key, laid);
+        }
+        return sendJson(res, 200, await laid);
       }
       case "GET /api/status":
         return sendJson(res, 200, await orch.refreshStatus());

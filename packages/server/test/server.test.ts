@@ -139,6 +139,47 @@ describe("ai", () => {
     const file = join(tmp, "config", "settings.json");
     expect((await stat(file)).mode & 0o777).toBe(0o600);
   });
+
+  it("uses ANTHROPIC_API_KEY from a .env file when Settings and the environment have none", async () => {
+    const saved = { key: process.env.ANTHROPIC_API_KEY, token: process.env.ANTHROPIC_AUTH_TOKEN };
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.ANTHROPIC_AUTH_TOKEN;
+    const envFile = join(tmp, ".env");
+    const key = "sk-ant-file-0123456789abcdefWXYZ";
+    await writeFile(envFile, `OTHER=1\nANTHROPIC_API_KEY=${key}\n`);
+    const given: (string | undefined)[] = [];
+    const s = await startServer({
+      port: 0,
+      uiDir: join(tmp, "ui"),
+      token: TOKEN,
+      configDir: join(tmp, "config-env"),
+      dataDir: join(tmp, "data-env"),
+      envFile,
+      aiClient: (k) => {
+        given.push(k);
+        throw new Error("no requests in this test");
+      },
+    });
+    const call = (path: string, init: RequestInit = {}) => fetch(`${s.url}${path}`, { ...init, headers: { "x-pharos-token": TOKEN, "content-type": "application/json", ...init.headers } });
+    try {
+      const view = await (await call("/api/ai/config")).json();
+      expect(view).toMatchObject({ keySource: "file", keyFile: envFile });
+      expect(JSON.stringify(view)).not.toContain(key);
+      await call("/api/assistant/plan", { method: "POST", body: JSON.stringify({ workspace: "w", text: "count", artifacts: [] }) });
+      expect(given).toEqual([key]);
+      // a key in the environment wins, and the client reads it there itself
+      process.env.ANTHROPIC_API_KEY = "sk-ant-env-0123456789abcdef";
+      expect(await (await call("/api/ai/config")).json()).toMatchObject({ keySource: "environment" });
+      await call("/api/assistant/plan", { method: "POST", body: JSON.stringify({ workspace: "w", text: "count", artifacts: [] }) });
+      expect(given).toEqual([key, undefined]);
+    } finally {
+      await s.close();
+      for (const [name, value] of [["ANTHROPIC_API_KEY", saved.key], ["ANTHROPIC_AUTH_TOKEN", saved.token]] as const) {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      }
+    }
+  });
 });
 
 describe("workspaces", () => {

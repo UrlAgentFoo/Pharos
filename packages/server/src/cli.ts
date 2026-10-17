@@ -25,6 +25,9 @@ Options:
 The server only listens on 127.0.0.1 and requires the secret token in the
 launch URL, so other users and websites cannot reach your files.
 
+The assistant uses the Anthropic API key saved in its Settings, or else
+ANTHROPIC_API_KEY from the environment, or from a .env file in this folder.
+
 ${AUTHOR_HELP}
 Examples:
   pharos warm [-l <dir>] [-d <dir>]       run every example with a \`run:\` once, so it opens instantly
@@ -123,6 +126,8 @@ export async function main(argv = process.argv.slice(2)) {
     uiDir: findUiDir(),
     dataDir: values.data ? resolve(values.data) : defaultDataDir(),
     libraryDirs: (values.library ?? []).map((d) => resolve(d)),
+    // an Anthropic key in a .env file where Pharos starts, if Settings and the environment have none
+    envFile: join(process.cwd(), ".env"),
   };
 
   let server;

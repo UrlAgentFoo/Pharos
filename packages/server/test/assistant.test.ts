@@ -124,4 +124,47 @@ describe("assistant planning", () => {
     replies = [[{ type: "text", text: "None of your ships can segment images yet." }]];
     expect(await ask("segment this")).toMatchObject({ plan: null, message: "None of your ships can segment images yet." });
   });
+
+  it("lays out a book action's Controls, keeps it to the panel's rules and remembers it", async () => {
+    const text = JSON.stringify({
+      summary: "Counts the rows of this table one by one and then reports how many there are.",
+      shown: [{ param: "wait", hint: "Seconds to pause before counting." }],
+      more: [{ title: "Timing", params: ["wait"] }],
+      values: [{ param: "wait", value: 99 }],
+      rationale: "A long pause suits a big table.",
+    });
+    replies = [[{ type: "text", text }]];
+    const body = { workspace: "w", artifact: table, book: "count-rows", action: "count" };
+    const before = requests.length;
+    const r = await (await send("/api/assistant/controls", body)).json();
+    // cut to about eight words, the setting shown once, and 99 is past its maximum of 30, so the default stands
+    expect(r.layout).toEqual({ summary: "Counts the rows of this table one by one and then reports…", shown: [{ param: "wait", hint: "Seconds to pause before counting" }], more: [], values: {}, rationale: "" });
+    expect((requests.at(-1)!.output_config as { format: { type: string } }).format.type).toBe("json_schema");
+    expect((await (await send("/api/assistant/controls", body)).json()).layout).toEqual(r.layout);
+    expect(requests.length).toBe(before + 1);
+    // a reply that isn't the layout falls back to the book's own design
+    replies = [[{ type: "text", text: "not json" }]];
+    const fallback = await (await send("/api/assistant/controls", { ...body, request: "count them" })).json();
+    expect(fallback.layout).toMatchObject({ summary: "Count the rows", shown: [{ param: "wait", hint: "" }], more: [] });
+  });
+
+  it("talks back, with the conversation so far before the message it answers", async () => {
+    replies = [[{ type: "text", text: "Hi! I can count the rows of this table." }]];
+    const history = [
+      { role: "assistant", text: "a reply with nothing before it is dropped" },
+      { role: "user", text: "hello" },
+      { role: "user", text: "anyone there?" },
+      { role: "assistant", text: "Yes, hi." },
+      { role: "system", text: "not a role the conversation has" },
+    ];
+    const r: AssistantPlan = await (await send("/api/assistant/plan", { workspace: "w", text: "what can you do?", artifacts: [table], history })).json();
+    expect(r).toMatchObject({ plan: null, message: "Hi! I can count the rows of this table." });
+    const messages = requests.at(-1)!.messages as { role: string; content: unknown }[];
+    expect(messages.slice(0, 2)).toEqual([
+      { role: "user", content: "hello\n\nanyone there?" },
+      { role: "assistant", content: "Yes, hi." },
+    ]);
+    expect(messages[2].role).toBe("user");
+    expect(String(messages[2].content)).toContain("Message: what can you do?");
+  });
 });
