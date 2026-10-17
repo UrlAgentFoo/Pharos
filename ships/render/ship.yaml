@@ -31,7 +31,7 @@ operations:
   flow-video:
     summary: Makes an MP4 of a solved OpenFOAM case - vorticity (shows vortices) or speed in the x-y plane, one frame per saved time.
     command: python /opt/pharos/pharos_render.py flow-video --case {in.case} --out /out/video.mp4 --field {field} --fps {fps}
-    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case], needs: [solved] }]
     parameters:
       - { name: field, type: enum, options: [vorticity, speed], default: vorticity, description: "vorticity shows swirling (vortices); speed shows how fast the fluid moves." }
       - { name: fps, type: number, default: 12, min: 0.5, max: 60, description: Frames per second. }

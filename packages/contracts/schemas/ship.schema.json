@@ -240,6 +240,15 @@
                   "optional": {
                     "type": "boolean"
                   },
+                  "needs": {
+                    "minItems": 1,
+                    "description": "What the data must already be, beyond its kind: solved = a simulation case that has been run (has results).",
+                    "type": "array",
+                    "items": {
+                      "const": "solved",
+                      "type": "string"
+                    }
+                  },
                   "description": {
                     "type": "string"
                   }

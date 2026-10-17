@@ -105,10 +105,12 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
       .match(doc.workspace, [artifact.id])
       .then((r) => r.matches.filter((m) => m.tier !== "excluded").slice(0, 6))
       .catch(() => []);
+    // what the data already is, beyond its kind: a simulation case may or may not have been run
+    const solved = artifact.format === "openfoam-case" ? await s.caseSummary(doc.workspace, artifact.id).then((c) => c.solved, () => false) : false;
     const ops: Suggestion[] = [];
     for (const ship of this.ships.values()) {
       for (const [name, op] of Object.entries(ship.operations)) {
-        const takes = (op.inputs ?? []).some((i) => i.kind === artifact.kind && i.formats.includes(artifact.format));
+        const takes = (op.inputs ?? []).some((i) => i.kind === artifact.kind && i.formats.includes(artifact.format) && (!i.needs?.includes("solved") || solved));
         if (takes) ops.push({ type: "op", id: `${ship.id}.${name}`, title: `${ship.id} › ${name}`, summary: op.summary, trust: this.trust.get(ship.id) ?? "imported" });
       }
     }

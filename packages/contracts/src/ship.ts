@@ -16,6 +16,12 @@ export const ShipInputSchema = Type.Object(
     kind: ArtifactKindSchema,
     formats: Type.Array(FormatSchema, { minItems: 1, description: "Formats the operation reads directly." }),
     optional: Type.Optional(Type.Boolean()),
+    needs: Type.Optional(
+      Type.Array(Type.Literal("solved"), {
+        minItems: 1,
+        description: "What the data must already be, beyond its kind: solved = a simulation case that has been run (has results).",
+      }),
+    ),
     description: Type.Optional(Type.String()),
   },
   { additionalProperties: false },

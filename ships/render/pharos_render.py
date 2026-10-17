@@ -165,13 +165,17 @@ def cmd_flow(args):
     from scipy.spatial import Delaunay, cKDTree
 
     case = args.case
-    centres = read_foam_field(os.path.join(case, "0", "C"))
-    if centres.ndim != 2:
-        raise SystemExit("0/C (cell centres) is missing: run the case with openfoam.solve")
-    xy = centres[:, :2]
     times = [t for t in foam_times(case) if float(t) > 0]
-    if not times:
-        raise SystemExit("the case has no results to render")
+    centres_file = os.path.join(case, "0", "C")
+    if not times or not os.path.isfile(centres_file):
+        raise SystemExit(
+            "This case hasn't been simulated yet, so there is no flow to show. "
+            "Run it first (openfoam › solve, or the 'Simulate flow past an obstacle' recipe), then make the video from the solved case."
+        )
+    centres = read_foam_field(centres_file)
+    if centres.ndim != 2:
+        raise SystemExit("0/C doesn't hold cell centres; re-run the case with openfoam › solve")
+    xy = centres[:, :2]
     lo, hi = xy.min(axis=0), xy.max(axis=0)
     width = args.width
     px = (hi[0] - lo[0]) / width
