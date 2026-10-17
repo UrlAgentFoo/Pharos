@@ -29,7 +29,12 @@ export interface TokenCount {
   /** Every input token, the cached ones included. */
   input: number;
   cachedInput: number;
+  cacheWrite: number;
   output: number;
+  /** At list prices, in US dollars. */
+  costUsd: number;
+  /** Replies from a model the server has no price for, so not in `costUsd`. */
+  unpriced: number;
 }
 
 export interface TokenUsage {
@@ -37,6 +42,8 @@ export interface TokenUsage {
   since: string | null;
   today: Record<string, TokenCount>;
   total: Record<string, TokenCount>;
+  /** The day the prices were read from Anthropic's pricing page. */
+  pricesAsOf: string;
 }
 
 export interface DirEntry {

@@ -1,8 +1,10 @@
 /**
  * The assistant's token usage: every reply's tokens, counted here as it
  * arrives and kept by day and model in `usage.json` next to the settings, so
- * Settings can show today's and the total. These are Pharos's own counts; the
- * Anthropic Console has what's billed.
+ * Settings can show today's and the total. Each reply is also priced as it
+ * arrives (Haiku's price depends on that request's prompt), at the list
+ * prices below. These are Pharos's own estimates; the Anthropic Console has
+ * what's billed.
  */
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -14,7 +16,13 @@ export interface TokenCount {
   input: number;
   /** The input read from the prompt cache, which costs less. */
   cachedInput: number;
+  /** The input written to the prompt cache, which costs a little more. */
+  cacheWrite: number;
   output: number;
+  /** What those replies cost at list prices, in US dollars. */
+  costUsd: number;
+  /** Replies from a model with no price below, so left out of `costUsd`. */
+  unpriced: number;
 }
 
 /** What `GET /api/ai/config` reports as `usage`, by model. */
@@ -23,18 +31,72 @@ export interface TokenUsage {
   since: string | null;
   today: Record<string, TokenCount>;
   total: Record<string, TokenCount>;
+  /** The day the prices were taken from Anthropic's pricing page. */
+  pricesAsOf: string;
+}
+
+/** List prices in US dollars per million tokens. */
+interface Rates {
+  input: number;
+  cacheRead: number;
+  output: number;
+}
+
+/**
+ * From https://platform.claude.com/docs/en/about-claude/pricing, read on
+ * PRICES_AS_OF: the models Settings offers, and those a server-side fallback
+ * may answer with. Cache writes are 1.25x the input price for 5 minutes (what
+ * Pharos asks for) and 2x for an hour.
+ */
+export const PRICES_AS_OF = "2026-10-17";
+const PRICES: Record<string, { rates: Rates; /** Haiku 5.5's, for a prompt over 100,000 tokens. */ long?: Rates }> = {
+  "claude-fable-5-1": { rates: { input: 10, cacheRead: 0.25, output: 50 } },
+  "claude-fable-5": { rates: { input: 10, cacheRead: 1, output: 50 } },
+  "claude-opus-5-5": { rates: { input: 4, cacheRead: 0.2, output: 20 } },
+  "claude-opus-5": { rates: { input: 5, cacheRead: 0.5, output: 25 } },
+  "claude-opus-4-8": { rates: { input: 5, cacheRead: 0.5, output: 25 } },
+  "claude-opus-4-7": { rates: { input: 5, cacheRead: 0.5, output: 25 } },
+  "claude-sonnet-5-5": { rates: { input: 2, cacheRead: 0.1, output: 10 } },
+  "claude-sonnet-5": { rates: { input: 2, cacheRead: 0.2, output: 10 } },
+  "claude-sonnet-4-6": { rates: { input: 3, cacheRead: 0.3, output: 15 } },
+  "claude-haiku-5-5": { rates: { input: 0.1, cacheRead: 0.01, output: 0.5 }, long: { input: 0.5, cacheRead: 0.05, output: 2.5 } },
+};
+const LONG_PROMPT = 100_000;
+
+/** A model's prices, for a prompt of this many tokens; null for a model not listed. */
+function ratesFor(model: string, prompt: number): Rates | null {
+  const p = PRICES[model] ?? PRICES[model.replace(/-\d{8}$/, "")]; // a dated id is the same model
+  if (!p) return null;
+  return p.long && prompt > LONG_PROMPT ? p.long : p.rates;
+}
+
+/** What one reply cost at list prices, in US dollars; null when its model has no price. */
+export function replyCost(model: string, u: NonNullable<Reply["usage"]>): number | null {
+  const read = u.cache_read_input_tokens ?? 0;
+  const written = u.cache_creation_input_tokens ?? 0;
+  const hour = Math.min(written, u.cache_creation?.ephemeral_1h_input_tokens ?? 0);
+  const r = ratesFor(model, (u.input_tokens ?? 0) + written + read);
+  if (!r) return null;
+  return ((u.input_tokens ?? 0) * r.input + (written - hour) * r.input * 1.25 + hour * r.input * 2 + read * r.cacheRead + (u.output_tokens ?? 0) * r.output) / 1e6;
 }
 
 /** The part of a reply that's counted. */
 interface Reply {
   model?: unknown;
-  usage?: { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } | null;
+  usage?: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    cache_read_input_tokens?: number | null;
+    cache_creation_input_tokens?: number | null;
+    /** How the cache writes split between the 5-minute and the hour-long cache. */
+    cache_creation?: { ephemeral_1h_input_tokens?: number | null } | null;
+  } | null;
 }
 
 type Days = Record<string, Record<string, TokenCount>>;
 
-const FIELDS = ["requests", "input", "cachedInput", "output"] as const;
-const zero = (): TokenCount => ({ requests: 0, input: 0, cachedInput: 0, output: 0 });
+const FIELDS = ["requests", "input", "cachedInput", "cacheWrite", "output", "costUsd", "unpriced"] as const;
+const zero = (): TokenCount => ({ requests: 0, input: 0, cachedInput: 0, cacheWrite: 0, output: 0, costUsd: 0, unpriced: 0 });
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Today on this computer's clock, as YYYY-MM-DD. */
@@ -52,6 +114,12 @@ function clean(raw: unknown): Days {
     for (const [model, c] of Object.entries(models)) {
       const count = zero();
       for (const f of FIELDS) count[f] = Number.isFinite((c as Record<string, unknown>)?.[f]) ? Math.max(0, (c as Record<string, number>)[f]) : 0;
+      // counted before replies were priced: priced now, with the cache writes (not kept then) at the input price
+      if (!Number.isFinite((c as Record<string, unknown>)?.costUsd)) {
+        const cost = replyCost(model, { input_tokens: Math.max(0, count.input - count.cachedInput), cache_read_input_tokens: count.cachedInput, output_tokens: count.output });
+        if (cost === null) count.unpriced = count.requests;
+        else count.costUsd = cost;
+      }
       (days[day] ??= {})[model] = count;
     }
   }
@@ -84,10 +152,14 @@ export class TokenMeter {
     if (!u || typeof reply.model !== "string") return;
     const c = ((this.days[this.today()] ??= {})[reply.model] ??= zero());
     const cached = u.cache_read_input_tokens ?? 0;
+    const cost = replyCost(reply.model, u);
     c.requests += 1;
     c.input += (u.input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0) + cached;
     c.cachedInput += cached;
+    c.cacheWrite += u.cache_creation_input_tokens ?? 0;
     c.output += u.output_tokens ?? 0;
+    if (cost === null) c.unpriced += 1;
+    else c.costUsd += cost;
     this.save();
   }
 
@@ -99,7 +171,7 @@ export class TokenMeter {
         for (const f of FIELDS) t[f] += c[f];
       }
     }
-    return { since: Object.keys(this.days).sort()[0] ?? null, today: this.days[this.today()] ?? {}, total };
+    return { since: Object.keys(this.days).sort()[0] ?? null, today: this.days[this.today()] ?? {}, total, pricesAsOf: PRICES_AS_OF };
   }
 
   /** Written whole after each reply, one write at a time, through a temporary file so a crash can't leave half of it. */

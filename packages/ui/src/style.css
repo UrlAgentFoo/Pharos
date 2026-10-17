@@ -2662,6 +2662,16 @@ dialog footer .quiet-danger {
   padding: 0 0 4px;
 }
 
+/* the cost sums up the rows above it */
+.usage-table tbody tr + tr.cost {
+  border-top-color: var(--line-strong);
+}
+
+.usage-table .cost th,
+.usage-table .cost td {
+  font-weight: 600;
+}
+
 .field {
   display: grid;
   gap: 4px;
