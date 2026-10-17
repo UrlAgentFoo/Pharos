@@ -5,7 +5,8 @@
  * Workspaces live on the local server (`<data>/workspaces/<name>`), so the
  * panel needs it; the chosen workspace is remembered per browser.
  */
-import type { Artifact } from "@pharos/contracts";
+import { type Artifact, type FormatInfo, sniffFormat } from "@pharos/contracts";
+import { kindIcon } from "./data-window.js";
 import type { DirEntry, LocalServer } from "./api.js";
 import { browseDialog, escapeHtml, formatSize, promptDialog, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
@@ -14,20 +15,14 @@ import { kindLabel } from "./viewers.js";
 const CURRENT_KEY = "pharos.workspace";
 const DEFAULT_WORKSPACE = "default";
 
-/** Names the server knows how to store; mirrors the server's sniffing. */
-const SUPPORTED = /\.(ome\.tiff?|tiff?|czi|nd2|lif|csv|parquet|ply|vtk|vtu|vtp|mp4)$/i;
-export const isSupported = (e: Pick<DirEntry, "name" | "isDir">) => (e.isDir ? /\.(zarr|geff)$/i.test(e.name) : SUPPORTED.test(e.name));
+/** Every format the server recognises (built in, plus those ships declare), once it has said. */
+let formats: Record<string, FormatInfo> | undefined;
+export function setFormats(f: Record<string, FormatInfo>) {
+  formats = f;
+}
 
-const KIND_ICON: Record<Artifact["kind"], string> = {
-  volume: "image",
-  labels: "binary",
-  tracks: "link",
-  table: "table",
-  mesh: "cube",
-  splat: "sparkle",
-  "sim-case": "plane",
-  video: "layout",
-};
+/** Names the server knows how to store; folders without a telling name can still be chosen whole. */
+export const isSupported = (e: Pick<DirEntry, "name" | "isDir">) => !!sniffFormat(e.name, e.isDir, [], formats);
 
 export function currentWorkspace(): string {
   try {
@@ -118,7 +113,7 @@ function showPanel(
     ? artifacts
         .map(
           (a, i) => `<li class="ws-row"><input type="checkbox" data-pick="${i}" aria-label="Choose ${escapeHtml(a.name ?? "data")}"/><button class="file" data-i="${i}" title="Open in its own window">
-            <span>${icon(KIND_ICON[a.kind], 16)} ${escapeHtml(a.name ?? a.id.slice(0, 12))}</span>
+            <span>${icon(kindIcon(a.kind), 16)} ${escapeHtml(a.name ?? a.id.slice(0, 12))}</span>
             <small>${a.producedBy ? "result · " : ""}${escapeHtml(kindLabel(a))} · ${escapeHtml(a.format)} · ${formatSize(a.sizeBytes ?? 0)}</small></button></li>`,
         )
         .join("")

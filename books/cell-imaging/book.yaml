@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/book.schema.json
+id: cell-imaging
+version: 0.2.0
+title: Cell imaging
+summary: Finds, counts and measures nuclei or cells in fluorescence images and stacks with Cellpose, tracks them through time-lapses with Ultrack and makes videos of the tracks, and scores a tracker against ground-truth tracks (GEFF).
+how_to_use: Open a fluorescence image, z-stack or time-lapse of nuclei or cells. Count and measure each one, follow them over time, or score tracking against ground truth.
+tags: [microscopy, segmentation, measurement, counting, nuclei, cells, tracking, time-lapse, 3d+t, migration, lineage, light-sheet, ground-truth, evaluation, benchmark, geff]
+authors: [Pharos]
+ships: { bio-utils: ^0.1, cellpose: ^0.1, ultrack: ^0.1, render: ^0.1, space-time-field: ^0.1, geff: ^0.1 }
+actions:
+  measure:
+    title: Count and measure
+    summary: Finds every nucleus (or cell) in a 2D or 3D image with Cellpose, measures each one (its volume, position and brightness) in a table, and shows them in 3D.
+    inputs:
+      - name: image
+        description: A fluorescence image of nuclei or cells, 2D or 3D (time-lapses are measured frame by frame).
+        accepts: { kind: volume, edam: data_2968 }
+    parameters:
+      - { name: diameter, label: Object diameter, type: number, unit: px, default: 30, min: 0, max: 500, description: "Typical object diameter in x/y pixels; 0 lets Cellpose estimate it.", sets: segment.diameter }
+      - { name: model, label: Model, type: enum, options: [nuclei, cyto3], default: nuclei, description: "nuclei for nuclear stains, cyto3 for whole cells.", sets: segment.model }
+      - { name: channel, label: Channel, type: integer, default: 0, min: 0, max: 16, description: "The channel with the stain to segment, counting from 0.", sets: segment.channel }
+    steps:
+      - { id: convert, run: bio-utils.convert, in: { image: $image } }
+      - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
+      - { id: measure, run: bio-utils.measure, in: { labels: segment.masks, image: convert.zarr } }
+      - { id: surface, run: render.labels-surface, in: { labels: segment.masks } }
+    outputs: { masks: segment.masks, table: measure.table, model: surface.model }
+  track:
+    title: Track over time
+    summary: Segments nuclei in every frame with Cellpose, links them into tracks with Ultrack, measures each cell over time, and makes a video of the tracks.
+    inputs:
+      - name: movie
+        description: A fluorescence time-lapse of nuclei, 2D or 3D over time (at least 2 time points).
+        accepts: { kind: volume, axes: tyx, edam: data_2968 }
+    parameters:
+      - { name: diameter, label: Nucleus diameter, type: number, unit: px, default: 30, min: 0, max: 500, description: "Typical nucleus diameter in x/y pixels; 0 lets Cellpose estimate it.", sets: segment.diameter }
+      - { name: model, label: Model, type: enum, options: [nuclei, cyto3], default: nuclei, description: "nuclei for nuclear stains, cyto3 for whole cells.", sets: segment.model }
+      - { name: channel, label: Channel, type: integer, default: 0, min: 0, max: 16, description: "The channel with the nuclear stain, counting from 0.", sets: [segment.channel, render.channel] }
+      - { name: max_distance, label: Largest move between frames, type: number, default: 15, min: 0, description: "In physical units (usually µm): how far a cell can move from one time point to the next.", sets: track.max_distance }
+      - { name: min_size, label: Smallest cell, type: integer, default: 50, min: 1, description: "In voxels: smaller objects are ignored as debris.", sets: track.min_size }
+    steps:
+      - { id: convert, run: bio-utils.convert, in: { image: $movie } }
+      - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
+      - { id: track, run: ultrack.track, in: { labels: segment.masks } }
+      - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }
+      - { id: render, run: render.tracks-video, in: { image: convert.zarr, tracks: track.tracks } }
+    outputs: { tracks: track.tracks, table: measure.table, video: render.video, labels: track.labels }
+  score:
+    title: Score against ground truth
+    summary: Tracks nuclei in a 3D light-sheet time-lapse with the detector-free Space Time Field tracker, scores the tracks against ground-truth tracks (GEFF) with the Biohub challenge's edge-Jaccard metric, and makes a video of the tracks.
+    inputs:
+      - name: timelapse
+        description: A 3D fluorescence time-lapse of nuclei (t, z, y, x), e.g. a Biohub challenge video's .zarr.
+        accepts: { kind: volume, axes: tzyx, edam: data_2968 }
+      - name: truth
+        description: Ground-truth tracks for the same movie as a GEFF graph, e.g. the .geff beside the challenge's .zarr (it may be sparse).
+        accepts: { kind: tracks, formats: [geff] }
+    parameters:
+      - { name: num_dog, label: DoG bands, type: integer, default: 2, min: 1, max: 3, description: "1 looks for one nucleus size; 2 also finds smaller nuclei (more recall, a few more false tracks).", sets: track.num_dog }
+      - { name: temporal_radius, label: Frames pooled, type: integer, default: 2, min: 0, max: 8, description: "Neighbouring frames on each side pooled into each frame: more ignores flicker but blurs fast cells.", sets: track.temporal_radius }
+      - { name: value_floor, label: Detection floor, type: number, default: 0.0175, min: 0, max: 1, description: "Raise it to drop dim false detections.", sets: track.value_floor }
+      - { name: lambda_termination, label: Track end cost, type: number, default: 0.6, min: 0, description: "Higher keeps tracks whole rather than ending them inside the view.", sets: track.lambda_termination }
+      - { name: channel, label: Channel, type: integer, default: 0, min: 0, max: 16, description: "The channel with the nuclear stain, counting from 0.", sets: [track.channel, video.channel] }
+      - { name: max_distance, label: Match distance, type: number, unit: µm, default: 7, min: 0, max: 100, description: "How close a tracked cell must be to a true cell to count as it.", sets: score.max_distance }
+      - { name: split, label: Held-out from, type: integer, default: 50, min: 0, description: "First time point of the held-out part of the score; 0 halves the movie.", sets: score.split }
+    steps:
+      - { id: track, run: space-time-field.track, in: { movie: $timelapse } }
+      - { id: score, run: geff.score, in: { tracks: track.tracks, truth: $truth } }
+      - { id: video, run: space-time-field.tracks-video, in: { image: $timelapse, tracks: track.tracks } }
+    outputs: { tracks: track.tracks, score: score.score, video: video.video }

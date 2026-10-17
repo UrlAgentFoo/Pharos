@@ -3,14 +3,25 @@
  * identifiers ships, books and operations use. Hand-written books and
  * imported tools are matched with these same words.
  */
-import { type ObjectOptions, type TSchema, type TString, Type } from "@sinclair/typebox";
+import { type ObjectOptions, type Static, type TSchema, type TString, Type } from "@sinclair/typebox";
 
-/** What an artifact is, independent of how it is stored. */
+/**
+ * What an artifact is, independent of how it is stored. Kinds are open: any
+ * lowercase-hyphenated name is valid, so a ship for a new domain (genomics,
+ * astronomy, audio) can bring its own. These are the ones Pharos itself
+ * knows how to show.
+ */
 export const ARTIFACT_KINDS = ["volume", "labels", "tracks", "table", "mesh", "splat", "sim-case", "video"] as const;
-export type ArtifactKind = (typeof ARTIFACT_KINDS)[number];
-export const ArtifactKindSchema = Type.Union(ARTIFACT_KINDS.map((k) => Type.Literal(k)));
+export const KIND_PATTERN = "^[a-z][a-z0-9-]*$";
+// `string & {}` keeps editor completion for the built-in names while allowing any other
+export type ArtifactKind = (typeof ARTIFACT_KINDS)[number] | (string & {});
+export const ArtifactKindSchema = Type.String({ pattern: KIND_PATTERN, description: `What the data is, e.g. ${ARTIFACT_KINDS.join(", ")}.` });
 
-/** How an artifact is stored on disk. Artifacts are always file-backed. */
+/**
+ * How an artifact is stored on disk. Artifacts are always file-backed.
+ * Formats are open too: ships declare the ones they add (`formats` in
+ * ship.yaml), with the file extensions or folder contents that identify them.
+ */
 export const FORMATS = [
   "ome-zarr",
   "ome-tiff",
@@ -27,8 +38,72 @@ export const FORMATS = [
   "openfoam-case",
   "geff",
 ] as const;
-export type Format = (typeof FORMATS)[number];
-export const FormatSchema = Type.Union(FORMATS.map((f) => Type.Literal(f)));
+export const FORMAT_PATTERN = "^[a-z0-9][a-z0-9-]*$";
+export type Format = (typeof FORMATS)[number] | (string & {});
+export const FormatSchema = Type.String({ pattern: FORMAT_PATTERN, description: `How the data is stored, e.g. ${FORMATS.join(", ")}.` });
+
+/** How to recognise a format on disk, and what kind of data it holds. */
+export const FormatInfoSchema = Type.Object(
+  {
+    kind: ArtifactKindSchema,
+    title: Type.Optional(Type.String({ description: "As people know it, e.g. \"OME-Zarr\"." })),
+    extensions: Type.Optional(
+      Type.Array(Type.String({ pattern: "^(\\.[a-z0-9]+)+$" }), { minItems: 1, description: "Lowercase, with the dot; longest wins, e.g. .ome.tif before .tif." }),
+    ),
+    folder: Type.Optional(Type.Boolean({ description: "The data is a folder (a .zarr store, an OpenFOAM case)." })),
+    contains: Type.Optional(
+      Type.Array(Type.String({ minLength: 1 }), { minItems: 1, description: "For folders: entries that identify the format whatever the folder is called." }),
+    ),
+    edam: Type.Optional(Type.String({ pattern: "^format_\\d+$", description: "EDAM format term." })),
+  },
+  { additionalProperties: false },
+);
+export type FormatInfo = Static<typeof FormatInfoSchema>;
+
+/** The formats Pharos recognises without any ship. */
+export const BUILT_IN_FORMATS: Record<(typeof FORMATS)[number], FormatInfo> = {
+  "ome-zarr": { kind: "volume", title: "OME-Zarr", extensions: [".zarr", ".ome.zarr"], folder: true },
+  "ome-tiff": { kind: "volume", title: "OME-TIFF", extensions: [".ome.tif", ".ome.tiff"], edam: "format_3727" },
+  tiff: { kind: "volume", title: "TIFF", extensions: [".tif", ".tiff"], edam: "format_3591" },
+  czi: { kind: "volume", title: "Zeiss CZI", extensions: [".czi"] },
+  nd2: { kind: "volume", title: "Nikon ND2", extensions: [".nd2"] },
+  lif: { kind: "volume", title: "Leica LIF", extensions: [".lif"] },
+  csv: { kind: "table", title: "CSV", extensions: [".csv"], edam: "format_3752" },
+  parquet: { kind: "table", title: "Parquet", extensions: [".parquet"] },
+  json: { kind: "table", title: "JSON" },
+  ply: { kind: "mesh", title: "PLY", extensions: [".ply"] },
+  vtk: { kind: "mesh", title: "VTK", extensions: [".vtk", ".vtu", ".vtp"] },
+  mp4: { kind: "video", title: "MP4 video", extensions: [".mp4"] },
+  "openfoam-case": { kind: "sim-case", title: "OpenFOAM case", folder: true, contains: ["system", "constant"] },
+  geff: { kind: "tracks", title: "GEFF tracks", extensions: [".geff"], folder: true },
+};
+
+/**
+ * Recognises a file or folder from its name (and, for folders, what it
+ * contains), using the built-in formats plus any that ships declare.
+ * Longer extensions win, so `.ome.tif` is OME-TIFF rather than TIFF.
+ */
+export function sniffFormat(
+  name: string,
+  isDir: boolean,
+  entries: string[] = [],
+  formats: Record<string, FormatInfo> = BUILT_IN_FORMATS,
+): { kind: ArtifactKind; format: Format } | null {
+  const n = name.toLowerCase();
+  let best: { kind: string; format: string; len: number } | null = null;
+  for (const [format, info] of Object.entries(formats)) {
+    if (!!info.folder !== isDir) continue;
+    for (const ext of info.extensions ?? []) {
+      if (n.endsWith(ext) && ext.length > (best?.len ?? 0)) best = { kind: info.kind, format, len: ext.length };
+    }
+  }
+  if (best) return { kind: best.kind, format: best.format };
+  if (!isDir) return null;
+  for (const [format, info] of Object.entries(formats)) {
+    if (info.folder && info.contains?.every((e) => entries.includes(e))) return { kind: info.kind, format };
+  }
+  return null;
+}
 
 /**
  * EDAM terms (https://edamontology.org) for the kinds and formats above, so
@@ -39,11 +114,9 @@ export const FormatSchema = Type.Union(FORMATS.map((f) => Type.Literal(f)));
 export const EDAM_KINDS: Partial<Record<ArtifactKind, string>> = {
   volume: "data_2968", // Image
 };
-export const EDAM_FORMATS: Partial<Record<Format, string>> = {
-  tiff: "format_3591",
-  "ome-tiff": "format_3727",
-  csv: "format_3752",
-};
+export const EDAM_FORMATS: Partial<Record<Format, string>> = Object.fromEntries(
+  Object.entries(BUILT_IN_FORMATS).flatMap(([f, info]) => (info.edam ? [[f, info.edam]] : [])),
+);
 
 /**
  * How far a ship or book can be trusted. Only verified ships run in the

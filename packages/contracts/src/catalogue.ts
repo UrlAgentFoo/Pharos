@@ -36,6 +36,8 @@ export const BookMatchSchema = Type.Object(
   {
     book: CatalogueEntrySchema,
     tier: Type.Union(MATCH_TIERS.map((t) => Type.Literal(t))),
+    /** The book's actions that can run on the data, best first; empty when excluded. */
+    actions: Type.Array(Type.String()),
     /** e.g. "needs tzyx, file has zyx", "converted by bio-utils.convert". */
     reasons: Type.Array(Type.String()),
     score: Type.Number({ description: "Higher ranks first; excluded books score 0." }),

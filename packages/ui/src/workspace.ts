@@ -15,7 +15,7 @@ export interface DataStep {
   in: Record<string, string>;
   with: Params;
   /** The recipe (book) the step came from, shown as a label over its steps. */
-  book?: { id: string; title: string };
+  book?: { id: string; title: string; action?: string };
   /** proposed: waiting for Approve; stale: changed, re-runs on the next run. */
   status: "proposed" | "stale" | "queued" | "running" | "done" | "failed" | "cancelled";
   progress?: number;

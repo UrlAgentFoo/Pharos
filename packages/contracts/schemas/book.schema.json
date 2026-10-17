@@ -9,8 +9,7 @@
     "title",
     "summary",
     "ships",
-    "steps",
-    "outputs"
+    "actions"
   ],
   "properties": {
     "id": {
@@ -23,10 +22,17 @@
     },
     "title": {
       "minLength": 1,
+      "description": "The domain, as people name it: \"Fluid flow\".",
       "type": "string"
     },
     "summary": {
       "minLength": 1,
+      "description": "One or two sentences, searched and read by the assistant.",
+      "type": "string"
+    },
+    "how_to_use": {
+      "minLength": 1,
+      "description": "Two or three plain sentences shown on the book's card; the summary when absent.",
       "type": "string"
     },
     "tags": {
@@ -56,328 +62,270 @@
         }
       }
     },
-    "inputs": {
-      "description": "Empty for books that start from parameters alone.",
-      "type": "array",
-      "items": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "name",
-          "accepts"
-        ],
-        "properties": {
-          "name": {
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
-          },
-          "description": {
-            "type": "string"
-          },
-          "accepts": {
-            "additionalProperties": false,
-            "type": "object",
-            "required": [
-              "kind"
-            ],
-            "properties": {
-              "kind": {
-                "anyOf": [
-                  {
-                    "const": "volume",
-                    "type": "string"
-                  },
-                  {
-                    "const": "labels",
-                    "type": "string"
-                  },
-                  {
-                    "const": "tracks",
-                    "type": "string"
-                  },
-                  {
-                    "const": "table",
-                    "type": "string"
-                  },
-                  {
-                    "const": "mesh",
-                    "type": "string"
-                  },
-                  {
-                    "const": "splat",
-                    "type": "string"
-                  },
-                  {
-                    "const": "sim-case",
-                    "type": "string"
-                  },
-                  {
-                    "const": "video",
-                    "type": "string"
-                  }
-                ]
-              },
-              "formats": {
-                "minItems": 1,
-                "description": "Formats read directly; converter ships widen this automatically.",
-                "type": "array",
-                "items": {
-                  "anyOf": [
-                    {
-                      "const": "ome-zarr",
-                      "type": "string"
-                    },
-                    {
-                      "const": "ome-tiff",
-                      "type": "string"
-                    },
-                    {
-                      "const": "tiff",
-                      "type": "string"
-                    },
-                    {
-                      "const": "czi",
-                      "type": "string"
-                    },
-                    {
-                      "const": "nd2",
-                      "type": "string"
-                    },
-                    {
-                      "const": "lif",
-                      "type": "string"
-                    },
-                    {
-                      "const": "csv",
-                      "type": "string"
-                    },
-                    {
-                      "const": "parquet",
-                      "type": "string"
-                    },
-                    {
-                      "const": "json",
-                      "type": "string"
-                    },
-                    {
-                      "const": "ply",
-                      "type": "string"
-                    },
-                    {
-                      "const": "vtk",
-                      "type": "string"
-                    },
-                    {
-                      "const": "mp4",
-                      "type": "string"
-                    },
-                    {
-                      "const": "openfoam-case",
-                      "type": "string"
-                    },
-                    {
-                      "const": "geff",
-                      "type": "string"
-                    }
-                  ]
-                }
-              },
-              "axes": {
-                "pattern": "^[tczyx]+$",
-                "description": "Axes the data must have, e.g. tzyx for 3D + time.",
-                "type": "string"
-              },
-              "channels": {
-                "description": "A count, or a range like 1-4.",
-                "anyOf": [
-                  {
-                    "minimum": 1,
-                    "type": "integer"
-                  },
-                  {
-                    "pattern": "^\\d+(-\\d+)?$",
-                    "type": "string"
-                  }
-                ]
-              },
-              "dtype": {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "max_size_gb": {
-                "exclusiveMinimum": 0,
-                "type": "number"
-              },
-              "edam": {
-                "pattern": "^data_\\d+$",
-                "description": "EDAM data term.",
-                "type": "string"
-              }
-            }
-          }
-        }
-      }
-    },
-    "parameters": {
-      "type": "array",
-      "items": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "name",
-          "type",
-          "sets"
-        ],
-        "properties": {
-          "name": {
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
-          },
-          "type": {
-            "anyOf": [
-              {
-                "const": "number",
-                "type": "string"
-              },
-              {
-                "const": "integer",
-                "type": "string"
-              },
-              {
-                "const": "string",
-                "type": "string"
-              },
-              {
-                "const": "boolean",
-                "type": "string"
-              },
-              {
-                "const": "enum",
-                "type": "string"
-              }
-            ]
-          },
-          "label": {
-            "description": "Dialog label; defaults to the name.",
-            "type": "string"
-          },
-          "description": {
-            "description": "One sentence for the dialog tooltip and the assistant.",
-            "type": "string"
-          },
-          "default": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "string"
-              },
-              {
-                "type": "boolean"
-              }
-            ]
-          },
-          "options": {
-            "minItems": 1,
-            "description": "Allowed values (enum only).",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "min": {
-            "type": "number"
-          },
-          "max": {
-            "type": "number"
-          },
-          "unit": {
-            "description": "e.g. px, µm, s, m/s",
-            "type": "string"
-          },
-          "sets": {
-            "anyOf": [
-              {
-                "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
-                "type": "string"
-              },
-              {
-                "minItems": 1,
-                "type": "array",
-                "items": {
-                  "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
-                  "type": "string"
-                }
-              }
-            ]
-          }
-        }
-      }
-    },
-    "steps": {
-      "minItems": 1,
-      "type": "array",
-      "items": {
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "id",
-          "run"
-        ],
-        "properties": {
-          "id": {
-            "pattern": "^[a-z][a-z0-9_]*$",
-            "type": "string"
-          },
-          "run": {
-            "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z][a-z0-9-]*$",
-            "description": "<ship>.<operation>",
-            "type": "string"
-          },
-          "in": {
-            "additionalProperties": false,
-            "type": "object",
-            "patternProperties": {
-              "^[a-z][a-z0-9_]*$": {
-                "pattern": "^(\\$[a-z][a-z0-9_]*|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*)$",
-                "type": "string"
-              }
-            }
-          },
-          "with": {
-            "additionalProperties": false,
-            "type": "object",
-            "patternProperties": {
-              "^[a-z][a-z0-9_]*$": {
-                "anyOf": [
-                  {
-                    "type": "number"
-                  },
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "boolean"
-                  }
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "outputs": {
+    "actions": {
       "minProperties": 1,
+      "description": "Action name (lowercase_snake) → what it does; the first is the book's main action.",
       "additionalProperties": false,
       "type": "object",
       "patternProperties": {
         "^[a-z][a-z0-9_]*$": {
-          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
-          "type": "string"
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "title",
+            "steps",
+            "outputs"
+          ],
+          "properties": {
+            "title": {
+              "minLength": 1,
+              "description": "What it does, as a button or menu item: \"Simulate the flow\".",
+              "type": "string"
+            },
+            "summary": {
+              "description": "One sentence more, for the assistant and tooltips.",
+              "type": "string"
+            },
+            "inputs": {
+              "description": "Empty for actions that start from parameters alone.",
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "accepts"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "accepts": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "kind"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "pattern": "^[a-z][a-z0-9-]*$",
+                        "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                        "type": "string"
+                      },
+                      "formats": {
+                        "minItems": 1,
+                        "description": "Formats read directly; converter ships widen this automatically.",
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                          "type": "string"
+                        }
+                      },
+                      "axes": {
+                        "pattern": "^[tczyx]+$",
+                        "description": "Axes the data must have, e.g. tzyx for 3D + time.",
+                        "type": "string"
+                      },
+                      "channels": {
+                        "description": "A count, or a range like 1-4.",
+                        "anyOf": [
+                          {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          {
+                            "pattern": "^\\d+(-\\d+)?$",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "dtype": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "max_size_gb": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "edam": {
+                        "pattern": "^data_\\d+$",
+                        "description": "EDAM data term.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "sets"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "number",
+                        "type": "string"
+                      },
+                      {
+                        "const": "integer",
+                        "type": "string"
+                      },
+                      {
+                        "const": "string",
+                        "type": "string"
+                      },
+                      {
+                        "const": "boolean",
+                        "type": "string"
+                      },
+                      {
+                        "const": "enum",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "description": "Dialog label; defaults to the name.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "One sentence for the dialog tooltip and the assistant.",
+                    "type": "string"
+                  },
+                  "default": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "options": {
+                    "minItems": 1,
+                    "description": "Allowed values (enum only).",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "unit": {
+                    "description": "e.g. px, µm, s, m/s",
+                    "type": "string"
+                  },
+                  "sets": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                        "type": "string"
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "steps": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "run"
+                ],
+                "properties": {
+                  "id": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "run": {
+                    "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z][a-z0-9-]*$",
+                    "description": "<ship>.<operation>",
+                    "type": "string"
+                  },
+                  "in": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-z][a-z0-9_]*$": {
+                        "pattern": "^(\\$[a-z][a-z0-9_]*|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*)$",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "with": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-z][a-z0-9_]*$": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "outputs": {
+              "minProperties": 1,
+              "additionalProperties": false,
+              "type": "object",
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                  "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     }

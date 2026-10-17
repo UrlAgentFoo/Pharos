@@ -13,6 +13,7 @@ import type { Params } from "./params.js";
 import type { Plan, PlanProblem, ShipNeed } from "./plan.js";
 import type { Step } from "./book.js";
 import type { ShipManifest } from "./ship.js";
+import type { FormatInfo } from "./vocabulary.js";
 
 export interface SystemStatus {
   docker: { available: boolean; version?: string; error?: string };
@@ -29,6 +30,28 @@ export interface Resolution {
   /** False when something can't be satisfied here (missing ship version, GPU required). */
   runnable: boolean;
   problems: PlanProblem[];
+}
+
+/** The formats a book's action input takes: read directly, or after one conversion step. */
+export interface AcceptedFormats {
+  action: string;
+  input: string;
+  kind: string;
+  direct: string[];
+  converted: { format: string; via: string }[];
+}
+
+/**
+ * A book as its card shows it: what it's called, how to use it, what it
+ * can do, the files it takes and the ships it needs (downloaded or not).
+ */
+export interface BookCard {
+  entry: CatalogueEntry;
+  howToUse: string;
+  actions: { name: string; title: string; summary?: string }[];
+  /** Every format any action takes, directly or after conversion, by title ("OME-Zarr", "OpenFOAM case"). */
+  accepts: { format: string; title: string; converted: boolean }[];
+  ships: { id: string; version?: string; downloaded: boolean; sizeBytes?: number }[];
 }
 
 /** A ship or book manifest with problems; errors keep it out of the library. */
@@ -60,7 +83,7 @@ export interface WorkspaceInfo {
 
 /** What `POST /api/plans` takes: a book to run on workspace data, or steps (as a data window's history holds them). */
 export type PlanRequest =
-  | { workspace: string; from: "book"; book: string; version?: string; inputs: Record<string, string>; parameters?: Params }
+  | { workspace: string; from: "book"; book: string; version?: string; action?: string; inputs: Record<string, string>; parameters?: Params }
   | { workspace: string; from: "steps"; title: string; inputs: Record<string, string>; steps: Step[] };
 
 export interface CaseSummary {
@@ -104,15 +127,14 @@ export interface ApiRoutes {
   "GET /api/status": { req: void; res: SystemStatus };
 
   "GET /api/library/books": { req: void; res: CatalogueEntry[] };
-  /** `?version=` picks a version; the newest otherwise. `accepts` lists the formats each input takes, directly or after conversion. */
+  /** Every book as its card shows it, in one request. */
+  "GET /api/library/cards": { req: void; res: BookCard[] };
+  /** Every format Pharos recognises: built in, plus those ships declare. */
+  "GET /api/library/formats": { req: void; res: Record<string, FormatInfo> };
+  /** `?version=` picks a version; the newest otherwise. `accepts` lists the formats each action input takes, directly or after conversion. */
   "GET /api/library/books/:id": {
     req: void;
-    res: {
-      manifest: BookManifest;
-      guide: string;
-      entry: CatalogueEntry;
-      accepts: { input: string; kind: string; direct: string[]; converted: { format: string; via: string }[] }[];
-    };
+    res: { manifest: BookManifest; guide: string; entry: CatalogueEntry; accepts: AcceptedFormats[] };
   };
   /** Installs a book folder, or a library (ships/ + books/) from a folder or git URL, into the data folder. */
   "POST /api/library/books": { req: { source: string }; res: { installed: string[] } };
@@ -165,7 +187,11 @@ export interface ApiRoutes {
   "POST /api/plans/:id/approve": { req: void; res: { plan: Plan; jobs: Job[] } };
   /** Cancels a proposed plan, or the running jobs of an approved one. */
   "POST /api/plans/:id/cancel": { req: void; res: Plan };
-  "POST /api/plans/:id/save-as-book": { req: { id: string; title: string; summary: string }; res: CatalogueEntry };
+  /**
+   * Saves a plan that worked as a book: a new book with one action, or, when
+   * `id` names a book in the data folder, a new action in it.
+   */
+  "POST /api/plans/:id/save-as-book": { req: { id: string; title: string; summary: string; action: { name: string; title: string } }; res: CatalogueEntry };
 
   "GET /api/jobs": { req: void; res: Job[] };
   /** Runs one ship operation (`tool` is `<ship>.<operation>`) on workspace artifacts. */

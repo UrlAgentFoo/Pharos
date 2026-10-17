@@ -75,18 +75,22 @@ export async function newBook(root: string, id: string, ship = "my-ship"): Promi
   await writeNew(dir, {
     "book.yaml": `${schemaComment(dir, "book")}id: ${id}
 version: 0.1.0
-title: A short title, as the library shows it
-summary: One or two sentences on what the book does with the user's data.
+title: The domain, as people name it
+summary: One or two sentences on what the book does with the user's data; the assistant reads this.
+how_to_use: Two or three plain sentences people see on the book's card.
 tags: []
 ships: { ${ship}: ^0.1 }
-inputs:
-  - name: image
-    accepts: { kind: volume, axes: zyx }
-parameters:
-  - { name: threshold, type: number, default: 0.5, sets: run.threshold }
-steps:
-  - { id: run, run: ${ship}.run, in: { image: $image } }
-outputs: { table: run.table }
+actions:
+  measure:
+    title: What this action does, as a button
+    inputs:
+      - name: image
+        accepts: { kind: volume, axes: zyx }
+    parameters:
+      - { name: threshold, type: number, default: 0.5, sets: run.threshold }
+    steps:
+      - { id: run, run: ${ship}.run, in: { image: $image } }
+    outputs: { table: run.table }
 `,
     "GUIDE.md": `# ${id}
 

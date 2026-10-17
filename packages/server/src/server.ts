@@ -9,7 +9,7 @@ import { Library, type TrustLookup, resolveBook } from "@pharos/books";
 import type { Step } from "@pharos/contracts";
 import { AiError, type AiClientFactory, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
-import { CatalogueHolder } from "./catalogue.js";
+import { CatalogueHolder, bookCards } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
 import { ExampleError, loadExample, loadExamples, publicExample } from "./examples.js";
 import { installFrom } from "./install.js";
@@ -89,7 +89,8 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const settingsDir = opts.configDir ?? configDir();
   const makeClient = opts.aiClient ?? defaultClientFactory;
   const dataDir = opts.dataDir ?? defaultDataDir();
-  const workspaces = new WorkspaceStore(dataDir);
+  // library is set up just below; files are only imported once the server runs
+  const workspaces = new WorkspaceStore(dataDir, async () => (await library.get()).formats());
   const trust = await TrustStore.load(dataDir);
   const libraryDirs = [...(opts.libraryDirs ?? []), dataDir].map((d) => resolve(d));
   const library = new LibraryHolder(libraryDirs, trust.get);
@@ -190,6 +191,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       }
       case "GET /api/library/books":
         return sendJson(res, 200, (await library.get()).bookEntries());
+      case "GET /api/library/cards": {
+        const lib = await library.get();
+        return sendJson(res, 200, bookCards(lib, await orch.inventory(lib.shipManifests())));
+      }
+      case "GET /api/library/formats":
+        return sendJson(res, 200, (await library.get()).formats());
       case "POST /api/library/books": {
         const { source } = await readJson<{ source?: unknown }>(req);
         if (typeof source !== "string") throw new HttpError(400, "source is required: a folder or a git URL");
@@ -224,7 +231,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         return sendJson(res, 200, await catalogue.match(workspaces, workspace, artifacts.map(String), typeof text === "string" ? text : undefined));
       }
       case "POST /api/plans": {
-        const body = await readJson<{ workspace?: unknown; from?: unknown; book?: unknown; version?: unknown; inputs?: unknown; parameters?: unknown }>(req);
+        const body = await readJson<{ workspace?: unknown; from?: unknown; book?: unknown; version?: unknown; action?: unknown; inputs?: unknown; parameters?: unknown }>(req);
         if (typeof body.workspace !== "string") throw new HttpError(400, "workspace is required");
         if (body.from === "steps") {
           const b = body as { title?: unknown; inputs?: unknown; steps?: unknown };
@@ -233,7 +240,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           return sendJson(res, 200, plan);
         }
         if (body.from !== "book" || typeof body.book !== "string") throw new HttpError(400, 'make plans { from: "book" } or { from: "steps" }');
-        const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined);
+        const plan = await plans.fromBook(body.workspace, body.book, (body.inputs ?? {}) as Record<string, string>, (body.parameters ?? {}) as Record<string, number | string | boolean>, typeof body.version === "string" ? body.version : undefined, typeof body.action === "string" ? body.action : undefined);
         return sendJson(res, 200, plan);
       }
       case "GET /api/examples":
@@ -344,9 +351,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
     if (req.method === "POST" && m[2] === "approve") return sendJson(res, 200, await plans.approve(id));
     if (req.method === "POST" && m[2] === "cancel") return sendJson(res, 200, await plans.cancel(id));
     if (req.method === "POST" && m[2] === "save-as-book") {
-      const body = await readJson<{ id?: unknown; title?: unknown; summary?: unknown }>(req);
+      const body = await readJson<{ id?: unknown; title?: unknown; summary?: unknown; action?: { name?: unknown; title?: unknown } }>(req);
       if (typeof body.id !== "string" || typeof body.title !== "string" || typeof body.summary !== "string") throw new HttpError(400, "id, title and summary are required");
-      return sendJson(res, 200, await plans.saveAsBook(id, { id: body.id, title: body.title, summary: body.summary }));
+      const action = body.action;
+      if (typeof action?.name !== "string" || typeof action.title !== "string") throw new HttpError(400, "action needs a name and a title");
+      return sendJson(res, 200, await plans.saveAsBook(id, { id: body.id, title: body.title, summary: body.summary, action: { name: action.name, title: action.title } }));
     }
     throw new HttpError(404, `no route ${route}`);
   }

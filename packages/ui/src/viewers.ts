@@ -105,7 +105,7 @@ const KIND_LABEL: Record<Artifact["kind"], string> = {
   video: "Video",
 };
 
-export const kindLabel = (a: Artifact) => KIND_LABEL[a.kind];
+export const kindLabel = (a: Artifact) => KIND_LABEL[a.kind] ?? a.kind.replace(/-/g, " ");
 
 const infoViewer: Viewer = {
   id: "info",

@@ -3122,7 +3122,109 @@ dialog.side::backdrop {
 .book-top {
   display: flex;
   justify-content: space-between;
+  align-items: baseline;
   gap: 8px;
+}
+
+.book-top h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.book-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #3d8b5a;
+  white-space: nowrap;
+}
+
+.book-card section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.book-card h4 {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.book-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.book-files span + span::before {
+  content: " · ";
+  color: var(--muted);
+}
+
+.book-files .converted {
+  color: var(--muted);
+}
+
+.book-ships {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.book-ship {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  font-size: 12px;
+}
+
+.book-ship.on {
+  border-color: var(--ink);
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+
+.book-ship.off {
+  border-style: dashed;
+  color: var(--muted);
+  opacity: 0.6;
+}
+
+.book-note {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+.book-more {
+  display: flex;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--ink);
 }
 
 .book-meta small,

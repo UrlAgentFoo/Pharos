@@ -37,11 +37,24 @@ describe("library routes", () => {
 
   it("returns a book with its guide and accepted formats", async () => {
     const r = await (await api("/api/library/books/my-book")).json();
-    expect(r.manifest.steps[0].run).toBe("my-tool.run");
+    expect(r.manifest.actions.measure.steps[0].run).toBe("my-tool.run");
     expect(r.guide).toMatch(/## When to use/);
-    expect(r.accepts).toEqual([{ input: "image", kind: "volume", direct: ["tiff"], converted: [] }]);
+    expect(r.accepts).toEqual([{ action: "measure", input: "image", kind: "volume", direct: ["tiff"], converted: [] }]);
     expect((await api("/api/library/books/nope")).status).toBe(404);
     expect((await api("/api/library/ships/my-tool?version=9.9.9")).status).toBe(404);
+  });
+
+  it("lists books as cards: how to use, actions, accepted files and ships", async () => {
+    const [card] = await (await api("/api/library/cards")).json();
+    expect(card).toEqual({
+      entry: expect.objectContaining({ id: "my-book" }),
+      howToUse: "Two or three plain sentences people see on the book's card.",
+      actions: [{ name: "measure", title: "What this action does, as a button" }],
+      accepts: [{ format: "tiff", title: "TIFF", converted: false }],
+      ships: [{ id: "my-tool", version: "0.1.0", downloaded: false }],
+    });
+    const formats = await (await api("/api/library/formats")).json();
+    expect(formats["openfoam-case"]).toMatchObject({ kind: "sim-case", folder: true });
   });
 
   it("resolves a book to the ships it needs", async () => {

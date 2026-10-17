@@ -11,7 +11,7 @@
  * from the cache, so only new or changed steps actually run; job events
  * then update each history node as it runs.
  */
-import type { Artifact, BookManifest, Job, ParamSpec, Params, Plan, ServerEvent, ShipManifest, Step } from "@pharos/contracts";
+import { type Artifact, type BookAction, type BookCard, type BookManifest, type Job, type ParamSpec, type Params, type Plan, type ServerEvent, type ShipManifest, type Step, bookAction } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
 import type { DataWindowHooks, StepSpec, Suggestion } from "./data-window.js";
 import { escapeHtml, showDialog } from "./dialogs.js";
@@ -97,10 +97,13 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
   async suggestions(doc: DataDoc, artifact: Artifact, all = false): Promise<Suggestion[]> {
     await this.loadShips();
     const s = this.server;
-    const books = await s
-      .match(doc.workspace, [artifact.id])
-      .then((r) => r.matches.filter((m) => m.tier !== "excluded").slice(0, 6))
-      .catch(() => []);
+    const [books, cards] = await Promise.all([
+      s
+        .match(doc.workspace, [artifact.id])
+        .then((r) => r.matches.filter((m) => m.tier !== "excluded").slice(0, 6))
+        .catch(() => []),
+      this.cards(),
+    ]);
     // what the data already is, beyond its kind: a simulation case may or may not have been run
     const solved = artifact.format === "openfoam-case" ? await s.caseSummary(doc.workspace, artifact.id).then((c) => c.solved, () => false) : false;
     const ops: Suggestion[] = [];
@@ -112,7 +115,13 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     }
     ops.sort((a, b) => Number(b.trust === "verified") - Number(a.trust === "verified"));
     return [
-      ...books.map((m): Suggestion => ({ type: "book", id: m.book.id, title: m.book.title, summary: m.book.summary, fit: m.tier === "direct" ? "fits this data" : "fits after conversion", trust: m.book.trust })),
+      // one entry per action that fits, under its book
+      ...books.flatMap((m) =>
+        m.actions.map((name): Suggestion => {
+          const a = cards.find((c) => c.entry.id === m.book.id)?.actions.find((x) => x.name === name);
+          return { type: "book", id: m.book.id, action: name, book: m.book.title, title: a?.title ?? name, summary: a?.summary ?? m.book.summary, fit: m.tier === "direct" ? "fits this data" : "fits after conversion", trust: m.book.trust };
+        }),
+      ),
       ...(all ? ops : ops.slice(0, 10)),
     ];
   }
@@ -123,8 +132,11 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     const list = await this.suggestions(doc, shown, true).catch(() => [] as Suggestion[]);
     this.lastMenu = { doc, list };
     const item = (i: number, s: Suggestion) =>
-      `<button data-dp="apply:${i}" role="menuitem">${icon(s.type === "book" ? "script" : "plug", 16)}<span>${escapeHtml(s.title)}${s.trust === "verified" ? " <small>verified</small>" : ""}</span></button>`;
-    const books = list.map((s, i) => [i, s] as const).filter(([, s]) => s.type === "book");
+      `<button data-dp="apply:${i}" role="menuitem" title="${escapeHtml(s.summary)}">${icon(s.type === "book" ? "script" : "plug", 16)}<span>${escapeHtml(s.title)}</span></button>`;
+    const byBook = new Map<string, (readonly [number, Suggestion])[]>();
+    list.forEach((s, i) => {
+      if (s.type === "book") byBook.set(s.book, [...(byBook.get(s.book) ?? []), [i, s] as const]);
+    });
     const byShip = new Map<string, (readonly [number, Suggestion])[]>();
     list.forEach((s, i) => {
       if (s.type === "op") byShip.set(s.id.split(".")[0], [...(byShip.get(s.id.split(".")[0]) ?? []), [i, s] as const]);
@@ -132,7 +144,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     const tool = (i: number, s: Suggestion) =>
       `<button data-dp="apply:${i}" role="menuitem" title="${escapeHtml(s.summary)}">${icon("plug", 16)}<span>${escapeHtml(s.id.split(".")[1].replace(/-/g, " "))}</span></button>`;
     return `
-      <section><h4>Recipes for ${escapeHtml(shown.name ?? shown.kind)}</h4>${books.map(([i, s]) => item(i, s)).join("") || `<p class="pop-note">No recipe takes this yet.</p>`}</section>
+      ${[...byBook].map(([book, items]) => `<section><h4>${icon("book", 13)} ${escapeHtml(book)}</h4>${items.map(([i, s]) => item(i, s)).join("")}</section>`).join("") || `<section><h4>Books</h4><p class="pop-note">No book takes ${escapeHtml(shown.name ?? shown.kind)} yet.</p></section>`}
       ${[...byShip].map(([ship, ops]) => `<section><h4>${escapeHtml(ship)}${this.trust.get(ship) === "verified" ? " <small>verified</small>" : ""}</h4>${ops.map(([i, s]) => tool(i, s)).join("")}</section>`).join("") || `<section><h4>Tools</h4><p class="pop-note">No tool takes this yet.</p></section>`}
       <section>
         ${doc.marker > 0 ? `<button data-dp="separate" role="menuitem">${icon("duplicate", 16)}<span>Open this result in its own window</span></button>` : ""}
@@ -165,7 +177,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     try {
       await this.loadShips();
       if (s.type === "op") return await this.applyOperation(doc, s.id);
-      return await this.applyBook(doc, s.id);
+      return await this.applyBook(doc, s.id, s.action);
     } catch (e) {
       this.hooks.notify(e instanceof Error ? e.message : String(e));
     }
@@ -211,41 +223,44 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     await this.run(doc);
   }
 
-  private async applyBook(doc: DataDoc, bookId: string) {
-    const { manifest: book, guide } = await this.server.book(bookId);
-    const when = guide.split(/^## /m).find((s) => s.startsWith("When to use"))?.replace(/^When to use\s*/, "").trim() ?? "";
-    const values = await this.paramsDialog(book.title, book.summary, book.parameters ?? [], {}, when, book.steps.map((s) => s.run));
+  private async applyBook(doc: DataDoc, bookId: string, actionName?: string) {
+    const { manifest: book } = await this.server.book(bookId);
+    const action = bookAction(book, actionName);
+    if (!action) throw new Error(`${book.title} has no action "${actionName}"`);
+    const values = await this.paramsDialog(action.title, action.summary ?? book.how_to_use ?? book.summary, action.parameters ?? [], {}, book.title, action.steps.map((s) => s.run));
     if (!values) return;
-    this.appendBook(doc, book, values, "stale");
+    this.appendBook(doc, book, action.name, values, "stale");
     doc.marker = doc.steps.length;
     doc.output = undefined;
     this.ws.touch();
     await this.run(doc);
   }
 
-  /** Adds a book's steps, wired to this window's data, with its parameters set into each step. */
-  appendBook(doc: DataDoc, book: BookManifest, values: Params, status: DataStep["status"]) {
+  /** Adds a book action's steps, wired to this window's data, with its parameters set into each step. */
+  appendBook(doc: DataDoc, book: BookManifest, actionName: string, values: Params, status: DataStep["status"]) {
+    const action = bookAction(book, actionName);
+    if (!action) throw new Error(`${book.title} has no action "${actionName}"`);
     const used = new Set<string>();
     const inputWire: Record<string, string> = {};
-    for (const input of book.inputs ?? []) inputWire[input.name] = this.pick(doc, input.accepts.kind, input.accepts.formats, used, `"${book.title}"`);
+    for (const input of action.inputs ?? []) inputWire[input.name] = this.pick(doc, input.accepts.kind, input.accepts.formats, used, `"${action.title}"`);
     const rename = new Map<string, string>();
-    for (const s of book.steps) {
+    for (const s of action.steps) {
       const id = this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id);
       rename.set(s.id, id);
     }
-    for (const s of book.steps) {
+    for (const s of action.steps) {
       const wires: Record<string, string> = {};
       for (const [port, w] of Object.entries(s.in ?? {})) wires[port] = w.startsWith("$") ? inputWire[w.slice(1)] : `${rename.get(w.split(".")[0])}.${w.split(".")[1]}`;
-      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, book, values), book: { id: book.id, title: book.title }, status });
+      doc.steps.push({ id: rename.get(s.id)!, run: s.run, in: wires, with: bookStepParams(s, action, values), book: bookLabel(book, action), status });
     }
   }
 
   /** A form for a process's settings; null when cancelled. */
-  private paramsDialog(title: string, summary: string, specs: ParamSpec[], values: Params, note: string, steps?: string[]): Promise<Params | null> {
+  /** `book` names the book an action belongs to; operations have none. */
+  private paramsDialog(title: string, summary: string, specs: ParamSpec[], values: Params, book: string, steps?: string[]): Promise<Params | null> {
     return showDialog<Params | null>(
-      `<form method="dialog"><p class="eyebrow">${steps ? "Recipe" : "Operation"}</p><h2>${escapeHtml(title)}</h2>
+      `<form method="dialog"><p class="eyebrow">${escapeHtml(book || "Operation")}</p><h2>${escapeHtml(title)}</h2>
        <p class="muted">${escapeHtml(summary)}</p>
-       ${note ? `<p class="muted small">${escapeHtml(note.slice(0, 400))}</p>` : ""}
        ${steps ? `<p class="small">Adds ${steps.length} step${steps.length === 1 ? "" : "s"} to the history: ${steps.map((s) => `<code>${escapeHtml(s)}</code>`).join(" → ")}</p>` : ""}
        ${manifestParamFields(specs, values)}
        <footer><button type="button" data-cancel>Cancel</button><button class="primary">${icon("batch", 15)} Add and run</button></footer></form>`,
@@ -300,7 +315,10 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
   handle(e: ServerEvent) {
     if (e.type === "job") this.onJob(e.job);
     if (e.type === "plan") this.onPlan(e.plan);
-    if (e.type === "library") void this.loadShips(true);
+    if (e.type === "library") {
+      this.cardsLoading = null;
+      void this.loadShips(true);
+    }
   }
 
   private onJob(job: Job) {
@@ -384,6 +402,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     await this.loadShips();
     const doc = this.ws.open(source, plan.workspace);
     const book = plan.book ? (await this.server.book(plan.book.id, plan.book.version)).manifest : undefined;
+    const action = book && bookAction(book, plan.book!.action);
     const inputNames = Object.keys(plan.inputs);
     const rename = new Map<string, string>();
     for (const s of plan.steps) rename.set(s.id, this.uniqueId({ ...doc, steps: [...doc.steps, ...[...rename.values()].map((v) => ({ id: v }) as DataStep)] }, s.id));
@@ -399,8 +418,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
         id: rename.get(s.id)!,
         run: s.run,
         in: wires,
-        with: book ? bookStepParams(s, book, plan.parameters) : { ...(s.with ?? {}) },
-        ...(book ? { book: { id: book.id, title: book.title } } : {}),
+        with: action ? bookStepParams(s, action, plan.parameters) : { ...(s.with ?? {}) },
+        ...(book && action ? { book: bookLabel(book, action) } : {}),
         status: "proposed",
       });
     }
@@ -410,17 +429,33 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify">
     return doc;
   }
 
-  /** Applies a book to an open data window (from the library's "Use…"). */
-  async useBook(doc: DataDoc, bookId: string) {
+  /** Runs one of a book's actions in an open data window (from the library). */
+  async useBook(doc: DataDoc, bookId: string, action?: string) {
     await this.loadShips();
-    await this.applyBook(doc, bookId).catch((e: unknown) => this.hooks.notify(e instanceof Error ? e.message : String(e)));
+    await this.applyBook(doc, bookId, action).catch((e: unknown) => this.hooks.notify(e instanceof Error ? e.message : String(e)));
+  }
+
+  private cardsLoading: Promise<BookCard[]> | null = null;
+
+  /** The library's book cards (for action titles), loaded once and again when the library changes. */
+  private cards(): Promise<BookCard[]> {
+    this.cardsLoading ??= this.server.cards().catch(() => {
+      this.cardsLoading = null;
+      return [];
+    });
+    return this.cardsLoading;
   }
 }
 
-/** A book step's parameter values: its own `with`, plus each book parameter that `sets` it. */
-function bookStepParams(step: Step, book: BookManifest, values: Params): Params {
+/** How a step names where it came from: the book, and the action when the book has several. */
+function bookLabel(book: BookManifest, action: BookAction & { name: string }): NonNullable<DataStep["book"]> {
+  return { id: book.id, action: action.name, title: Object.keys(book.actions).length > 1 ? `${book.title} › ${action.title}` : book.title };
+}
+
+/** A book step's parameter values: its own `with`, plus each action parameter that `sets` it. */
+function bookStepParams(step: Step, action: BookAction, values: Params): Params {
   const out: Params = { ...(step.with ?? {}) };
-  for (const p of book.parameters ?? []) {
+  for (const p of action.parameters ?? []) {
     const v = values[p.name] ?? p.default;
     if (v === undefined) continue;
     for (const target of Array.isArray(p.sets) ? p.sets : [p.sets]) {

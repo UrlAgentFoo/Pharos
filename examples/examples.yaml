@@ -17,7 +17,7 @@
   title: Flow past an obstacle
   kind: OpenFOAM case
   description: A 2D OpenFOAM case of fluid flowing past a square obstacle; it sheds a vortex street.
-  files: [{ path: ../books/fluid-sim/example/case, name: cylinder-flow }]
+  files: [{ path: ../books/fluid-flow/example/case, name: cylinder-flow }]
   prompt: Simulate the flow at 1.5 m/s and show the vortices.
 - id: crowded-nuclei
   title: A crowded field of nuclei

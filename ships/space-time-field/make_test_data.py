@@ -113,11 +113,11 @@ def main():
     os.makedirs("ships/space-time-field/test/tracks-video", exist_ok=True)
     os.makedirs("ships/geff/test/convert", exist_ok=True)
     os.makedirs("ships/geff/test/score", exist_ok=True)
-    os.makedirs("books/score-tracking/example", exist_ok=True)
-    for p in ("ships/space-time-field/test/track/movie.zarr", "ships/space-time-field/test/tracks-video/image.zarr", "books/score-tracking/example/movie.zarr"):
+    os.makedirs("books/cell-imaging/example", exist_ok=True)
+    for p in ("ships/space-time-field/test/track/movie.zarr", "ships/space-time-field/test/tracks-video/image.zarr", "books/cell-imaging/example/timelapse.zarr"):
         write_movie(p, data)
     write_tracks("ships/space-time-field/test/tracks-video/tracks.csv", paths)
-    for p in ("ships/geff/test/convert/graph.geff", "ships/geff/test/score/truth.geff", "books/score-tracking/example/truth.geff"):
+    for p in ("ships/geff/test/convert/graph.geff", "ships/geff/test/score/truth.geff", "books/cell-imaging/example/truth.geff"):
         write_geff(p, paths, keep)
     write_tracks("ships/geff/test/score/tracks.csv", paths)
 

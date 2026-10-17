@@ -1,0 +1,3 @@
+# Short runs so Test book finishes quickly; real runs use the book's defaults.
+simulate:
+  end_time: 2

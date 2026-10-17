@@ -1,8 +1,9 @@
 # Pharos: notes for agents
 
 Pharos is a local app: describe a problem, drop in data, and an assistant
-picks a **book** (a recipe) that runs **ships** (container images with typed
-operations) on this machine. Read `README.md` first.
+picks a **book** (an app for a domain, with one or more actions) whose
+action runs **ships** (container images with typed operations) on this
+machine. People see only books and ships: no shelves or other groupings. Read `README.md` first.
 
 ## The rules
 
@@ -87,5 +88,11 @@ npm run build -w @pharos/contracts   # also rewrites packages/contracts/schemas/
   side by side). A converter is any operation named `convert` with one input
   and one output of the same kind; books automatically accept what it reads.
 - Comments explain why, briefly; match the density of the file you're in.
-- Ship ids are lowercase-hyphenated (`bio-utils`); input, output, parameter
-  and step names are lowercase_snake (`movie`, `masks`).
+- Ship ids are lowercase-hyphenated (`bio-utils`); action, input, output,
+  parameter and step names are lowercase_snake (`movie`, `masks`).
+- A book's card shows only its title, `how_to_use`, its actions' titles, the
+  file types it accepts and its ships. Everything else in `book.yaml` is for
+  Pharos and the assistant; add metadata freely, but keep it off the card.
+- Kinds and formats are open strings. A ship that reads or writes a format
+  Pharos doesn't know declares it under `formats` in its `ship.yaml`
+  (kind, extensions or folder contents), so files in it are recognised.

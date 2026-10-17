@@ -18,13 +18,22 @@ title: Count rows, then count the count
 summary: Two chained steps, to check that plans wire outputs into later steps.
 tags: [test]
 ships: { hello: ^0.1 }
-inputs: [{ name: table, accepts: { kind: table } }]
-parameters:
-  - { name: wait, type: integer, default: 0, min: 0, max: 30, sets: [first.seconds, second.seconds] }
-steps:
-  - { id: first, run: hello.count, in: { table: $table } }
-  - { id: second, run: hello.count, in: { table: first.count } }
-outputs: { rows: first.count, summary: second.count }
+actions:
+  count:
+    title: Count twice
+    inputs: [{ name: table, accepts: { kind: table } }]
+    parameters:
+      - { name: wait, type: integer, default: 0, min: 0, max: 30, sets: [first.seconds, second.seconds] }
+    steps:
+      - { id: first, run: hello.count, in: { table: $table } }
+      - { id: second, run: hello.count, in: { table: first.count } }
+    outputs: { rows: first.count, summary: second.count }
+  once:
+    title: Count once
+    inputs: [{ name: table, accepts: { kind: table } }]
+    steps:
+      - { id: first, run: hello.count, in: { table: $table } }
+    outputs: { rows: first.count }
 `;
 
 let tmp: string;
@@ -58,8 +67,17 @@ afterAll(async () => {
 describe("plans", () => {
   it("makes a plan from a book, with defaults, ships and no problems", async () => {
     const plan: Plan = await (await send("POST", "/api/plans", { workspace: "w", from: "book", book: "count-twice", inputs: { table } })).json();
-    expect(plan).toMatchObject({ status: "proposed", source: "book", book: { id: "count-twice" }, parameters: { wait: 0 }, problems: [] });
+    expect(plan).toMatchObject({ status: "proposed", source: "book", book: { id: "count-twice", action: "count" }, title: "Count rows, then count the count: Count twice", parameters: { wait: 0 }, problems: [] });
     expect(plan.ships).toEqual([expect.objectContaining({ id: "hello", version: "0.1.0", gpu: "none" })]);
+  });
+
+  it("makes a plan from a book's other actions by name", async () => {
+    const plan: Plan = await (await send("POST", "/api/plans", { workspace: "w", from: "book", book: "count-twice", action: "once", inputs: { table } })).json();
+    expect(plan).toMatchObject({ book: { action: "once" }, parameters: {}, problems: [] });
+    expect(plan.steps.map((s) => s.id)).toEqual(["first"]);
+    const r = await send("POST", "/api/plans", { workspace: "w", from: "book", book: "count-twice", action: "thrice", inputs: { table } });
+    expect(r.status).toBe(404);
+    expect((await r.json()).error).toMatch(/has no action "thrice" \(it has: count, once\)/);
   });
 
   it("reports missing data and bad values, and refuses to approve until they're fixed", async () => {
@@ -91,16 +109,23 @@ describe("plans", () => {
 
   it.skipIf(!dockerUp)("saves a plan that worked as a new book", async () => {
     const plan: Plan = await (await send("POST", "/api/plans", { workspace: "w", from: "book", book: "count-twice", inputs: { table } })).json();
-    const entry = await (await send("POST", `/api/plans/${plan.id}/save-as-book`, { id: "my-count", title: "My count", summary: "Saved." })).json();
+    const meta = (action: string) => ({ id: "my-count", title: "My count", summary: "Saved.", action: { name: action, title: `Count (${action})` } });
+    const entry = await (await send("POST", `/api/plans/${plan.id}/save-as-book`, meta("count"))).json();
     expect(entry).toMatchObject({ type: "book", id: "my-count", version: "0.1.0" });
     const saved = await readFile(join(tmp, "data", "books", "my-count", "book.yaml"), "utf8");
     expect(saved).toMatch(/hello: \^0\.1/);
-    expect((await send("POST", `/api/plans/${plan.id}/save-as-book`, { id: "my-count", title: "x", summary: "y" })).status).toBe(409);
+    expect((await send("POST", `/api/plans/${plan.id}/save-as-book`, meta("count"))).status).toBe(409);
+    // saving again under another action name adds it to the same book
+    await send("POST", `/api/plans/${plan.id}/save-as-book`, meta("again"));
+    const book = (await (await api("/api/library/books/my-count")).json()).manifest;
+    expect(Object.keys(book.actions)).toEqual(["count", "again"]);
+    // books that came with the library don't change
+    expect((await send("POST", `/api/plans/${plan.id}/save-as-book`, { ...meta("x"), id: "count-twice" })).status).toBe(409);
   });
 
   it.skipIf(!dockerUp)("tests a book on its example and marks it verified", async () => {
     const r = await (await send("POST", "/api/books/count-twice/test")).json();
-    expect(r).toMatchObject({ passed: true, target: { id: "count-twice" } });
+    expect(r).toMatchObject({ passed: true, target: { id: "count-twice" }, cases: [{ name: "count", passed: true }, { name: "once", passed: true }] });
     const books = await (await api("/api/library/books")).json();
     expect(books.find((b: { id: string }) => b.id === "count-twice").trust).toBe("verified");
   }, 120_000);

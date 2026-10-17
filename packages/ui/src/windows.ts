@@ -9,7 +9,7 @@
  */
 import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
-import { DataWindow, type DataWindowHooks, KIND_ICON } from "./data-window.js";
+import { DataWindow, type DataWindowHooks, kindIcon } from "./data-window.js";
 import type { DataDoc, Workspace } from "./workspace.js";
 
 export interface Rect {
@@ -120,7 +120,7 @@ export class WindowManager {
     el.innerHTML = `
       <header class="win-title">
         <div class="win-left">
-          <div class="win-name"><span class="win-kind">${icon(KIND_ICON[doc.source.kind], 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
+          <div class="win-name"><span class="win-kind">${icon(kindIcon(doc.source.kind), 13)}</span><span class="win-title-text">${escapeHtml(doc.name)}</span></div>
         </div>
         <div class="win-center">
           <button class="win-ctl-toggle" data-win="mode" title="Switch between the history and a grid of every result"></button>
@@ -459,7 +459,7 @@ export class WindowManager {
       else {
         const glyph = document.createElement("span");
         glyph.className = "shelf-glyph";
-        glyph.innerHTML = icon(KIND_ICON[w.doc.source.kind], 28);
+        glyph.innerHTML = icon(kindIcon(w.doc.source.kind), 28);
         card.append(glyph);
       }
       const label = document.createElement("span");

@@ -3,7 +3,7 @@
  * (the launch URL carries the token in its #fragment). Everything Pharos
  * does goes through it; without one the page can only say how to start it.
  */
-import type { Artifact, AssistantPlan, CaseSummary, Example, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
+import type { AcceptedFormats, Artifact, AssistantPlan, BookCard, CaseSummary, Example, FormatInfo, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
 export interface ServerInfo {
   version: string;
@@ -203,7 +203,17 @@ export class LocalServer {
     return (await this.call("/api/library/books")).json();
   }
 
-  async book(id: string, version?: string): Promise<{ manifest: BookManifest; guide: string; entry: CatalogueEntry; accepts: { input: string; kind: string; direct: string[]; converted: { format: string; via: string }[] }[] }> {
+  /** Every book as its card shows it. */
+  async cards(): Promise<BookCard[]> {
+    return (await this.call("/api/library/cards")).json();
+  }
+
+  /** Every format Pharos recognises: built in, plus those ships declare. */
+  async formats(): Promise<Record<string, FormatInfo>> {
+    return (await this.call("/api/library/formats")).json();
+  }
+
+  async book(id: string, version?: string): Promise<{ manifest: BookManifest; guide: string; entry: CatalogueEntry; accepts: AcceptedFormats[] }> {
     return (await this.call(`/api/library/books/${encodeURIComponent(id)}${version ? `?version=${encodeURIComponent(version)}` : ""}`)).json();
   }
 
@@ -244,8 +254,8 @@ export class LocalServer {
     return (await this.json(`/api/examples/${encodeURIComponent(id)}/load`, "POST", { workspace })) as Artifact[];
   }
 
-  async createPlan(workspace: string, book: string, inputs: Record<string, string>, parameters?: Params): Promise<Plan> {
-    return (await this.json("/api/plans", "POST", { workspace, from: "book", book, inputs, parameters })) as Plan;
+  async createPlan(workspace: string, book: string, inputs: Record<string, string>, parameters?: Params, action?: string): Promise<Plan> {
+    return (await this.json("/api/plans", "POST", { workspace, from: "book", book, action, inputs, parameters })) as Plan;
   }
 
   async assistantPlan(workspace: string, text: string, artifacts: string[]): Promise<AssistantPlan> {
@@ -268,7 +278,7 @@ export class LocalServer {
     return (await this.json(`/api/plans/${encodeURIComponent(id)}/cancel`, "POST", {})) as Plan;
   }
 
-  async saveAsBook(id: string, meta: { id: string; title: string; summary: string }): Promise<CatalogueEntry> {
+  async saveAsBook(id: string, meta: { id: string; title: string; summary: string; action: { name: string; title: string } }): Promise<CatalogueEntry> {
     return (await this.json(`/api/plans/${encodeURIComponent(id)}/save-as-book`, "POST", meta)) as CatalogueEntry;
   }
 

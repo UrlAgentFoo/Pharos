@@ -8,7 +8,7 @@ import type { Artifact } from "@pharos/contracts";
 import { getPlane, readTiff } from "@pharos/core";
 import { caseSummary, imageAsTiff, readOmeZarr } from "../src/preview.js";
 
-const CASE = fileURLToPath(new URL("../../../books/fluid-sim/example/case", import.meta.url));
+const CASE = fileURLToPath(new URL("../../../books/fluid-flow/example/case", import.meta.url));
 let tmp: string;
 
 const artifact = (uri: string, a: Partial<Artifact>): Artifact => ({ id: "x", kind: "volume", format: "ome-zarr", uri, meta: {}, createdAt: "", ...a });

@@ -56,21 +56,24 @@ operations:
 
 const BOOK = `id: cell-tracking
 version: 0.1.0
-title: Track cells in a 3D time-lapse
+title: Cell tracking
 summary: Segments nuclei in every frame, links them into tracks and measures each cell.
 tags: [microscopy, tracking]
 ships: { bio-utils: ^0.1, cellpose: ^0.1, ultrack: ^0.6 }
-inputs:
-  - name: movie
-    accepts: { kind: volume, axes: tzyx, channels: 1-4 }
-parameters:
-  - { name: diameter, type: number, unit: px, default: 30, sets: segment.diameter }
-steps:
-  - { id: convert, run: bio-utils.convert, in: { image: $movie } }
-  - { id: segment, run: cellpose.segment, in: { image: convert.zarr }, with: { model: nuclei } }
-  - { id: track,   run: ultrack.track,    in: { labels: segment.masks } }
-  - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }
-outputs: { tracks: track.tracks, table: measure.table }
+actions:
+  track:
+    title: Track over time
+    inputs:
+      - name: movie
+        accepts: { kind: volume, axes: tzyx, channels: 1-4 }
+    parameters:
+      - { name: diameter, type: number, unit: px, default: 30, sets: segment.diameter }
+    steps:
+      - { id: convert, run: bio-utils.convert, in: { image: $movie } }
+      - { id: segment, run: cellpose.segment, in: { image: convert.zarr }, with: { model: nuclei } }
+      - { id: track,   run: ultrack.track,    in: { labels: segment.masks } }
+      - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }
+    outputs: { tracks: track.tracks, table: measure.table }
 `;
 
 const GUIDE = "# Cell tracking\n\n## When to use\n\n## When not to use\n\n## Parameters\n\n## Example\n";
@@ -78,6 +81,8 @@ const GUIDE = "# Cell tracking\n\n## When to use\n\n## When not to use\n\n## Par
 let root: string;
 let lib: Library;
 const book = (): BookManifest => parse(BOOK);
+/** The book's one action, as tests change it. */
+const track = (b: BookManifest) => b.actions.track;
 
 async function put(path: string, text: string) {
   await mkdir(join(root, path, ".."), { recursive: true });
@@ -93,7 +98,7 @@ beforeAll(async () => {
   await put("books/cell-tracking/book.yaml", BOOK);
   await put("books/cell-tracking/GUIDE.md", GUIDE);
   // broken ones, reported as issues
-  await put("ships/broken/ship.yaml", "id: broken\nversion: 0.1.0\nimage: x\noperations:\n  run:\n    summary: s\n    command: c {nope}\n    outputs: [{ name: o, kind: picture, format: csv, path: /out/o }]\n");
+  await put("ships/broken/ship.yaml", "id: broken\nversion: 0.1.0\nimage: x\noperations:\n  run:\n    summary: s\n    command: c {nope}\n    outputs: [{ name: o, kind: Picture, format: csv, path: /out/o }]\n");
   await put("ships/wrong-folder/ship.yaml", BIO_UTILS.replace("version: 0.1.0", "version: 0.2.0"));
   await put("books/bad-yaml/book.yaml", "id: bad\nsteps: [\n");
   await put("books/no-guide/book.yaml", BOOK.replace("id: cell-tracking", "id: no-guide"));
@@ -157,72 +162,121 @@ describe("checkBook", () => {
 
   it("catches kind and format mismatches on wires", () => {
     const b = book();
-    b.steps[2].in = { labels: "convert.zarr" }; // a volume into a labels port
-    b.steps[1].in = { image: "$movie" };
-    b.inputs![0].accepts.formats = ["czi"]; // cellpose can't read czi
+    track(b).steps[2].in = { labels: "convert.zarr" }; // a volume into a labels port
+    track(b).steps[1].in = { image: "$movie" };
+    track(b).inputs![0].accepts.formats = ["czi"]; // cellpose can't read czi
     expect(problems(b)).toEqual(
       expect.arrayContaining([
-        'error /steps/2/in/labels: "labels" needs labels, but convert.zarr is volume',
-        'error /steps/1/in/image: "image" reads ome-zarr, tiff, but $movie is czi',
+        'error /actions/track/steps/2/in/labels: "labels" needs labels, but convert.zarr is volume',
+        'error /actions/track/steps/1/in/image: "image" reads ome-zarr, tiff, but $movie is czi',
       ]),
     );
   });
 
   it("catches wires to later steps, unknown steps, inputs and outputs", () => {
     const b = book();
-    b.steps[1].in = { image: "measure.table" };
-    b.steps[3].in = { labels: "nope.labels", image: "$film" };
-    b.outputs.tracks = "track.trax";
+    track(b).steps[1].in = { image: "measure.table" };
+    track(b).steps[3].in = { labels: "nope.labels", image: "$film" };
+    track(b).outputs.tracks = "track.trax";
     const p = problems(b);
-    expect(p).toContain(`error /steps/1/in/image: step "measure" runs later; a step can only use earlier steps' outputs`);
-    expect(p).toContain('error /steps/3/in/labels: no step "nope"');
-    expect(p).toContain('error /steps/3/in/image: no input "film" (inputs: movie)');
-    expect(p).toContain('error /outputs/tracks: step "track" has no output "trax" (it has: tracks, labels)');
+    expect(p).toContain(`error /actions/track/steps/1/in/image: step "measure" runs later; a step can only use earlier steps' outputs`);
+    expect(p).toContain('error /actions/track/steps/3/in/labels: no step "nope"');
+    expect(p).toContain('error /actions/track/steps/3/in/image: no input "film" (inputs: movie)');
+    expect(p).toContain('error /actions/track/outputs/tracks: step "track" has no output "trax" (it has: tracks, labels)');
   });
 
   it("catches unconnected inputs, unknown ports and missing ships without follow-on noise", () => {
     const b = book();
-    b.steps[3].in = { labels: "track.labels", extra: "convert.zarr" };
-    b.steps[2].run = "ultrack.trak";
+    track(b).steps[3].in = { labels: "track.labels", extra: "convert.zarr" };
+    track(b).steps[2].run = "ultrack.trak";
     const p = problems(b);
-    expect(p).toContain("error /steps/2/run: ship \"ultrack\" 0.6.1 has no operation \"trak\" (it has: track)");
-    expect(p).toContain("error /steps/3/in/extra: bio-utils.measure has no input \"extra\" (it has: labels, image)");
-    expect(p).toContain('error /steps/3/in: required input "image" of bio-utils.measure isn\'t connected');
+    expect(p).toContain("error /actions/track/steps/2/run: ship \"ultrack\" 0.6.1 has no operation \"trak\" (it has: track)");
+    expect(p).toContain("error /actions/track/steps/3/in/extra: bio-utils.measure has no input \"extra\" (it has: labels, image)");
+    expect(p).toContain('error /actions/track/steps/3/in: required input "image" of bio-utils.measure isn\'t connected');
     // the wire from the failed step and the output pointing at it aren't reported again
     expect(p.filter((x) => x.includes("track."))).toEqual([]);
 
     const c = book();
-    c.steps.push({ id: "extra", run: "napari.view", in: { image: "convert.zarr" } });
+    track(c).steps.push({ id: "extra", run: "napari.view", in: { image: "convert.zarr" } });
     expect(problems(c)).toEqual(expect.arrayContaining([
-      'error /steps/4/run: ship "napari" isn\'t listed under ships',
-      'error /steps/4/run: needs ship "napari", which isn\'t in the library',
+      'error /actions/track/steps/4/run: ship "napari" isn\'t listed under ships',
+      'error /actions/track/steps/4/run: needs ship "napari", which isn\'t in the library',
     ]));
   });
 
   it("checks parameter values, targets and conflicts", () => {
     const b = book();
-    b.steps[1].with = { model: "cyto9", sigma: 2 };
-    b.parameters!.push({ name: "d2", type: "number", sets: "segment.diameter" });
-    b.parameters!.push({ name: "m", type: "enum", options: ["nuclei", "tissue"], sets: ["segment.model", "segment.nope"] });
-    b.parameters![0].default = 0;
+    track(b).steps[1].with = { model: "cyto9", sigma: 2 };
+    track(b).parameters!.push({ name: "d2", type: "number", sets: "segment.diameter" });
+    track(b).parameters!.push({ name: "m", type: "enum", options: ["nuclei", "tissue"], sets: ["segment.model", "segment.nope"] });
+    track(b).parameters![0].default = 0;
     const p = problems(b);
     expect(p).toEqual(
       expect.arrayContaining([
-        'error /steps/1/with/model: "model" must be one of cyto3, nuclei',
-        "error /steps/1/with/sigma: cellpose.segment has no parameter \"sigma\"",
-        'error /parameters/1/sets: "segment.diameter" is already set by parameter "diameter"',
-        "error /parameters/2/sets: segment.model doesn't accept tissue",
-        "error /parameters/2/sets: \"segment.model\" is also fixed in the step's \"with\"",
-        "error /parameters/2/sets: cellpose.segment has no parameter \"nope\"",
-        "error /parameters/0/default: default for segment.diameter must be between 1 and ∞",
+        'error /actions/track/steps/1/with/model: "model" must be one of cyto3, nuclei',
+        "error /actions/track/steps/1/with/sigma: cellpose.segment has no parameter \"sigma\"",
+        'error /actions/track/parameters/1/sets: "segment.diameter" is already set by parameter "diameter"',
+        "error /actions/track/parameters/2/sets: segment.model doesn't accept tissue",
+        "error /actions/track/parameters/2/sets: \"segment.model\" is also fixed in the step's \"with\"",
+        "error /actions/track/parameters/2/sets: cellpose.segment has no parameter \"nope\"",
+        "error /actions/track/parameters/0/default: default for segment.diameter must be between 1 and ∞",
       ]),
     );
   });
 
   it("warns about steps whose outputs nothing uses", () => {
     const b = book();
-    b.steps.push({ id: "again", run: "cellpose.segment", in: { image: "convert.zarr" } });
-    expect(problems(b)).toEqual(['warning /steps/4: nothing uses the outputs of step "again"']);
+    track(b).steps.push({ id: "again", run: "cellpose.segment", in: { image: "convert.zarr" } });
+    expect(problems(b)).toEqual(['warning /actions/track/steps/4: nothing uses the outputs of step "again"']);
+  });
+});
+
+describe("books with several actions", () => {
+  it("checks each action on its own, with paths into it, and warns about ships no action uses", () => {
+    const b = book();
+    b.actions.measure = {
+      title: "Count and measure",
+      inputs: [{ name: "image", accepts: { kind: "volume" } }],
+      steps: [{ id: "segment", run: "cellpose.segment", in: { image: "$movie" } }],
+      outputs: { masks: "segment.masks" },
+    };
+    b.ships.render = "^0.1";
+    const p = checkBook(b, lib).map((x) => `${x.severity} ${x.path}: ${x.message}`);
+    expect(p).toContain('error /actions/measure/steps/0/in/image: no input "movie" (inputs: image)');
+    expect(p).toContain('warning /ships/render: no action uses ship "render"');
+    expect(p.filter((x) => x.includes("/actions/track/"))).toEqual([]);
+    b.actions.measure.steps[0].in = { image: "$image" };
+    const formats = acceptedFormats(b, lib, converters(lib.shipManifests()));
+    expect(formats.map((f) => `${f.action}.${f.input}`)).toEqual(["track.movie", "measure.image"]);
+    expect(formats[1].direct).toEqual(["ome-zarr", "tiff"]);
+  });
+});
+
+describe("formats", () => {
+  it("adds the formats ships declare, and warns about ones nobody declares", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pharos-fmt-"));
+    try {
+      const ship = (id: string, formats: string) => `id: ${id}
+version: 0.1.0
+image: x/${id}:1
+${formats}operations:
+  run:
+    summary: s
+    command: c
+    inputs: [{ name: cells, kind: single-cell, formats: [h5ad] }]
+    outputs: [{ name: table, kind: table, format: loom, path: /out/t.loom }]
+`;
+      await mkdir(join(dir, "ships/scanpy"), { recursive: true });
+      await writeFile(join(dir, "ships/scanpy/ship.yaml"), ship("scanpy", "formats:\n  h5ad: { kind: single-cell, title: AnnData, extensions: [.h5ad] }\n"));
+      const l = await Library.load([dir]);
+      expect(l.formats().h5ad).toEqual({ kind: "single-cell", title: "AnnData", extensions: [".h5ad"] });
+      expect(l.formats().tiff.title).toBe("TIFF");
+      const warnings = l.issues().flatMap((i) => i.problems.map((p) => p.message));
+      expect(warnings).toEqual(['format "loom" isn\'t built in and no ship declares it under formats, so files in it won\'t be recognised']);
+      expect(l.shipManifests().map((s) => s.id)).toEqual(["scanpy"]); // warnings don't keep it out
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -230,13 +284,13 @@ describe("acceptedFormats", () => {
   it("takes the formats of the steps an input feeds, plus what a converter makes readable", () => {
     const b = book();
     expect(acceptedFormats(b, lib, converters(lib.shipManifests()))).toEqual([
-      { input: "movie", kind: "volume", direct: ["tiff", "ome-tiff", "czi", "nd2", "lif"], converted: [] },
+      { action: "track", input: "movie", kind: "volume", direct: ["tiff", "ome-tiff", "czi", "nd2", "lif"], converted: [] },
     ]);
     // without the convert step, the movie feeds cellpose (ome-zarr, tiff) and measure (ome-zarr):
     // only ome-zarr is read directly, and bio-utils.convert makes the rest readable
-    b.steps = b.steps.filter((s) => s.id !== "convert");
-    b.steps[0].in = { image: "$movie" };
-    b.steps[2].in = { labels: "track.labels", image: "$movie" };
+    track(b).steps = track(b).steps.filter((s) => s.id !== "convert");
+    track(b).steps[0].in = { image: "$movie" };
+    track(b).steps[2].in = { labels: "track.labels", image: "$movie" };
     expect(checkBook(b, lib).filter((p) => p.severity === "error")).toEqual([]);
     const [a] = acceptedFormats(b, lib, converters(lib.shipManifests()));
     expect(a.direct).toEqual(["ome-zarr"]);
@@ -301,23 +355,24 @@ describe("plans", () => {
 
   it("fills a step's parameters from its own values and the book parameters that set it", () => {
     const b = book();
-    expect(stepParams(b.steps[1], b.parameters!, {})).toEqual({ model: "nuclei", diameter: 30 });
-    expect(stepParams(b.steps[1], b.parameters!, { diameter: 12 })).toEqual({ model: "nuclei", diameter: 12 });
-    expect(stepParams(b.steps[0], b.parameters!, { diameter: 12 })).toEqual({});
+    expect(stepParams(track(b).steps[1], track(b).parameters!, {})).toEqual({ model: "nuclei", diameter: 30 });
+    expect(stepParams(track(b).steps[1], track(b).parameters!, { diameter: 12 })).toEqual({ model: "nuclei", diameter: 12 });
+    expect(stepParams(track(b).steps[0], track(b).parameters!, { diameter: 12 })).toEqual({});
   });
 
   it("knows which steps a step waits for", () => {
-    expect(dependencies(book().steps[3])).toEqual(["track", "convert"]);
-    expect(dependencies(book().steps[0])).toEqual([]);
+    expect(dependencies(track(book()).steps[3])).toEqual(["track", "convert"]);
+    expect(dependencies(track(book()).steps[0])).toEqual([]);
   });
 
   it("checks the data given and the parameter values", () => {
     const b = book();
     const ctx = { ships: lib, inventory: { has: () => false }, machine: { gpu: false }, artifacts: { a1: artifact("a1", "volume"), t1: artifact("t1", "table") } };
-    expect(planProblems({ steps: b.steps, inputs: { movie: "a1" }, parameters: {} }, b, ctx)).toEqual([]);
-    expect(planProblems({ steps: b.steps, inputs: { movie: "t1" }, parameters: {} }, b, ctx).map((p) => p.message)).toContain('"movie" needs volume data, this is table');
-    expect(planProblems({ steps: b.steps, inputs: {}, parameters: { diameter: "big" } }, b, ctx).map((p) => p.message)).toEqual(['no data chosen for "movie"', '"diameter" must be a number']);
-    const extra = planProblems({ steps: b.steps, inputs: { movie: "a1" }, parameters: {} }, b, { ...ctx, inputProblems: () => ["needs axes tzyx"] });
+    const recipe = { book: b, action: track(b) };
+    expect(planProblems({ steps: track(b).steps, inputs: { movie: "a1" }, parameters: {} }, recipe, ctx)).toEqual([]);
+    expect(planProblems({ steps: track(b).steps, inputs: { movie: "t1" }, parameters: {} }, recipe, ctx).map((p) => p.message)).toContain('"movie" needs volume data, this is table');
+    expect(planProblems({ steps: track(b).steps, inputs: {}, parameters: { diameter: "big" } }, recipe, ctx).map((p) => p.message)).toEqual(['no data chosen for "movie"', '"diameter" must be a number']);
+    const extra = planProblems({ steps: track(b).steps, inputs: { movie: "a1" }, parameters: {} }, recipe, { ...ctx, inputProblems: () => ["needs axes tzyx"] });
     expect(extra.map((p) => p.message)).toEqual(["needs axes tzyx"]);
   });
 });

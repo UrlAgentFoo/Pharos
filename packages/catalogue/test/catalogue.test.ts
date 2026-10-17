@@ -54,12 +54,15 @@ title: Segment and measure nuclei
 summary: Finds every nucleus in a 3D stack and measures its size and brightness.
 tags: [microscopy, segmentation]
 ships: { bio-utils: ^0.1, cellpose: ^0.1 }
-inputs: [{ name: image, accepts: { kind: volume, axes: zyx, channels: 1-2 } }]
-steps:
-  - { id: convert, run: bio-utils.convert, in: { image: $image } }
-  - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
-  - { id: measure, run: bio-utils.measure, in: { labels: segment.masks, image: convert.zarr } }
-outputs: { table: measure.table }
+actions:
+  measure:
+    title: Count and measure
+    inputs: [{ name: image, accepts: { kind: volume, axes: zyx, channels: 1-2 } }]
+    steps:
+      - { id: convert, run: bio-utils.convert, in: { image: $image } }
+      - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
+      - { id: measure, run: bio-utils.measure, in: { labels: segment.masks, image: convert.zarr } }
+    outputs: { table: measure.table }
 `,
   "books/segment-measure/GUIDE.md": "# Segment and measure\n## When to use\nCounting nuclei, nuclear volume.\n## When not to use\n## Parameters\n## Example\n",
   "books/cell-tracking/book.yaml": `id: cell-tracking
@@ -68,11 +71,14 @@ title: Track cells over time
 summary: Segments nuclei in every frame and links them into tracks.
 tags: [microscopy, tracking]
 ships: { bio-utils: ^0.1, cellpose: ^0.1 }
-inputs: [{ name: movie, accepts: { kind: volume, axes: tzyx } }]
-steps:
-  - { id: convert, run: bio-utils.convert, in: { image: $movie } }
-  - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
-outputs: { masks: segment.masks }
+actions:
+  track:
+    title: Track over time
+    inputs: [{ name: movie, accepts: { kind: volume, axes: tzyx } }]
+    steps:
+      - { id: convert, run: bio-utils.convert, in: { image: $movie } }
+      - { id: segment, run: cellpose.segment, in: { image: convert.zarr } }
+    outputs: { masks: segment.masks }
 `,
   "ships/openfoam/ship.yaml": `id: openfoam
 version: 0.1.0
@@ -92,9 +98,12 @@ title: Simulate flow past an obstacle
 summary: Runs a fluid dynamics simulation of air or water flowing around a cylinder.
 tags: [cfd, simulation]
 ships: { openfoam: ^0.1 }
-parameters: [{ name: speed, type: number, default: 1, sets: solve.speed }]
-steps: [{ id: solve, run: openfoam.solve }]
-outputs: { case: solve.case }
+actions:
+  simulate:
+    title: Simulate the flow
+    parameters: [{ name: speed, type: number, default: 1, sets: solve.speed }]
+    steps: [{ id: solve, run: openfoam.solve }]
+    outputs: { case: solve.case }
 `,
 };
 
@@ -152,9 +161,9 @@ describe("inspect", () => {
   });
 
   it("reads a v3 OME-Zarr with capitalised axes and its GEFF ground truth, as the Biohub challenge ships them", async () => {
-    const example = fileURLToPath(new URL("../../../books/score-tracking/example/", import.meta.url));
+    const example = fileURLToPath(new URL("../../../books/cell-imaging/example/", import.meta.url));
     expect(sniff("44b6_e28840c6.geff", true)).toEqual({ kind: "tracks", format: "geff" });
-    expect(await inspect({ uri: join(example, "movie.zarr"), kind: "volume", format: "ome-zarr" })).toMatchObject({ axes: "tzyx", shape: [12, 24, 96, 96], dtype: "uint16", timepoints: 12, voxelSize: { x: 0.40625, z: 1.625, unit: "µm" } });
+    expect(await inspect({ uri: join(example, "timelapse.zarr"), kind: "volume", format: "ome-zarr" })).toMatchObject({ axes: "tzyx", shape: [12, 24, 96, 96], dtype: "uint16", timepoints: 12, voxelSize: { x: 0.40625, z: 1.625, unit: "µm" } });
     expect(await inspect({ uri: join(example, "truth.geff"), kind: "tracks", format: "geff" })).toMatchObject({ axes: "tzyx", columns: ["t", "z", "y", "x"], rows: 72, timepoints: 12 });
   });
 
@@ -176,8 +185,8 @@ describe("matching", () => {
 
   it("ranks direct matches first, keeps reasons for exclusions, and uses the request's words", () => {
     const m = matchBooks(books, [summary({})], { text: "measure nuclei size", gpu: false });
-    expect(m[0]).toMatchObject({ book: { id: "segment-measure" }, tier: "direct", reasons: ["image ← x.tif", 'matches "measure, nuclei, size"'] });
-    expect(m.slice(1).map((x) => x.tier)).toEqual(["excluded", "excluded"]);
+    expect(m[0]).toMatchObject({ book: { id: "segment-measure" }, tier: "direct", actions: ["measure"], reasons: ["image ← x.tif", 'matches "measure, nuclei, size"'] });
+    expect(m.slice(1).map((x) => [x.tier, x.actions])).toEqual([["excluded", []], ["excluded", []]]);
     expect(m.find((x) => x.book.id === "cell-tracking")?.reasons).toEqual(["x.tif: needs axes tzyx, this has zyx (no t)"]);
   });
 
@@ -185,7 +194,20 @@ describe("matching", () => {
     const m = matchBooks(books, [summary({ format: "ome-zarr", name: "m.zarr" })], { gpu: false });
     expect(m.find((x) => x.book.id === "segment-measure")).toMatchObject({ tier: "excluded" }); // convert reads files, not ome-zarr
     const sim = matchBooks(books, [], { text: "simulate airflow around a cylinder", gpu: false });
-    expect(sim[0]).toMatchObject({ book: { id: "fluid-sim" }, tier: "direct" });
+    expect(sim[0]).toMatchObject({ book: { id: "fluid-sim" }, tier: "direct", actions: ["simulate"] });
+  });
+
+  it("fits a book when any of its actions fits, and lists only those", () => {
+    const measure = books.find((b) => b.entry.id === "segment-measure")!;
+    const track = books.find((b) => b.entry.id === "cell-tracking")!;
+    const cells: MatchableBook = {
+      entry: { ...measure.entry, id: "cells", title: "Cells" },
+      manifest: { ...measure.manifest, id: "cells", title: "Cells", actions: { ...measure.manifest.actions, ...track.manifest.actions } },
+      accepts: [...measure.accepts, ...track.accepts],
+    };
+    expect(matchBooks([cells], [summary({})], { gpu: false })[0]).toMatchObject({ tier: "direct", actions: ["measure"] });
+    expect(matchBooks([cells], [summary({ axes: "tzyx", channels: 1 })], { gpu: false })[0]).toMatchObject({ tier: "direct", actions: ["measure", "track"] });
+    expect(matchBooks([cells], [summary({ kind: "table" })], { gpu: false })[0]).toMatchObject({ tier: "excluded", actions: [], reasons: ["x.tif: needs volume data, this is table"] });
   });
 });
 
@@ -201,7 +223,7 @@ describe("catalogue index", () => {
   });
 
   it("returns manifests, counts and gaps", () => {
-    expect(index.manifest("book", "fluid-sim")).toMatchObject({ entry: { id: "fluid-sim" }, manifest: { steps: [{ run: "openfoam.solve" }] } });
+    expect(index.manifest("book", "fluid-sim")).toMatchObject({ entry: { id: "fluid-sim" }, manifest: { actions: { simulate: { steps: [{ run: "openfoam.solve" }] } } } });
     expect(index.manifest("ship", "nope")).toBeNull();
     expect(index.stats()).toMatchObject({ ships: { verified: 2, imported: 1 }, books: { verified: 1, imported: 2 }, byDomain: { microscopy: 4, cfd: 2 } });
     const gaps = index.gaps();

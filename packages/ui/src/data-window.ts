@@ -25,9 +25,9 @@ import { icon } from "./icons.js";
 import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import type { DataDoc, DataStep } from "./workspace.js";
 
-/** Something that can be applied to the shown data: a recipe (book) or a single ship operation. */
+/** Something that can be applied to the shown data: one of a book's actions, or a single ship operation. */
 export type Suggestion =
-  | { type: "book"; id: string; title: string; summary: string; fit: string; trust: string }
+  | { type: "book"; id: string; action: string; book: string; title: string; summary: string; fit: string; trust: string }
   | { type: "op"; id: string; title: string; summary: string; trust: string };
 
 export interface StepSpec {
@@ -55,7 +55,7 @@ export interface DataWindowHooks {
   notify(text: string): void;
 }
 
-export const KIND_ICON: Record<Artifact["kind"], string> = {
+const KIND_ICON: Record<string, string> = {
   volume: "image",
   labels: "binary",
   tracks: "link",
@@ -65,6 +65,9 @@ export const KIND_ICON: Record<Artifact["kind"], string> = {
   "sim-case": "plane",
   video: "layout",
 };
+
+/** The icon for a kind of data; kinds that ships bring get a plain file icon. */
+export const kindIcon = (kind: string): string => KIND_ICON[kind] ?? "file";
 
 const STATUS_LABEL: Record<DataStep["status"], string> = {
   proposed: "proposed",
@@ -272,7 +275,7 @@ export class DataWindow {
       const makes = this.hooks.stepSpec(s.run)?.makes;
       const pct = s.status === "running" && s.progress !== undefined ? ` style="--p:${Math.round(s.progress * 100)}%"` : "";
       const badge = s.status === "failed" ? "warning" : s.status === "done" ? "check" : s.status === "proposed" ? "sparkle" : "";
-      return `<button class="tl-node tl-step data-step status-${s.status} ${d.marker === i + 1 ? "selected" : ""}" data-index="${i + 1}" title="${escapeHtml(this.title(s))}: ${STATUS_LABEL[s.status]}${s.cached ? " (cached)" : ""}"${pct}>${icon(makes ? KIND_ICON[makes] : "batch", 15)}${badge ? `<span class="tl-badge">${icon(badge, 9)}</span>` : ""}</button>`;
+      return `<button class="tl-node tl-step data-step status-${s.status} ${d.marker === i + 1 ? "selected" : ""}" data-index="${i + 1}" title="${escapeHtml(this.title(s))}: ${STATUS_LABEL[s.status]}${s.cached ? " (cached)" : ""}"${pct}>${icon(makes ? kindIcon(makes) : "batch", 15)}${badge ? `<span class="tl-badge">${icon(badge, 9)}</span>` : ""}</button>`;
     };
     const link = `<span class="tl-link" aria-hidden="true"></span>`;
     const nodes = runs
@@ -293,7 +296,7 @@ export class DataWindow {
         <button class="icon-btn" data-step="${d.steps.length}" title="Latest result">${icon("last")}</button>
       </div>
       <div class="tl-track" role="list" aria-label="History">
-        <button class="tl-node tl-source ${d.marker === 0 ? "selected" : ""}" data-index="0" title="The data: ${escapeHtml(d.source.name ?? "")}">${icon(KIND_ICON[d.source.kind], 16)}</button>
+        <button class="tl-node tl-source ${d.marker === 0 ? "selected" : ""}" data-index="0" title="The data: ${escapeHtml(d.source.name ?? "")}">${icon(kindIcon(d.source.kind), 16)}</button>
         ${d.steps.length ? `${link}${nodes}` : `<span class="tl-empty">Processes you add from ⋯ land here: click one to see its result</span>`}
       </div>
       <div class="tl-info">${selected ? `${escapeHtml(this.title(selected))} · ${STATUS_LABEL[selected.status]}${selected.cached ? " (cached)" : ""}` : escapeHtml(d.source.kind === "sim-case" ? "case" : d.source.format)}</div>
@@ -331,7 +334,7 @@ export class DataWindow {
         ? list
             .map(
               (s, i) => `<button class="dv-suggestion" data-suggest="${i}"><span>${icon(s.type === "book" ? "script" : "plug", 14)} <strong>${escapeHtml(s.title)}</strong></span>
-                <small>${escapeHtml(s.type === "book" ? `Recipe · ${s.fit}` : "Operation")}${s.trust === "verified" ? " · verified" : ""}</small><small>${escapeHtml(s.summary)}</small></button>`,
+                <small>${escapeHtml(s.type === "book" ? `${s.book} · ${s.fit}` : "Operation")}${s.trust === "verified" ? " · verified" : ""}</small><small>${escapeHtml(s.summary)}</small></button>`,
             )
             .join("")
         : `<p class="muted small">Nothing in the library takes this data yet.</p>`;

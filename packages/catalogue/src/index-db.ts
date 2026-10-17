@@ -73,8 +73,12 @@ export class CatalogueIndex {
     for (const e of library.bookEntries()) {
       const b = library.book(e.id, e.version)!;
       const m = b.manifest!;
-      const data = (m.inputs ?? []).flatMap((i) => [i.accepts.kind, i.accepts.axes ?? "", i.accepts.edam ?? "", ...(b.accepts?.find((a) => a.input === i.name)?.direct ?? [])]).join(" ");
-      add(e, m, m.steps.map((s) => s.run.replace(".", " ")).join(" "), data, b.guide ?? "");
+      const actions = Object.entries(m.actions);
+      const data = actions
+        .flatMap(([name, a]) => (a.inputs ?? []).flatMap((i) => [i.accepts.kind, i.accepts.axes ?? "", i.accepts.edam ?? "", ...(b.accepts?.find((x) => x.action === name && x.input === i.name)?.direct ?? [])]))
+        .join(" ");
+      const ops = actions.flatMap(([, a]) => [a.title, ...a.steps.map((s) => s.run.replace(".", " "))]).join(" ");
+      add(e, m, ops, data, b.guide ?? "");
     }
   }
 
@@ -126,11 +130,17 @@ export class CatalogueIndex {
     const ops = this.ships.filter((s) => verified.has(`${s.id}@${s.version}`)).flatMap((s) => Object.entries(s.operations));
     const read = new Set(ops.flatMap(([, o]) => (o.inputs ?? []).flatMap((i) => i.formats)));
     const produced = new Set(ops.flatMap(([, o]) => o.outputs.map((x) => x.kind)));
+    // everything Pharos can recognise: built in, plus what any ship declares
+    const declared = this.ships.flatMap((s) => Object.entries(s.formats ?? {}));
+    const known = {
+      formats: new Set<string>([...FORMATS, ...declared.map(([f]) => f)]),
+      kinds: new Set<string>([...ARTIFACT_KINDS, ...declared.map(([, info]) => info.kind)]),
+    };
     const converted = new Set(ops.filter(([n, o]) => n === "convert" && o.inputs?.length === 1 && o.outputs.length === 1 && o.inputs[0].kind === o.outputs[0].kind).map(([, o]) => o.outputs[0].kind));
     return {
-      unreadFormats: FORMATS.filter((f) => !read.has(f)),
-      unproducedKinds: ARTIFACT_KINDS.filter((k) => !produced.has(k)),
-      noConverter: ARTIFACT_KINDS.filter((k) => !converted.has(k)),
+      unreadFormats: [...known.formats].filter((f) => !read.has(f)),
+      unproducedKinds: [...known.kinds].filter((k) => !produced.has(k)),
+      noConverter: [...known.kinds].filter((k) => !converted.has(k)),
     };
   }
 

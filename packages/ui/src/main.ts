@@ -14,7 +14,7 @@ import { Autosave } from "./session.js";
 import { statusChip, storageDialog } from "./storage.js";
 import { WindowManager } from "./windows.js";
 import { type DataDoc, Workspace } from "./workspace.js";
-import { currentWorkspace, isSupported, workspacePanel } from "./workspace-panel.js";
+import { currentWorkspace, isSupported, setFormats, workspacePanel } from "./workspace-panel.js";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -493,11 +493,11 @@ async function openLibrary(data?: { workspace: string; artifacts: Artifact[]; te
       {
         notify,
         gpu: () => !!lastStatus?.gpu.available,
-        usePlan: async (book) => {
-          // a recipe applies to a dataset: its window, or the active one
+        usePlan: async (book, action) => {
+          // a book's action applies to a dataset: its window, or the active one
           const doc = data?.artifacts[0] ? ws.open(data.artifacts[0], data.workspace) : ws.active;
-          if (!doc) return notify("Open your data first (Add data, or an example), then choose this recipe from its window's ⋯ menu.");
-          await processes.useBook(doc, book.id);
+          if (!doc) return notify(`Open your data first (Add data, or an example), then choose ${book.title} from its window's ⋯ menu.`);
+          await processes.useBook(doc, book.id, action);
         },
       },
       data,
@@ -657,6 +657,7 @@ async function openStorage() {
 
 /** Follows the server's jobs, downloads and status for as long as the page is open. */
 async function connectShips(s: LocalServer) {
+  void s.formats().then(setFormats, () => {});
   showStatus(null);
   s.events((e) => {
     processes.handle(e);

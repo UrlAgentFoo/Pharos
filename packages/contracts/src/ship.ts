@@ -8,7 +8,7 @@
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { ParamSpecSchema } from "./params.js";
-import { ArtifactKindSchema, FormatSchema, IdSchema, KeyedMap, NameSchema, OPERATION_PATTERN, VersionSchema } from "./vocabulary.js";
+import { ArtifactKindSchema, FORMAT_PATTERN, FormatInfoSchema, FormatSchema, IdSchema, KeyedMap, NameSchema, OPERATION_PATTERN, VersionSchema } from "./vocabulary.js";
 
 export const ShipInputSchema = Type.Object(
   {
@@ -95,6 +95,11 @@ export const ShipManifestSchema = Type.Object(
     homepage: Type.Optional(Type.String()),
     tags: Type.Optional(Type.Array(Type.String())),
     requires: Type.Optional(RequirementsSchema),
+    formats: Type.Optional(
+      KeyedMap(Type.String({ pattern: FORMAT_PATTERN }), FormatInfoSchema, {
+        description: "File formats this ship brings that Pharos doesn't know yet: how to recognise them and what kind of data they hold.",
+      }),
+    ),
     operations: KeyedMap(Type.String({ pattern: OPERATION_PATTERN }), OperationSchema, { minProperties: 1 }),
   },
   { additionalProperties: false, $id: "ship.schema.json", title: "Pharos ship" },

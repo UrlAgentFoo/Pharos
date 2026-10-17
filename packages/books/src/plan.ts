@@ -2,7 +2,7 @@
  * Plans: a book (or an improvised pipeline) bound to the user's data and
  * parameter values, checked before anyone approves it.
  */
-import type { Artifact, BookManifest, BookParam, Params, Plan, PlanProblem, ShipManifest, Step } from "@pharos/contracts";
+import type { Artifact, BookAction, BookManifest, BookParam, Params, Plan, PlanProblem, ShipManifest, Step } from "@pharos/contracts";
 import { type Pipeline, type PipelineInput, type ShipLookup, checkPipeline, paramValueProblem } from "./check.js";
 import { error } from "./problems.js";
 import { type ImageInventory, type Machine, shipGpu } from "./resolve.js";
@@ -45,11 +45,19 @@ export interface PlanContext {
   inputProblems?(input: string, artifact: Artifact): string[];
 }
 
+/** A book and the action a plan runs; absent for improvised plans. */
+export interface PlanRecipe {
+  book: BookManifest;
+  action: BookAction;
+}
+
 /** Checks a plan as it stands: wiring, parameter values, the data it's given, its ships and the GPU. */
-export function planProblems(plan: Pick<Plan, "steps" | "inputs" | "parameters">, book: BookManifest | undefined, ctx: PlanContext): PlanProblem[] {
+export function planProblems(plan: Pick<Plan, "steps" | "inputs" | "parameters">, recipe: PlanRecipe | undefined, ctx: PlanContext): PlanProblem[] {
   const problems: PlanProblem[] = [];
-  const declared: PipelineInput[] = book
-    ? (book.inputs ?? []).map((i) => ({ name: i.name, kind: i.accepts.kind, ...(i.accepts.formats ? { formats: i.accepts.formats } : {}) }))
+  const book = recipe?.book;
+  const action = recipe?.action;
+  const declared: PipelineInput[] = action
+    ? (action.inputs ?? []).map((i) => ({ name: i.name, kind: i.accepts.kind, ...(i.accepts.formats ? { formats: i.accepts.formats } : {}) }))
     : Object.keys(plan.inputs).map((name) => ({ name, kind: ctx.artifacts[plan.inputs[name]]?.kind ?? "volume" }));
 
   // the data given for each input: there, of the right kind, and accepted
@@ -74,9 +82,9 @@ export function planProblems(plan: Pick<Plan, "steps" | "inputs" | "parameters">
       const a = ctx.artifacts[plan.inputs[i.name]];
       return a ? { name: i.name, kind: a.kind, formats: [a.format] } : i;
     }),
-    parameters: book?.parameters ?? [],
+    parameters: action?.parameters ?? [],
     steps: plan.steps,
-    outputs: book?.outputs ?? {},
+    outputs: action?.outputs ?? {},
     ...(book ? { ships: book.ships } : {}),
   };
   // an improvised plan declares no outputs: whatever its last steps make is the result
@@ -84,7 +92,7 @@ export function planProblems(plan: Pick<Plan, "steps" | "inputs" | "parameters">
   problems.push(...checkPipeline(pipeline, ctx.ships).filter((p) => book || !unused(p)));
 
   // parameter values the user set
-  for (const p of book?.parameters ?? []) {
+  for (const p of action?.parameters ?? []) {
     const v = plan.parameters[p.name];
     if (v === undefined) continue;
     const bad = paramValueProblem(p, v);

@@ -42,7 +42,8 @@
       "type": "object",
       "required": [
         "id",
-        "version"
+        "version",
+        "action"
       ],
       "properties": {
         "id": {
@@ -51,6 +52,11 @@
         },
         "version": {
           "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+          "type": "string"
+        },
+        "action": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Which of the book's actions.",
           "type": "string"
         }
       }
@@ -63,7 +69,7 @@
       "type": "string"
     },
     "inputs": {
-      "description": "Book input name → artifact id.",
+      "description": "Action input name → artifact id.",
       "type": "object",
       "patternProperties": {
         "^(.*)$": {

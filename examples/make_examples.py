@@ -225,7 +225,7 @@ def main():
     organoid(os.path.join(data, "organoid.tif"))
     crawling_2d(os.path.join(data, "crawling-cells.tif"))
     zarr_stack(os.path.join(data, "nuclei.zarr"), data)
-    base = os.environ.get("PHAROS_BASE_CASE", "/books/fluid-sim/example/case")
+    base = os.environ.get("PHAROS_BASE_CASE", "/books/fluid-flow/example/case")
     for name, spec in CASES.items():
         foam_case(os.path.join(root, "cases", name), base, **spec)
     print("done")

@@ -6,10 +6,10 @@
  *
  *   pharos mcp --library .     (in an MCP client's server config)
  */
-import { stat } from "node:fs/promises";
+import { readdir, stat } from "node:fs/promises";
 import { basename } from "node:path";
 import { createInterface } from "node:readline";
-import { type DataSummary, MCP_TOOLS, type McpToolName } from "@pharos/contracts";
+import { type DataSummary, type FormatInfo, MCP_TOOLS, type McpToolName } from "@pharos/contracts";
 import type { CatalogueIndex } from "./index-db.js";
 import { inspect, sniff } from "./inspect.js";
 import { type MatchableBook, matchBooks } from "./match.js";
@@ -18,6 +18,8 @@ export interface McpContext {
   index: CatalogueIndex;
   books: MatchableBook[];
   gpu: boolean;
+  /** Formats ships declare, on top of the built-in ones. */
+  formats?: Record<string, FormatInfo>;
 }
 
 const PROTOCOL_VERSIONS = ["2025-06-18", "2025-03-26", "2024-11-05"];
@@ -113,7 +115,7 @@ export class McpServer {
         if (!summary && path) {
           const s = await stat(path).catch(() => null);
           if (!s) throw new Error(`not found: ${path}`);
-          const type = sniff(basename(path), s.isDirectory());
+          const type = sniff(basename(path), s.isDirectory(), s.isDirectory() ? await readdir(path).catch(() => []) : [], ctx.formats);
           if (!type) throw new Error(`Pharos doesn't know what kind of data ${basename(path)} is`);
           summary = await inspect({ uri: path, ...type, name: basename(path) });
         }

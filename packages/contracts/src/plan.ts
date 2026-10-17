@@ -5,7 +5,7 @@
 import { type Static, Type } from "@sinclair/typebox";
 import { StepSchema } from "./book.js";
 import { ParamsSchema } from "./params.js";
-import { IdSchema, VersionSchema } from "./vocabulary.js";
+import { IdSchema, NAME_PATTERN, VersionSchema } from "./vocabulary.js";
 
 export const PLAN_STATUSES = ["proposed", "approved", "running", "done", "failed", "cancelled"] as const;
 export type PlanStatus = (typeof PLAN_STATUSES)[number];
@@ -39,10 +39,12 @@ export const PlanSchema = Type.Object(
     id: Type.String({ minLength: 1 }),
     workspace: Type.String({ description: "Where the inputs come from and the outputs go." }),
     source: Type.Union([Type.Literal("book"), Type.Literal("improvised")]),
-    book: Type.Optional(Type.Object({ id: IdSchema, version: VersionSchema }, { additionalProperties: false })),
+    book: Type.Optional(
+      Type.Object({ id: IdSchema, version: VersionSchema, action: Type.String({ pattern: NAME_PATTERN, description: "Which of the book's actions." }) }, { additionalProperties: false }),
+    ),
     title: Type.String(),
     rationale: Type.Optional(Type.String({ description: "The assistant's short explanation of its choice." })),
-    inputs: Type.Record(Type.String(), Type.String(), { description: "Book input name → artifact id." }),
+    inputs: Type.Record(Type.String(), Type.String(), { description: "Action input name → artifact id." }),
     parameters: ParamsSchema,
     steps: Type.Array(StepSchema, { minItems: 1 }),
     ships: Type.Array(ShipNeedSchema),
@@ -50,7 +52,7 @@ export const PlanSchema = Type.Object(
     status: Type.Union(PLAN_STATUSES.map((s) => Type.Literal(s))),
     /** Step id → job id, once approved. */
     jobs: Type.Optional(Type.Record(Type.String(), Type.String())),
-    /** Book output name → artifact id, once done. */
+    /** Action output name → artifact id, once done. */
     outputs: Type.Optional(Type.Record(Type.String(), Type.String())),
     error: Type.Optional(Type.String()),
     createdAt: Type.String({ format: "date-time" }),

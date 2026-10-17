@@ -13,35 +13,15 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { createInterface } from "node:readline";
 import { fromFile } from "geotiff";
-import type { Artifact, ArtifactKind, DataSummary, Format } from "@pharos/contracts";
+import { type Artifact, type ArtifactKind, type DataSummary, type Format, type FormatInfo, sniffFormat } from "@pharos/contracts";
 import { parseImageJDescription } from "@pharos/core";
 
-/** Guesses an artifact's kind and format from its name (and whether it is a folder). */
-export function sniff(name: string, isDir: boolean, entries: string[] = []): { kind: ArtifactKind; format: Format } | null {
-  const n = name.toLowerCase();
-  if (isDir) {
-    if (n.endsWith(".zarr")) return { kind: "volume", format: "ome-zarr" };
-    if (n.endsWith(".geff")) return { kind: "tracks", format: "geff" };
-    if (entries.includes("system") && entries.includes("constant")) return { kind: "sim-case", format: "openfoam-case" };
-    return null;
-  }
-  if (/\.ome\.tiff?$/.test(n)) return { kind: "volume", format: "ome-tiff" };
-  const ext = n.slice(n.lastIndexOf(".") + 1);
-  const byExt: Record<string, { kind: ArtifactKind; format: Format }> = {
-    tif: { kind: "volume", format: "tiff" },
-    tiff: { kind: "volume", format: "tiff" },
-    czi: { kind: "volume", format: "czi" },
-    nd2: { kind: "volume", format: "nd2" },
-    lif: { kind: "volume", format: "lif" },
-    csv: { kind: "table", format: "csv" },
-    parquet: { kind: "table", format: "parquet" },
-    ply: { kind: "mesh", format: "ply" },
-    vtk: { kind: "mesh", format: "vtk" },
-    vtu: { kind: "mesh", format: "vtk" },
-    vtp: { kind: "mesh", format: "vtk" },
-    mp4: { kind: "video", format: "mp4" },
-  };
-  return byExt[ext] ?? null;
+/**
+ * Guesses an artifact's kind and format from its name (and, for folders,
+ * what they contain): the built-in formats, plus any `formats` ships declare.
+ */
+export function sniff(name: string, isDir: boolean, entries: string[] = [], formats?: Record<string, FormatInfo>): { kind: ArtifactKind; format: Format } | null {
+  return sniffFormat(name, isDir, entries, formats);
 }
 
 const DTYPES: Record<string, string> = { "1:8": "uint8", "1:16": "uint16", "1:32": "uint32", "2:8": "int8", "2:16": "int16", "2:32": "int32", "3:32": "float32", "3:64": "float64" };

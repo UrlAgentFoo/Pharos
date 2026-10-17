@@ -1,47 +1,55 @@
 /**
- * The books in the library: cards with their summary, tags, trust, the
- * ships they need and whether this machine can run them. Opened from
- * workspace data, it shows the books that accept that data first (direct
- * matches, then after conversion), and the rest with why not. Single
- * operations aren't here: each data window offers the ones that fit it.
+ * The books in the library. Each card shows what a person needs to choose
+ * one: its name, how to use it (with what it can do, one button per
+ * action), the files it accepts, and the ships it runs on, solid when
+ * downloaded and faded when not. Ids, versions, trust and tags stay out of
+ * sight. Opened from workspace data, books that fit it come first and
+ * actions that can't run on it are disabled.
  */
-import type { Artifact, BookMatch, CatalogueEntry, LibraryIssue } from "@pharos/contracts";
+import type { Artifact, BookCard, BookMatch, CatalogueEntry, LibraryIssue } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
-import { escapeHtml, promptDialog, showDialog } from "./dialogs.js";
+import { escapeHtml, formatSize, promptDialog, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
 
 export interface LibraryHooks {
-  /** Opens a proposed plan for a book (with the data assigned when known). */
-  usePlan(book: CatalogueEntry, inputs: Record<string, string>): Promise<void>;
+  /** Runs one of a book's actions on the data (or the active window). */
+  usePlan(book: CatalogueEntry, action: string, inputs: Record<string, string>): Promise<void>;
   notify(text: string): void;
   gpu(): boolean;
 }
 
-type Action =
-  | { use: CatalogueEntry }
-  | { guide: CatalogueEntry }
-  | { test: CatalogueEntry }
-  | { testShip: CatalogueEntry }
+type Choice =
+  | { use: BookCard; action: string }
+  | { guide: BookCard }
+  | { test: BookCard }
   | { install: true }
   | { issues: true }
   | null;
 
-const TRUST: Record<CatalogueEntry["trust"], string> = { verified: "Verified", verifying: "Verifying", imported: "Not yet tested" };
-
-function card(e: CatalogueEntry, match: BookMatch | undefined, ships: string[], gpu: boolean): string {
-  const blocked = (match?.tier === "excluded") || (e.gpu === "required" && !gpu);
-  const tier = match ? (match.tier === "direct" ? "Fits your data" : match.tier === "convert" ? "Fits after conversion" : "Can't run on this data") : "";
-  return `<li class="book-card ${blocked ? "blocked" : ""}">
-    <div class="book-top"><strong>${escapeHtml(e.title)}</strong><small class="trust trust-${e.trust}">${TRUST[e.trust]}</small></div>
-    <p>${escapeHtml(e.summary)}</p>
-    <p class="book-meta"><small>${escapeHtml(e.id)} ${escapeHtml(e.version)}${ships.length ? ` · ships: ${ships.map(escapeHtml).join(", ")}` : ""}${e.gpu !== "none" ? ` · GPU ${e.gpu}${e.gpu === "required" && !gpu ? " (not on this machine)" : ""}` : ""}</small></p>
-    ${e.tags.length ? `<p class="book-tags">${e.tags.map((t) => `<span class="tag">${escapeHtml(t)}</span>`).join("")}</p>` : ""}
-    ${match ? `<p class="book-match tier-${match.tier}"><small>${tier}: ${escapeHtml(match.reasons.join("; "))}</small></p>` : ""}
-    <div class="job-actions">
-      <button class="chip primary-chip" data-use="${escapeHtml(e.id)}" ${blocked ? "disabled" : ""}>${icon("batch", 13)} Use…</button>
-      <button class="chip" data-guide="${escapeHtml(e.id)}">Guide</button>
-      <button class="chip" data-test="${escapeHtml(e.id)}" title="Runs the book on its example data">Test</button>
-    </div></li>`;
+function card(c: BookCard, match: BookMatch | undefined, withData: boolean, gpu: boolean): string {
+  const e = c.entry;
+  const noGpu = e.gpu === "required" && !gpu;
+  const fits = (name: string) => !noGpu && (!withData || !!match?.actions.includes(name));
+  const files = c.accepts.length
+    ? c.accepts.map((a) => `<span class="${a.converted ? "converted" : ""}" title="${a.converted ? "Converted first" : "Read directly"}">${escapeHtml(a.title)}</span>`).join("")
+    : `<span class="muted">No files: describe what you want</span>`;
+  const ships = c.ships
+    .map((s) => {
+      const title = s.downloaded ? "Downloaded" : `Not downloaded yet${s.sizeBytes ? ` (${formatSize(s.sizeBytes)})` : ""}; it downloads the first time it's needed`;
+      return `<li class="book-ship ${s.downloaded ? "on" : "off"}" title="${escapeHtml(title)}">${icon("ship", 13)}<span>${escapeHtml(s.id)}</span></li>`;
+    })
+    .join("");
+  const blocked = noGpu || (withData && !match?.actions.length);
+  return `<li class="book-card ${blocked ? "blocked" : ""}" data-book="${escapeHtml(e.id)}">
+    <div class="book-top"><h3>${escapeHtml(e.title)}</h3>${withData && match?.actions.length ? `<small class="book-fit">${icon("check", 12)} Fits your data</small>` : ""}</div>
+    <section><h4>How to use</h4><p>${escapeHtml(c.howToUse)}</p>
+      <div class="book-actions">${c.actions
+        .map((a) => `<button class="chip ${fits(a.name) ? "primary-chip" : ""}" data-use="${escapeHtml(e.id)}" data-action="${escapeHtml(a.name)}" ${fits(a.name) ? "" : "disabled"} title="${escapeHtml(a.summary ?? a.title)}">${escapeHtml(a.title)}</button>`)
+        .join("")}</div></section>
+    <section><h4>Accepted files</h4><p class="book-files">${files}</p></section>
+    <section><h4>Ships</h4><ul class="book-ships">${ships}</ul>${noGpu ? `<p class="book-note">Needs an NVIDIA GPU, which this machine doesn't have.</p>` : ""}</section>
+    <div class="book-more"><button class="link-btn" data-guide="${escapeHtml(e.id)}">Guide</button><button class="link-btn" data-test="${escapeHtml(e.id)}" title="Runs each action on the book's example data">Test</button></div>
+  </li>`;
 }
 
 /**
@@ -50,23 +58,22 @@ function card(e: CatalogueEntry, match: BookMatch | undefined, ships: string[], 
  */
 export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, data?: { workspace: string; artifacts: Artifact[]; text?: string }) {
   let filter = "";
+  const withData = !!data?.artifacts.length;
   for (;;) {
-    const [books, issues, matched] = await Promise.all([
-      server.books(),
+    const [cards, issues, matched] = await Promise.all([
+      server.cards(),
       server.issues(),
-      data?.artifacts.length ? server.match(data.workspace, data.artifacts.map((a) => a.id), data.text).then((r) => r.matches) : Promise.resolve(undefined),
+      withData ? server.match(data!.workspace, data!.artifacts.map((a) => a.id), data!.text).then((r) => r.matches) : Promise.resolve(undefined),
     ]);
-    const details = new Map(await Promise.all(books.map(async (b) => [b.id, await server.book(b.id, b.version)] as const)));
-    const shipsOf = (id: string) => Object.keys(details.get(id)?.manifest.ships ?? {});
     const matchOf = (id: string) => matched?.find((m) => m.book.id === id);
-    const order = matched ? matched.map((m) => books.find((b) => b.id === m.book.id)!).filter(Boolean) : books;
+    const order = matched ? matched.map((m) => cards.find((c) => c.entry.id === m.book.id)!).filter(Boolean) : cards;
     const errors = issues.filter((i) => i.problems.some((p) => p.severity === "error"));
-    const action = await showDialog<Action>(
-      `<p class="eyebrow">${data?.artifacts.length ? `Books for ${escapeHtml(data.artifacts.map((a) => a.name ?? a.id.slice(0, 8)).join(", "))}` : "Books"}</p>
+    const choice = await showDialog<Choice>(
+      `<p class="eyebrow">${withData ? `Books for ${escapeHtml(data!.artifacts.map((a) => a.name ?? a.id.slice(0, 8)).join(", "))}` : "Books"}</p>
        <div class="ws-head"><input type="search" class="lib-search" placeholder="Filter books" value="${escapeHtml(filter)}"/>
          <button class="chip" data-install>${icon("plus", 14)} Install…</button>
          ${issues.length ? `<button class="chip ${errors.length ? "warn-chip" : ""}" data-issues>${icon("warning", 14)} ${issues.length} with problems</button>` : ""}</div>
-       <ul class="book-list">${order.map((b) => card(b, matchOf(b.id), shipsOf(b.id), hooks.gpu())).join("") || `<li class="muted">No books installed yet. Install one, or create one with <code>pharos book new</code>.</li>`}</ul>
+       <ul class="book-list">${order.map((c) => card(c, matchOf(c.entry.id), withData, hooks.gpu())).join("") || `<li class="muted">No books installed yet. Install one, or create one with <code>pharos book new</code>.</li>`}</ul>
        <footer><button class="primary" data-cancel>Close</button></footer>`,
       (done, el) => {
         el.classList.add("wide");
@@ -78,8 +85,8 @@ export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, dat
         };
         search.addEventListener("input", apply);
         apply();
-        const find = (id: string) => books.find((b) => b.id === id)!;
-        el.querySelectorAll<HTMLButtonElement>("[data-use]").forEach((b) => b.addEventListener("click", () => done({ use: find(b.dataset.use!) })));
+        const find = (id: string) => cards.find((c) => c.entry.id === id)!;
+        el.querySelectorAll<HTMLButtonElement>("[data-use]").forEach((b) => b.addEventListener("click", () => done({ use: find(b.dataset.use!), action: b.dataset.action! })));
         el.querySelectorAll<HTMLButtonElement>("[data-guide]").forEach((b) => b.addEventListener("click", () => done({ guide: find(b.dataset.guide!) })));
         el.querySelectorAll<HTMLButtonElement>("[data-test]").forEach((b) => b.addEventListener("click", () => done({ test: find(b.dataset.test!) })));
         el.querySelector("[data-install]")!.addEventListener("click", () => done({ install: true }));
@@ -88,33 +95,34 @@ export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, dat
       null,
     );
     document.getElementById("dialog")?.classList.remove("wide");
-    if (!action) return;
+    if (!choice) return;
     try {
-      if ("use" in action) {
-        const book = details.get(action.use.id)!.manifest;
-        // give each input the first chosen data item of its kind
+      if ("use" in choice) {
+        const { manifest } = await server.book(choice.use.entry.id, choice.use.entry.version);
+        // give each of the action's inputs the first chosen data item of its kind
         const inputs: Record<string, string> = {};
         const pool = [...(data?.artifacts ?? [])];
-        for (const input of book.inputs ?? []) {
+        for (const input of manifest.actions[choice.action]?.inputs ?? []) {
           const i = pool.findIndex((a) => a.kind === input.accepts.kind);
           if (i >= 0) inputs[input.name] = pool.splice(i, 1)[0].id;
         }
-        return await hooks.usePlan(action.use, inputs);
+        return await hooks.usePlan(choice.use.entry, choice.action, inputs);
       }
-      if ("guide" in action) await guideDialog(action.guide, details.get(action.guide.id)?.guide ?? "");
-      if ("test" in action) {
-        hooks.notify(`Testing ${action.test.id} on its example…`);
-        const r = await server.testBook(action.test.id);
-        hooks.notify(r.passed ? `${action.test.id} passed and is now verified` : `${action.test.id} failed: ${r.cases.map((c) => c.message).filter(Boolean).join("; ")}`);
+      if ("guide" in choice) await guideDialog(choice.guide.entry, (await server.book(choice.guide.entry.id)).guide);
+      if ("test" in choice) {
+        const b = choice.test.entry;
+        hooks.notify(`Testing ${b.title} on its example…`);
+        const r = await server.testBook(b.id);
+        hooks.notify(r.passed ? `${b.title} passed` : `${b.title} failed: ${r.cases.filter((c) => !c.passed).map((c) => `${c.name}: ${c.message ?? "failed"}`).join("; ")}`);
       }
-      if ("install" in action) {
+      if ("install" in choice) {
         const source = await promptDialog("Install a book", "Folder on this computer, or git URL", "");
         if (source) {
           const r = await server.installBook(source);
           hooks.notify(`Installed ${r.installed.join(", ")}`);
         }
       }
-      if ("issues" in action) await issuesDialog(issues);
+      if ("issues" in choice) await issuesDialog(issues);
     } catch (e) {
       hooks.notify(e instanceof Error ? e.message : String(e));
     }

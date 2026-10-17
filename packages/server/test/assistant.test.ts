@@ -16,12 +16,15 @@ title: Count the rows of a table
 summary: Counts how many rows a table has.
 tags: [test, tables]
 ships: { hello: ^0.1 }
-inputs: [{ name: table, accepts: { kind: table } }]
-parameters:
-  - { name: wait, type: integer, default: 0, min: 0, max: 30, sets: count.seconds }
-steps:
-  - { id: count, run: hello.count, in: { table: $table } }
-outputs: { rows: count.count }
+actions:
+  count:
+    title: Count the rows
+    inputs: [{ name: table, accepts: { kind: table } }]
+    parameters:
+      - { name: wait, type: integer, default: 0, min: 0, max: 30, sets: count.seconds }
+    steps:
+      - { id: count, run: hello.count, in: { table: $table } }
+    outputs: { rows: count.count }
 `;
 
 /** A fake model: replies come from a queue; requests are recorded. */
@@ -70,10 +73,10 @@ afterAll(async () => {
 
 describe("assistant planning", () => {
   it("picks a shortlisted book, binds the data and sets parameters", async () => {
-    replies = [[{ type: "text", text: "Counting rows." }, toolUse("choose_book", { book: "count-rows", inputs: { table: 1 }, parameters: { wait: 2 }, rationale: "The table is a CSV; this book counts its rows." })]];
+    replies = [[{ type: "text", text: "Counting rows." }, toolUse("choose_book", { book: "count-rows", action: "count", inputs: { table: 1 }, parameters: { wait: 2 }, rationale: "The table is a CSV; this book counts its rows." })]];
     const r = await ask("how many cells are in this table?");
-    expect(r.plan).toMatchObject({ source: "book", book: { id: "count-rows" }, inputs: { table }, parameters: { wait: 2 }, problems: [], status: "proposed", rationale: "The table is a CSV; this book counts its rows." });
-    expect(r.matches[0]).toMatchObject({ book: { id: "count-rows" }, tier: "direct" });
+    expect(r.plan).toMatchObject({ source: "book", book: { id: "count-rows", action: "count" }, inputs: { table }, parameters: { wait: 2 }, problems: [], status: "proposed", rationale: "The table is a CSV; this book counts its rows." });
+    expect(r.matches[0]).toMatchObject({ book: { id: "count-rows" }, tier: "direct", actions: ["count"] });
 
     // what the model saw: summaries and the book's guide, not the file itself
     const req = requests.at(-1)!;

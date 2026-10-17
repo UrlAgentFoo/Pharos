@@ -2,9 +2,9 @@
  * Keeps the catalogue index in step with the library and trust records,
  * and answers inspect and match requests for workspace data.
  */
-import type { Library } from "@pharos/books";
+import type { ImageInventory, Library } from "@pharos/books";
 import { CatalogueIndex, type MatchableBook, type McpContext, inspect, matchBooks } from "@pharos/catalogue";
-import type { BookMatch, DataSummary } from "@pharos/contracts";
+import { type BookCard, type BookMatch, type DataSummary, bookAction } from "@pharos/contracts";
 import type { TrustStore } from "./orchestration.js";
 import type { WorkspaceStore } from "./workspaces.js";
 
@@ -30,7 +30,7 @@ export class CatalogueHolder {
       });
       this.built = { library, trust: this.trust.version };
     }
-    return { index: this.index, books: this.books, gpu: this.gpu() };
+    return { index: this.index, books: this.books, gpu: this.gpu(), formats: library.formats() };
   }
 
   /** An artifact's summary: read once, then kept in its metadata. */
@@ -51,4 +51,37 @@ export class CatalogueHolder {
   close() {
     this.index.close();
   }
+}
+
+/** Every book as its card shows it: how to use it, its actions, the files it takes and its ships. */
+export function bookCards(library: Library, inventory: ImageInventory): BookCard[] {
+  const formats = library.formats();
+  return library.bookEntries().map((entry) => {
+    const loaded = library.book(entry.id, entry.version)!;
+    const m = loaded.manifest!;
+    const accepts: BookCard["accepts"] = [];
+    const add = (format: string, converted: boolean) => {
+      const seen = accepts.find((a) => a.format === format);
+      if (seen) seen.converted &&= converted;
+      else accepts.push({ format, title: formats[format]?.title ?? format, converted });
+    };
+    for (const a of loaded.accepts ?? []) {
+      a.direct.forEach((f) => add(f, false));
+      a.converted.forEach((c) => add(c.format, true));
+    }
+    return {
+      entry,
+      howToUse: m.how_to_use ?? m.summary,
+      actions: Object.keys(m.actions).map((name) => {
+        const a = bookAction(m, name)!;
+        return { name, title: a.title, ...(a.summary ? { summary: a.summary } : {}) };
+      }),
+      accepts,
+      ships: Object.entries(m.ships).map(([id, range]) => {
+        const ship = library.ship(id, range);
+        const size = ship && inventory.sizeBytes?.(ship.image);
+        return { id, ...(ship ? { version: ship.version } : {}), downloaded: !!ship && inventory.has(ship.image), ...(size !== undefined && size !== null ? { sizeBytes: size } : {}) };
+      }),
+    };
+  });
 }

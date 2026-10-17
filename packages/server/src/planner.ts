@@ -37,16 +37,16 @@ export interface PlannerResult {
 
 /** Turns a model's choice into a plan; `check` re-validates an improvised one after repair. */
 export interface PlanMaker {
-  fromBook(book: string, inputs: Record<string, string>, parameters: Record<string, number | string | boolean>, rationale: string): Promise<Plan>;
+  fromBook(book: string, action: string | undefined, inputs: Record<string, string>, parameters: Record<string, number | string | boolean>, rationale: string): Promise<Plan>;
   improvised(title: string, rationale: string, inputs: Record<string, string>, steps: Step[]): Promise<Plan>;
 }
 
 const SYSTEM = `You are the planner inside Pharos, a local app that runs scientific tools in containers on the user's computer.
 
-Ships are container images with typed operations. Books are tested recipes that chain ship operations for a task. The user has chosen some data and described what they want. Pharos has already matched their data against every book; you get the books that can run on it (direct, or after a conversion step), each with its guide.
+Ships are container images with typed operations. Books are tested apps for a domain; each offers one or more actions, and each action chains ship operations for a task. The user has chosen some data and described what they want. Pharos has already matched their data against every book; you get the books that can run on it (direct, or after a conversion step), each with its guide.
 
 Decide, in this order:
-1. If a shortlisted book fits the request, call ${CHOOSE_BOOK}. Prefer verified books and direct matches. Fill parameters from the data summaries and the book's guide (for example a diameter in pixels from the voxel size and the typical object size); leave out parameters whose default suits. Assign each book input the number of the data item it should get.
+1. If a shortlisted book has an action that fits the request, call ${CHOOSE_BOOK} with the book and that action (only actions listed as fitting the data can run). Prefer verified books and direct matches. Fill parameters from the data summaries and the book's guide (for example a diameter in pixels from the voxel size and the typical object size); leave out parameters whose default suits. Assign each of the action's inputs the number of the data item it should get.
 2. Only if no book fits, call ${IMPROVISE} to chain the listed ship operations. Every step's input must come from a data item (as "$<input name>") or an earlier step's output ("<step id>.<output name>"), with matching kinds and formats.
 3. If neither works, call no tool and say briefly what is missing (a ship, a book or different data).
 
@@ -61,11 +61,12 @@ function tools(): Anthropic.Beta.BetaTool[] {
         type: "object",
         properties: {
           book: { type: "string", description: "The book's id, from the shortlist" },
-          inputs: { type: "object", description: "Book input name → data item number (1-based)", additionalProperties: { type: "integer" } },
-          parameters: { type: "object", description: "Book parameter name → value; only those you want to change from the default", additionalProperties: { type: ["number", "string", "boolean"] } },
+          action: { type: "string", description: "The name of the book's action to run, from those that fit the data" },
+          inputs: { type: "object", description: "Action input name → data item number (1-based)", additionalProperties: { type: "integer" } },
+          parameters: { type: "object", description: "Action parameter name → value; only those you want to change from the default", additionalProperties: { type: ["number", "string", "boolean"] } },
           rationale: { type: "string", description: "One or two sentences for the user" },
         },
-        required: ["book", "inputs", "rationale"],
+        required: ["book", "action", "inputs", "rationale"],
       },
     },
     {
@@ -109,12 +110,21 @@ function describeBooks(matches: BookMatch[], library: Library): string {
       const b = library.book(m.book.id, m.book.version)!;
       const manifest = b.manifest!;
       const guide = (b.guide ?? "").slice(0, MAX_GUIDE);
+      const actions = m.actions.map((name) => {
+        const a = manifest.actions[name];
+        return [
+          `<action name="${name}">`,
+          `${a.title}${a.summary ? `: ${a.summary}` : ""}`,
+          `Inputs: ${(a.inputs ?? []).map((i) => `${i.name} (${i.accepts.kind}${i.accepts.axes ? `, axes ${i.accepts.axes}` : ""})`).join(", ") || "none"}`,
+          `Parameters: ${(a.parameters ?? []).map((p) => `${p.name} (${p.type}${p.unit ? `, ${p.unit}` : ""}${p.default !== undefined ? `, default ${p.default}` : ""}${p.options ? `, one of ${p.options.join("/")}` : ""})${p.description ? `: ${p.description}` : ""}`).join("; ") || "none"}`,
+          `Steps: ${a.steps.map((s) => s.run).join(" → ")}`,
+          "</action>",
+        ].join("\n");
+      });
       return [
         `<book id="${m.book.id}" trust="${m.book.trust}" match="${m.tier}" gpu="${m.book.gpu}">`,
         `${manifest.title}: ${manifest.summary}`,
-        `Inputs: ${(manifest.inputs ?? []).map((i) => `${i.name} (${i.accepts.kind}${i.accepts.axes ? `, axes ${i.accepts.axes}` : ""})`).join(", ") || "none"}`,
-        `Parameters: ${(manifest.parameters ?? []).map((p) => `${p.name} (${p.type}${p.unit ? `, ${p.unit}` : ""}${p.default !== undefined ? `, default ${p.default}` : ""}${p.options ? `, one of ${p.options.join("/")}` : ""})${p.description ? `: ${p.description}` : ""}`).join("; ") || "none"}`,
-        `Steps: ${manifest.steps.map((s) => s.run).join(" → ")}`,
+        `Actions that fit the data:\n${actions.join("\n")}`,
         `Why it matched: ${m.reasons.join("; ")}`,
         guide ? `Guide:\n${guide}` : "",
         "</book>",
@@ -239,8 +249,11 @@ export async function planWithAssistant(
     try {
       if (call.name === CHOOSE_BOOK) {
         const book = String(args.book ?? "");
-        if (!ctx.matches.some((m) => m.book.id === book && m.tier !== "excluded")) throw new Error(`"${book}" isn't on the shortlist`);
-        plan = await maker.fromBook(book, bindInputs(args.inputs, input.data), (args.parameters ?? {}) as Record<string, number | string | boolean>, rationale);
+        const match = ctx.matches.find((m) => m.book.id === book && m.tier !== "excluded");
+        if (!match) throw new Error(`"${book}" isn't on the shortlist`);
+        const action = typeof args.action === "string" ? args.action : match.actions[0];
+        if (!match.actions.includes(action)) throw new Error(`"${book}" has no action "${action}" that fits this data (fitting: ${match.actions.join(", ")})`);
+        plan = await maker.fromBook(book, action, bindInputs(args.inputs, input.data), (args.parameters ?? {}) as Record<string, number | string | boolean>, rationale);
       } else if (call.name === IMPROVISE) {
         plan = await maker.improvised(String(args.title ?? "Improvised pipeline"), rationale, bindInputs(args.inputs, input.data), asSteps(args.steps));
       } else throw new Error(`unknown tool ${call.name}`);

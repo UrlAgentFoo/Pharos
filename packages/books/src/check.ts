@@ -6,7 +6,7 @@
  * valid values and are set once; outputs point at real step outputs.
  * Problems carry JSON pointers into the book, e.g. /steps/2/in/labels.
  */
-import type { BookManifest, BookParam, Format, ArtifactKind, ParamSpec, ParamValue, ShipManifest, Step } from "@pharos/contracts";
+import type { ArtifactKind, BookAction, BookManifest, BookParam, Format, ParamSpec, ParamValue, ShipManifest, Step } from "@pharos/contracts";
 import { type ManifestProblem, error, warning } from "./problems.js";
 
 /** Finds ship manifests: the best version matching a range, or any version. */
@@ -30,12 +30,13 @@ export interface Pipeline {
   ships?: Record<string, string>;
 }
 
-export function bookPipeline(book: BookManifest): Pipeline {
+/** One of a book's actions as a pipeline: its inputs, parameters, steps and outputs, with the book's ships. */
+export function actionPipeline(book: Pick<BookManifest, "ships">, action: BookAction): Pipeline {
   return {
-    inputs: (book.inputs ?? []).map((i) => ({ name: i.name, kind: i.accepts.kind, ...(i.accepts.formats ? { formats: i.accepts.formats } : {}) })),
-    parameters: book.parameters ?? [],
-    steps: book.steps,
-    outputs: book.outputs,
+    inputs: (action.inputs ?? []).map((i) => ({ name: i.name, kind: i.accepts.kind, ...(i.accepts.formats ? { formats: i.accepts.formats } : {}) })),
+    parameters: action.parameters ?? [],
+    steps: action.steps,
+    outputs: action.outputs,
     ships: book.ships,
   };
 }
@@ -88,8 +89,16 @@ interface WireValue {
   from: string;
 }
 
+/** Checks every action of a book; problems point into it, e.g. /actions/simulate/steps/1/in/case. */
 export function checkBook(book: BookManifest, ships: ShipLookup): ManifestProblem[] {
-  return checkPipeline(bookPipeline(book), ships);
+  const problems: ManifestProblem[] = [];
+  for (const [name, action] of Object.entries(book.actions)) {
+    for (const p of checkPipeline(actionPipeline(book, action), ships)) problems.push({ ...p, path: `/actions/${name}${p.path}` });
+  }
+  // a ship listed but used by no action still gets downloaded for the book
+  const used = new Set(Object.values(book.actions).flatMap((a) => a.steps.map((s) => s.run.split(".")[0])));
+  for (const id of Object.keys(book.ships)) if (!used.has(id)) problems.push(warning(`/ships/${id}`, `no action uses ship "${id}"`));
+  return problems;
 }
 
 export function checkPipeline(p: Pipeline, ships: ShipLookup): ManifestProblem[] {

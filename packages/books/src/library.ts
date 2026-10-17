@@ -11,7 +11,10 @@ import { readFile, readdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import semver from "semver";
 import {
+  ARTIFACT_KINDS,
+  BUILT_IN_FORMATS,
   type BookManifest,
+  type FormatInfo,
   type CatalogueEntry,
   type LibraryIssue,
   type ShipManifest,
@@ -87,6 +90,22 @@ export class Library implements ShipLookup {
     }
 
     const library = new Library(roots, ships, [], trust);
+    // formats a ship reads or writes should be ones Pharos can recognise, built in or declared by a ship
+    const formats = library.formats();
+    const kinds = new Set<string>([...ARTIFACT_KINDS, ...Object.values(formats).map((f) => f.kind)]);
+    for (const s of ships) {
+      const m = s.manifest;
+      if (!m) continue;
+      for (const [name, op] of Object.entries(m.operations)) {
+        const ports = [...(op.inputs ?? []).map((i) => ({ kind: i.kind, formats: i.formats })), ...op.outputs.map((o) => ({ kind: o.kind, formats: [o.format] }))];
+        for (const port of ports) {
+          for (const f of port.formats) {
+            if (!formats[f]) s.problems.push({ ...warning(`/operations/${name}`, `format "${f}" isn't built in and no ship declares it under formats, so files in it won't be recognised`), file: s.file });
+          }
+          if (!kinds.has(port.kind)) s.problems.push({ ...warning(`/operations/${name}`, `kind "${port.kind}" isn't built in and no declared format holds it`), file: s.file });
+        }
+      }
+    }
     const available = converters(library.shipManifests());
     for (const root of roots) {
       for (const dir of await subdirs(join(root, "books"))) {
@@ -114,6 +133,13 @@ export class Library implements ShipLookup {
 
   shipManifests(): ShipManifest[] {
     return this.ships.flatMap((s) => (s.manifest ? [s.manifest] : []));
+  }
+
+  /** Every format Pharos recognises: the built-in ones, then those ships declare (built-in names win). */
+  formats(): Record<string, FormatInfo> {
+    const out: Record<string, FormatInfo> = {};
+    for (const m of this.shipManifests()) for (const [id, info] of Object.entries(m.formats ?? {})) out[id] ??= info;
+    return { ...out, ...BUILT_IN_FORMATS };
   }
 
   bookManifests(): BookManifest[] {

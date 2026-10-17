@@ -13,7 +13,7 @@ import { constants, cp, mkdir, readFile, readdir, rename, rm, stat, writeFile } 
 import { basename, join, relative, sep } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { sniff } from "@pharos/catalogue";
-import type { Artifact, ArtifactKind, Format, WorkspaceInfo } from "@pharos/contracts";
+import type { Artifact, ArtifactKind, Format, FormatInfo, WorkspaceInfo } from "@pharos/contracts";
 
 export class WorkspaceError extends Error {
   constructor(
@@ -55,7 +55,11 @@ async function hashPath(path: string): Promise<{ hash: string; size: number }> {
 export class WorkspaceStore {
   readonly root: string;
 
-  constructor(dataDir: string) {
+  /** `formats`: every format files are recognised as, built in plus those ships declare. */
+  constructor(
+    dataDir: string,
+    private readonly formats: () => Promise<Record<string, FormatInfo> | undefined> = async () => undefined,
+  ) {
     this.root = join(dataDir, "workspaces");
   }
 
@@ -159,7 +163,7 @@ export class WorkspaceStore {
       await mkdir(tmp, { recursive: true });
       await fill(data);
       const isDir = (await stat(data)).isDirectory();
-      const type = from?.type ?? sniff(filename, isDir, isDir ? await readdir(data) : []);
+      const type = from?.type ?? sniff(filename, isDir, isDir ? await readdir(data) : [], await this.formats());
       if (!type) throw new WorkspaceError(415, `Pharos doesn't know what kind of data "${filename}" is yet`);
       const { hash, size } = await hashPath(data);
       const final = join(dir, "artifacts", hash);

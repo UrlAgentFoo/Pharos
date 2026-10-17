@@ -1,11 +1,17 @@
 /**
- * `book.yaml`: a recipe. The ships it needs, the steps that connect them,
- * the parameters users see, and what data it accepts. Its `GUIDE.md` (not
- * described here) tells the assistant when to use it.
+ * `book.yaml`: an app for one domain ("Fluid flow", "Cell tracking"). It
+ * names the ships it needs and the actions it offers; each action is a
+ * pipeline of ship operations with the data it accepts and the parameters
+ * people see. Its `GUIDE.md` (not described here) tells the assistant when
+ * to use it.
  *
- * Step wiring: `in` values are `$<book input>` or `<step id>.<output name>`;
- * book outputs are `<step id>.<output name>`. A book parameter's `sets`
- * names the `<step id>.<parameter>` it fills.
+ * People see a book's title, `how_to_use`, its actions' titles, the file
+ * types it accepts and its ships; everything else is for Pharos and the
+ * assistant.
+ *
+ * Step wiring, within an action: `in` values are `$<action input>` or
+ * `<step id>.<output name>`; outputs are `<step id>.<output name>`. A
+ * parameter's `sets` names the `<step id>.<parameter>` it fills.
  */
 import { type Static, Type } from "@sinclair/typebox";
 import { ParamValueSchema, paramProperties } from "./params.js";
@@ -77,21 +83,43 @@ export const StepSchema = Type.Object(
 );
 export type Step = Static<typeof StepSchema>;
 
-export const BookManifestSchema = Type.Object(
+/** One thing a book does: a pipeline with its own inputs, parameters and outputs. */
+export const BookActionSchema = Type.Object(
   {
-    id: IdSchema,
-    version: VersionSchema,
-    title: Type.String({ minLength: 1 }),
-    summary: Type.String({ minLength: 1 }),
-    tags: Type.Optional(Type.Array(Type.String())),
-    authors: Type.Optional(Type.Array(Type.String())),
-    citation: Type.Optional(Type.String()),
-    ships: KeyedMap(IdSchema, VersionRangeSchema, { minProperties: 1, description: "Ship id → tested version range." }),
-    inputs: Type.Optional(Type.Array(BookInputSchema, { description: "Empty for books that start from parameters alone." })),
+    title: Type.String({ minLength: 1, description: "What it does, as a button or menu item: \"Simulate the flow\"." }),
+    summary: Type.Optional(Type.String({ description: "One sentence more, for the assistant and tooltips." })),
+    inputs: Type.Optional(Type.Array(BookInputSchema, { description: "Empty for actions that start from parameters alone." })),
     parameters: Type.Optional(Type.Array(BookParamSchema)),
     steps: Type.Array(StepSchema, { minItems: 1 }),
     outputs: KeyedMap(Type.String({ pattern: NAME_PATTERN }), Type.String({ pattern: STEP_PARAM_PATTERN }), { minProperties: 1 }),
   },
+  { additionalProperties: false },
+);
+export type BookAction = Static<typeof BookActionSchema>;
+
+export const BookManifestSchema = Type.Object(
+  {
+    id: IdSchema,
+    version: VersionSchema,
+    title: Type.String({ minLength: 1, description: "The domain, as people name it: \"Fluid flow\"." }),
+    summary: Type.String({ minLength: 1, description: "One or two sentences, searched and read by the assistant." }),
+    how_to_use: Type.Optional(Type.String({ minLength: 1, description: "Two or three plain sentences shown on the book's card; the summary when absent." })),
+    tags: Type.Optional(Type.Array(Type.String())),
+    authors: Type.Optional(Type.Array(Type.String())),
+    citation: Type.Optional(Type.String()),
+    ships: KeyedMap(IdSchema, VersionRangeSchema, { minProperties: 1, description: "Ship id → tested version range." }),
+    actions: KeyedMap(Type.String({ pattern: NAME_PATTERN }), BookActionSchema, {
+      minProperties: 1,
+      description: "Action name (lowercase_snake) → what it does; the first is the book's main action.",
+    }),
+  },
   { additionalProperties: false, $id: "book.schema.json", title: "Pharos book" },
 );
 export type BookManifest = Static<typeof BookManifestSchema>;
+
+/** A book's action by name (the first when no name is given), with its name. */
+export function bookAction(book: Pick<BookManifest, "actions">, name?: string): (BookAction & { name: string }) | undefined {
+  const key = name ?? Object.keys(book.actions)[0];
+  const action = key !== undefined ? book.actions[key] : undefined;
+  return action && { ...action, name: key! };
+}

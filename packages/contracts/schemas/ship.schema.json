@@ -100,6 +100,58 @@
         }
       }
     },
+    "formats": {
+      "description": "File formats this ship brings that Pharos doesn't know yet: how to recognise them and what kind of data they hold.",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]*$": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+              "type": "string"
+            },
+            "title": {
+              "description": "As people know it, e.g. \"OME-Zarr\".",
+              "type": "string"
+            },
+            "extensions": {
+              "minItems": 1,
+              "description": "Lowercase, with the dot; longest wins, e.g. .ome.tif before .tif.",
+              "type": "array",
+              "items": {
+                "pattern": "^(\\.[a-z0-9]+)+$",
+                "type": "string"
+              }
+            },
+            "folder": {
+              "description": "The data is a folder (a .zarr store, an OpenFOAM case).",
+              "type": "boolean"
+            },
+            "contains": {
+              "minItems": 1,
+              "description": "For folders: entries that identify the format whatever the folder is called.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "edam": {
+              "pattern": "^format_\\d+$",
+              "description": "EDAM format term.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
     "operations": {
       "minProperties": 1,
       "additionalProperties": false,
@@ -141,104 +193,18 @@
                     "type": "string"
                   },
                   "kind": {
-                    "anyOf": [
-                      {
-                        "const": "volume",
-                        "type": "string"
-                      },
-                      {
-                        "const": "labels",
-                        "type": "string"
-                      },
-                      {
-                        "const": "tracks",
-                        "type": "string"
-                      },
-                      {
-                        "const": "table",
-                        "type": "string"
-                      },
-                      {
-                        "const": "mesh",
-                        "type": "string"
-                      },
-                      {
-                        "const": "splat",
-                        "type": "string"
-                      },
-                      {
-                        "const": "sim-case",
-                        "type": "string"
-                      },
-                      {
-                        "const": "video",
-                        "type": "string"
-                      }
-                    ]
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                    "type": "string"
                   },
                   "formats": {
                     "minItems": 1,
                     "description": "Formats the operation reads directly.",
                     "type": "array",
                     "items": {
-                      "anyOf": [
-                        {
-                          "const": "ome-zarr",
-                          "type": "string"
-                        },
-                        {
-                          "const": "ome-tiff",
-                          "type": "string"
-                        },
-                        {
-                          "const": "tiff",
-                          "type": "string"
-                        },
-                        {
-                          "const": "czi",
-                          "type": "string"
-                        },
-                        {
-                          "const": "nd2",
-                          "type": "string"
-                        },
-                        {
-                          "const": "lif",
-                          "type": "string"
-                        },
-                        {
-                          "const": "csv",
-                          "type": "string"
-                        },
-                        {
-                          "const": "parquet",
-                          "type": "string"
-                        },
-                        {
-                          "const": "json",
-                          "type": "string"
-                        },
-                        {
-                          "const": "ply",
-                          "type": "string"
-                        },
-                        {
-                          "const": "vtk",
-                          "type": "string"
-                        },
-                        {
-                          "const": "mp4",
-                          "type": "string"
-                        },
-                        {
-                          "const": "openfoam-case",
-                          "type": "string"
-                        },
-                        {
-                          "const": "geff",
-                          "type": "string"
-                        }
-                      ]
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                      "type": "string"
                     }
                   },
                   "optional": {
@@ -357,100 +323,14 @@
                     "type": "string"
                   },
                   "kind": {
-                    "anyOf": [
-                      {
-                        "const": "volume",
-                        "type": "string"
-                      },
-                      {
-                        "const": "labels",
-                        "type": "string"
-                      },
-                      {
-                        "const": "tracks",
-                        "type": "string"
-                      },
-                      {
-                        "const": "table",
-                        "type": "string"
-                      },
-                      {
-                        "const": "mesh",
-                        "type": "string"
-                      },
-                      {
-                        "const": "splat",
-                        "type": "string"
-                      },
-                      {
-                        "const": "sim-case",
-                        "type": "string"
-                      },
-                      {
-                        "const": "video",
-                        "type": "string"
-                      }
-                    ]
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video.",
+                    "type": "string"
                   },
                   "format": {
-                    "anyOf": [
-                      {
-                        "const": "ome-zarr",
-                        "type": "string"
-                      },
-                      {
-                        "const": "ome-tiff",
-                        "type": "string"
-                      },
-                      {
-                        "const": "tiff",
-                        "type": "string"
-                      },
-                      {
-                        "const": "czi",
-                        "type": "string"
-                      },
-                      {
-                        "const": "nd2",
-                        "type": "string"
-                      },
-                      {
-                        "const": "lif",
-                        "type": "string"
-                      },
-                      {
-                        "const": "csv",
-                        "type": "string"
-                      },
-                      {
-                        "const": "parquet",
-                        "type": "string"
-                      },
-                      {
-                        "const": "json",
-                        "type": "string"
-                      },
-                      {
-                        "const": "ply",
-                        "type": "string"
-                      },
-                      {
-                        "const": "vtk",
-                        "type": "string"
-                      },
-                      {
-                        "const": "mp4",
-                        "type": "string"
-                      },
-                      {
-                        "const": "openfoam-case",
-                        "type": "string"
-                      },
-                      {
-                        "const": "geff",
-                        "type": "string"
-                      }
-                    ]
+                    "pattern": "^[a-z0-9][a-z0-9-]*$",
+                    "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff.",
+                    "type": "string"
                   },
                   "path": {
                     "pattern": "^/out/",

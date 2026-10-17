@@ -3,7 +3,7 @@
 Pharos - Light House of Alexandria Library.
 
 A generalised, open-source library of scientific tools in one local app.
-Describe a problem and drop in data; an assistant picks a recipe, you approve
+Describe a problem and drop in data; an assistant picks a book, you approve
 it, and it runs on your machine in containers. Every scientific tool, one
 local app, no dependency hell.
 
@@ -12,16 +12,23 @@ local app, no dependency hell.
 - **Ships = capability.** A container image plus the typed operations it
   exposes (an `openfoam` ship offers `mesh`, `solve`, `export-vtk`). Heavy,
   technical, few, and shared between many books.
-- **Books = know-how.** A recipe: the ships it needs, the steps that connect
-  them, the parameters users see, and the instructions the assistant reads to
-  decide when to use it. Small text files, cheap to write and share.
+- **Books = know-how.** An app for one domain ("Fluid flow", "Cell
+  imaging"): the ships it needs and the actions it offers ("Simulate the
+  flow", "See the case in 3D"), each a pipeline of ship operations with the
+  data it accepts and the parameters people see, plus the instructions the
+  assistant reads to decide when to use it. Small text files, cheap to write
+  and share.
+
+Kinds of data and file formats are open: a ship can bring a new format (say
+`.h5ad` for single-cell data) by declaring how to recognise it, and Pharos
+picks it up without any change to the app.
 
 Users pick books; Pharos fetches only the ships those books need. Nothing runs
 until you approve the plan, and every container step is cached.
 
 **Every tool is a ship.** Even everyday image processing (blur, threshold,
 binary operations, particles, measurements) is the `image-ops` ship: each
-data window offers, in its ⋯ menu, the recipes and ship operations that fit
+data window offers, in its ⋯ menu, the book actions and ship operations that fit
 the data it shows, and each one lands in that window's history.
 
 **The UI is the product.** Browsing and installing books, downloading ships,
@@ -40,7 +47,7 @@ API, for authors and automation.
 | `packages/catalogue` (`@pharos/catalogue`) | Data inspector, full-text catalogue of ships and books, book matching, and the MCP server. |
 | `packages/ui` (`@pharos/ui`) | The browser UI: Vite + TypeScript. |
 | `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: workspaces, library, plans, jobs, the assistant and authoring commands. |
-| `ships/`, `books/` | The ships (`image-ops` for everyday image processing, `bio-utils`, `cellpose`, `ultrack`, `space-time-field`, `geff`, `render`, `openfoam`, and `hello` for tests) and books in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
+| `ships/`, `books/` | The ships (`image-ops` for everyday image processing, `bio-utils`, `cellpose`, `ultrack`, `space-time-field`, `geff`, `render`, `openfoam`, and `hello` for tests) and books (Cell imaging, Fluid flow) in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
 
 ## Development
 
