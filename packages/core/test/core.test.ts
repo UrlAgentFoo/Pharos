@@ -1,18 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  autoContrast,
-  createImage,
-  fromFloat,
-  gaussianBlur,
-  getPlane,
-  invert,
-  planeIndex,
-  planeStats,
-  readTiff,
-  toDisplayIndices,
-  writeTiff,
-} from "@pharos/core";
-import { syntheticImage, testKernels } from "./helpers.js";
+import { autoContrast, createImage, getPlane, minMax, planeIndex, readTiff, toDisplayIndices, withDefaults, writeTiff } from "@pharos/core";
+import { syntheticImage } from "./helpers.js";
 
 describe("image model", () => {
   it("orders planes channel-fastest, then slice, then frame", () => {
@@ -32,47 +20,18 @@ describe("image model", () => {
   });
 });
 
-describe("ops", () => {
-  it("computes ImageJ-style stats (sample std dev)", () => {
-    const s = planeStats(new Uint8Array([1, 2, 3, 4]));
-    expect(s).toMatchObject({ count: 4, min: 1, max: 4, mean: 2.5 });
-    expect(s.stdDev).toBeCloseTo(Math.sqrt(5 / 3), 12);
-  });
-
-  it("inverts 8-bit as 255-v and 16-bit over the data range", () => {
-    const u8 = createImage({ dtype: "uint8", width: 3, height: 1, planes: [new Uint8Array([0, 100, 255])] });
-    expect(Array.from(invert(u8).planes[0])).toEqual([255, 155, 0]);
-    const u16 = createImage({ dtype: "uint16", width: 3, height: 1, planes: [new Uint16Array([100, 150, 1100])] });
-    expect(Array.from(invert(u16).planes[0])).toEqual([1100, 1050, 100]);
-  });
-
-  it("does not mutate its input", () => {
-    const img = syntheticImage("uint8", 16, 16);
-    const before = img.planes[0].slice();
-    invert(img);
-    expect(img.planes[0]).toEqual(before);
-  });
-
-  it("rounds float results back like ImageJ (+0.5, truncate, clamp)", () => {
-    const out = fromFloat(new Float32Array([-3, 0.49, 0.5, 254.6, 300]), "uint8");
-    expect(Array.from(out)).toEqual([0, 0, 1, 255, 255]);
-  });
-
-  it("blurs through the wasm kernels and keeps flat images flat", async () => {
-    const k = await testKernels();
-    const flat = createImage({ dtype: "uint16", width: 32, height: 24, planes: [new Uint16Array(32 * 24).fill(1234)] });
-    const blurred = gaussianBlur(k, flat, { sigmaX: 2 });
-    expect(blurred.dtype).toBe("uint16");
-    expect(new Set(blurred.planes[0]).size).toBe(1);
-    expect(blurred.planes[0][0]).toBe(1234);
-  });
-
-  it("reduces noise when blurring", async () => {
-    const k = await testKernels();
-    const img = syntheticImage("float32", 64, 64);
-    const before = planeStats(img.planes[0]).stdDev;
-    const after = planeStats(gaussianBlur(k, img, { sigmaX: 3 }).planes[0]).stdDev;
-    expect(after).toBeLessThan(before);
+describe("parameter checking", () => {
+  const specs = [
+    { name: "model", type: "enum" as const, options: ["cyto3", "nuclei"], default: "cyto3" },
+    { name: "diameter", type: "number" as const, unit: "px", default: 30, min: 1 },
+  ];
+  it("fills defaults and rejects bad values", () => {
+    expect(withDefaults(specs, {})).toEqual({ model: "cyto3", diameter: 30 });
+    expect(() => withDefaults(specs, { model: "cyto9" })).toThrow(/one of cyto3, nuclei/);
+    expect(() => withDefaults(specs, { diameter: "30" })).toThrow(/a number/);
+    expect(() => withDefaults(specs, { diameter: 0 })).toThrow(/between 1/);
+    expect(() => withDefaults(specs, { sigma: 1 })).toThrow(/unknown parameter "sigma"/);
+    expect(() => withDefaults([{ name: "n", type: "integer" }], {})).toThrow(/required/);
   });
 });
 
@@ -112,9 +71,9 @@ describe("display", () => {
   it("auto contrast stays inside the data range", () => {
     const img = syntheticImage("uint16", 64, 64);
     const [lo, hi] = autoContrast(img.planes[0]);
-    const s = planeStats(img.planes[0]);
-    expect(lo).toBeGreaterThanOrEqual(s.min);
-    expect(hi).toBeLessThanOrEqual(s.max + 1);
+    const [min, max] = minMax(img.planes[0]);
+    expect(lo).toBeGreaterThanOrEqual(min);
+    expect(hi).toBeLessThanOrEqual(max + 1);
     expect(hi).toBeGreaterThan(lo);
   });
 });

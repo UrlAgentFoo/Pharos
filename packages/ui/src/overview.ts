@@ -1,20 +1,20 @@
 /**
- * The overview: press Tab and every image window glides into a grid, Mission
- * Control style, grouped by lineage (images branched from one another sit
- * together). The search field on top doubles as the command palette, and
- * anything it cannot find can go to the assistant.
+ * The overview: press Tab and every window glides into a grid, Mission
+ * Control style. The search field on top doubles as the command palette
+ * for app actions and windows, and anything it cannot find can go to the
+ * assistant.
  */
 import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
 import { formatShortcut } from "./keys.js";
 import type { WindowManager } from "./windows.js";
-import type { Doc, Workspace } from "./workspace.js";
+import type { DataDoc, Workspace } from "./workspace.js";
 
-/** Anything the palette can run: app actions and image commands alike. */
+/** Anything the palette can run. */
 export interface Action {
   id: string;
   title: string;
-  /** Menu path shown as context, e.g. "Process › Filters". */
+  /** Menu path shown as context, e.g. "File". */
   section: string;
   icon: string;
   shortcut?: string;
@@ -31,9 +31,9 @@ export interface OverviewHooks {
   /** Sends a request to the assistant (opens the chat). */
   ask(request: string): void;
   aiUnavailable(): string | null;
-  closeDoc(doc: Doc): void;
-  openFiles(files: File[]): void;
-  dtypeLabel(dtype: string): string;
+  closeDoc(doc: DataDoc): void;
+  /** Adds dropped files to the workspace. */
+  addFiles(files: File[]): void;
 }
 
 interface Item {
@@ -42,7 +42,7 @@ interface Item {
 }
 
 /** Scores how well `query` matches; 0 means no match. */
-function score(query: string, title: string, extra: string): number {
+export function score(query: string, title: string, extra: string): number {
   const q = query.toLowerCase().trim();
   const t = title.toLowerCase();
   if (!q) return 1;
@@ -60,7 +60,7 @@ export class Overview {
   private readonly input: HTMLInputElement;
   private readonly results: HTMLElement;
   private readonly labels: HTMLElement;
-  private order: Doc[] = [];
+  private order: DataDoc[] = [];
   private items: Item[] = [];
   private sel = 0;
   private returnFocus: HTMLElement | null = null;
@@ -74,7 +74,7 @@ export class Overview {
       <div class="ov-labels"></div>
       <div class="ov-top" role="dialog" aria-label="Overview and command palette">
         <label class="ov-search">${icon("search", 20)}
-          <input type="text" spellcheck="false" autocomplete="off" placeholder="Search images and commands, or ask the assistant…" aria-label="Search" />
+          <input type="text" spellcheck="false" autocomplete="off" placeholder="Search windows and actions, or ask the assistant…" aria-label="Search" />
           <kbd>esc</kbd>
         </label>
         <div class="ov-results" hidden></div>
@@ -105,7 +105,7 @@ export class Overview {
       this.pick(win.dataset.doc!);
     }, true);
 
-    // drop files on the overview to open them
+    // drop files on the overview to add them
     this.root.addEventListener("dragover", (e) => {
       if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
     });
@@ -113,7 +113,7 @@ export class Overview {
       if (!e.dataTransfer?.files.length) return;
       e.preventDefault();
       e.stopPropagation();
-      hooks.openFiles([...e.dataTransfer.files]);
+      hooks.addFiles([...e.dataTransfer.files]);
     });
   }
 
@@ -151,32 +151,16 @@ export class Overview {
     else ws.activate(docId);
   }
 
-  /** Arranges the windows, draws their labels and lineage groups, then the search results. */
+  /** Arranges the windows and draws their labels, then the search results. */
   private layout() {
-    const ws = this.hooks.workspace;
-    const groups = ws.lineage();
-    this.order = groups.flat().map((g) => g.doc);
+    this.order = [...this.hooks.workspace.docs];
     const rects = this.hooks.windows.layoutOverview(this.order, SEARCH_TOP);
     this.labels.innerHTML = "";
     if (!this.order.length) {
-      this.labels.innerHTML = `<div class="ov-empty">${icon("image", 30)}<p>No images open</p><p class="muted">Drop TIFF files here, or search for a command such as <em>Open</em>.</p></div>`;
-    }
-    // a soft outline around images that belong together (when they share a row)
-    for (const g of groups) {
-      if (g.length < 2) continue;
-      const rs = g.map((x) => rects.get(x.doc.id)!);
-      const mid = (r: { y: number; h: number }) => r.y + r.h / 2;
-      if (!rs.every((r) => Math.abs(mid(r) - mid(rs[0])) < rs[0].h / 2)) continue;
-      const x0 = Math.min(...rs.map((r) => r.x)) - 14;
-      const y0 = Math.min(...rs.map((r) => r.y)) - 14;
-      const x1 = Math.max(...rs.map((r) => r.x + r.w)) + 14;
-      const y1 = Math.max(...rs.map((r) => r.y + r.h)) + 52;
-      this.labels.insertAdjacentHTML("beforeend", `<div class="ov-group" style="left:${x0}px;top:${y0}px;width:${x1 - x0}px;height:${y1 - y0}px"></div>`);
+      this.labels.innerHTML = `<div class="ov-empty">${icon("panel", 30)}<p>No windows open</p><p class="muted">Drop data here, or search for an action such as <em>Add data</em>.</p></div>`;
     }
     for (const doc of this.order) {
       const r = rects.get(doc.id)!;
-      const img = doc.timeline.current();
-      const t = doc.timeline;
       const minimized = this.hooks.windows.isMinimized(doc.id);
       if (minimized) {
         // minimised windows show here too, faded, with a way back
@@ -196,10 +180,9 @@ export class Overview {
       label.dataset.doc = doc.id;
       label.style.cssText = `left:${r.x}px;top:${r.y + r.h + 10}px;width:${r.w}px`;
       label.innerHTML = `
-        <strong>${doc.parent ? icon("branch", 13) : ""}${escapeHtml(doc.name)}</strong>
-        <small>${img.shape.width}×${img.shape.height} · ${this.hooks.dtypeLabel(img.dtype)}${t.steps.length ? ` · ${t.marker}/${t.steps.length} steps` : ""}</small>
+        <strong>${escapeHtml(doc.name)}</strong>
+        <small>${escapeHtml(doc.source.kind)} · ${escapeHtml(doc.source.format)}${doc.steps.length ? ` · ${doc.marker}/${doc.steps.length} steps` : ""}</small>
         ${minimized ? `<small class="ov-min-tag">Minimised</small>` : ""}
-        ${doc.parent ? `<small class="ov-parent">from ${escapeHtml(doc.parent.name)}, step ${doc.parent.step}</small>` : ""}
         <button class="ov-close" title="Close ${escapeHtml(doc.name)}" aria-label="Close ${escapeHtml(doc.name)}">${icon("close", 12)}</button>`;
       label.querySelector(".ov-close")!.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -231,7 +214,7 @@ export class Overview {
     const ws = this.hooks.workspace;
     // dim windows that do not match
     for (const doc of this.order) this.hooks.windows.windowElement(doc.id)!.classList.toggle("ov-dim", score(q, doc.name, "") === 0);
-    const images = ws.docs.filter((d) => score(q, d.name, "") > 0).slice(0, 5);
+    const windows = ws.docs.filter((d) => score(q, d.name, "") > 0).slice(0, 5);
     const actions = this.hooks
       .actions()
       .map((a) => ({ a, s: score(q, a.title, `${a.section} ${(a.keywords ?? []).join(" ")} ${a.description ?? ""}`) }))
@@ -239,7 +222,7 @@ export class Overview {
       .sort((a, b) => b.s - a.s || Number(b.a.enabled()) - Number(a.a.enabled()))
       .slice(0, 8);
     if (actions.length) {
-      this.results.append(this.heading("Commands"));
+      this.results.append(this.heading("Actions"));
       for (const { a } of actions) {
         this.results.append(
           this.row(a.icon, a.title, a.section, a.shortcut, () => {
@@ -250,14 +233,14 @@ export class Overview {
         );
       }
     }
-    if (images.length) {
-      this.results.append(this.heading("Images"));
-      for (const d of images) this.results.append(this.row("image", d.name, `${d.timeline.steps.length} steps`, undefined, () => this.pick(d.id)));
+    if (windows.length) {
+      this.results.append(this.heading("Windows"));
+      for (const d of windows) this.results.append(this.row("panel", d.name, `${d.source.kind} · ${d.steps.length} steps`, undefined, () => this.pick(d.id)));
     }
     this.results.append(this.heading("Assistant"));
     const why = this.hooks.aiUnavailable();
     this.results.append(
-      this.row("sparkle", `Ask the assistant: “${q}”`, why ?? "Suggests steps for you to review", undefined, () => {
+      this.row("sparkle", `Ask the assistant: “${q}”`, why ?? "Proposes a recipe for the active window, for you to approve", undefined, () => {
         this.close();
         this.hooks.ask(q);
       }, "ai"),

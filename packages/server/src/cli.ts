@@ -69,7 +69,6 @@ export async function main(argv = process.argv.slice(2)) {
   if (!Number.isInteger(port) || port < 0 || port > 65535) throw new Error(`invalid port: ${values.port}`);
   const opts = {
     uiDir: findUiDir(),
-    wasmPath: fileURLToPath(import.meta.resolve("@pharos/core/wasm/pharos_kernels.wasm")),
     dataDir: values.data ? resolve(values.data) : defaultDataDir(),
     libraryDirs: (values.library ?? []).map((d) => resolve(d)),
   };

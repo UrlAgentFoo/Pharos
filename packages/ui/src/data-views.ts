@@ -12,7 +12,7 @@ import type { LocalServer } from "./api.js";
 import { parseCsv } from "./csv.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { ModelView } from "./model-view.js";
-import { type ViewState, Viewer, newViewState } from "./viewer.js";
+import { type ViewState, Viewer, newViewState, setRanges } from "./viewer.js";
 
 /** What a viewer needs for one artifact, fetched once and kept while its window is open. */
 export type Loaded =
@@ -76,7 +76,7 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
         <div class="dv-sliders">${[["z", slices, "Slice"], ["t", frames, "Frame"], ["c", channels, "Channel"]]
           .filter(([, n]) => (n as number) > 1)
           .map(([axis, n, label]) => `<label>${label}<input type="range" min="0" max="${(n as number) - 1}" value="${view.pos[axis as "z" | "t" | "c"]}" data-axis="${axis}"/><output>${view.pos[axis as "z" | "t" | "c"] + 1}/${n}</output></label>`)
-          .join("")}</div>`;
+          .join("")}${compact || entry.view.labels ? "" : `<span class="dv-contrast" title="Changes only the display, not the data">Contrast <button class="chip" data-range="auto">Auto</button><button class="chip" data-range="full">Full range</button></span>`}</div>`;
       const readout = host.querySelector<HTMLElement>(".win-readout")!;
       const viewer: Viewer = new Viewer(host.querySelector("canvas")!, (info) => (readout.textContent = info || `${a.kind === "labels" ? "labels" : a.format} · ${viewer.zoomPercent}%`));
       viewer.show(entry.image, view);
@@ -85,6 +85,12 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
           const axis = input.dataset.axis as "z" | "t" | "c";
           view.pos[axis] = Number(input.value);
           input.nextElementSibling!.textContent = `${Number(input.value) + 1}/${Number(input.max) + 1}`;
+          viewer.render();
+        }),
+      );
+      host.querySelectorAll<HTMLButtonElement>("[data-range]").forEach((b) =>
+        b.addEventListener("click", () => {
+          setRanges(view, entry.image, b.dataset.range as "auto" | "full");
           viewer.render();
         }),
       );

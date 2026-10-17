@@ -1,10 +1,9 @@
 /**
- * The library, in one place: books first (cards with their summary, tags,
- * trust, the ships they need and whether this machine can run them), then
- * the ships with their operations, then the built-in image tools. Opened
- * from workspace data, the books tab shows only the books that accept that
- * data (direct matches first, then after conversion), and the rest with
- * why not. Without the local server only the built-in tools are there.
+ * The books in the library: cards with their summary, tags, trust, the
+ * ships they need and whether this machine can run them. Opened from
+ * workspace data, it shows the books that accept that data first (direct
+ * matches, then after conversion), and the rest with why not. Single
+ * operations aren't here: each data window offers the ones that fit it.
  */
 import type { Artifact, BookMatch, CatalogueEntry, LibraryIssue } from "@pharos/contracts";
 import type { LocalServer } from "./api.js";
@@ -16,11 +15,7 @@ export interface LibraryHooks {
   usePlan(book: CatalogueEntry, inputs: Record<string, string>): Promise<void>;
   notify(text: string): void;
   gpu(): boolean;
-  /** The built-in tools tab: its HTML, and wiring for its controls. */
-  tools: { html(): string; wire(el: HTMLElement): void };
 }
-
-export type LibraryTab = "books" | "tools";
 
 type Action =
   | { use: CatalogueEntry }
@@ -29,7 +24,6 @@ type Action =
   | { testShip: CatalogueEntry }
   | { install: true }
   | { issues: true }
-  | { tab: LibraryTab }
   | null;
 
 const TRUST: Record<CatalogueEntry["trust"], string> = { verified: "Verified", verifying: "Verifying", imported: "Not yet tested" };
@@ -54,16 +48,9 @@ function card(e: CatalogueEntry, match: BookMatch | undefined, ships: string[], 
  * Shows the library; with `data`, matched against that workspace data.
  * Loops until closed, so Install, Test and Guide come back to it.
  */
-export async function libraryPanel(server: LocalServer | null, hooks: LibraryHooks, data?: { workspace: string; artifacts: Artifact[]; text?: string }, start: LibraryTab = "books") {
+export async function libraryPanel(server: LocalServer, hooks: LibraryHooks, data?: { workspace: string; artifacts: Artifact[]; text?: string }) {
   let filter = "";
-  let tab: LibraryTab = server ? start : "tools";
   for (;;) {
-    if (!server || tab === "tools") {
-      const next = await toolsTab(hooks, !!server);
-      if (!next) return;
-      tab = next;
-      continue;
-    }
     const [books, issues, matched] = await Promise.all([
       server.books(),
       server.issues(),
@@ -75,8 +62,7 @@ export async function libraryPanel(server: LocalServer | null, hooks: LibraryHoo
     const order = matched ? matched.map((m) => books.find((b) => b.id === m.book.id)!).filter(Boolean) : books;
     const errors = issues.filter((i) => i.problems.some((p) => p.severity === "error"));
     const action = await showDialog<Action>(
-      `${tabs("books", true)}
-       <p class="eyebrow">${data?.artifacts.length ? `Books for ${escapeHtml(data.artifacts.map((a) => a.name ?? a.id.slice(0, 8)).join(", "))}` : "Books"}</p>
+      `<p class="eyebrow">${data?.artifacts.length ? `Books for ${escapeHtml(data.artifacts.map((a) => a.name ?? a.id.slice(0, 8)).join(", "))}` : "Books"}</p>
        <div class="ws-head"><input type="search" class="lib-search" placeholder="Filter books" value="${escapeHtml(filter)}"/>
          <button class="chip" data-install>${icon("plus", 14)} Install…</button>
          ${issues.length ? `<button class="chip ${errors.length ? "warn-chip" : ""}" data-issues>${icon("warning", 14)} ${issues.length} with problems</button>` : ""}</div>
@@ -97,17 +83,12 @@ export async function libraryPanel(server: LocalServer | null, hooks: LibraryHoo
         el.querySelectorAll<HTMLButtonElement>("[data-guide]").forEach((b) => b.addEventListener("click", () => done({ guide: find(b.dataset.guide!) })));
         el.querySelectorAll<HTMLButtonElement>("[data-test]").forEach((b) => b.addEventListener("click", () => done({ test: find(b.dataset.test!) })));
         el.querySelector("[data-install]")!.addEventListener("click", () => done({ install: true }));
-        wireTabs(el, (t) => done({ tab: t }));
         el.querySelector("[data-issues]")?.addEventListener("click", () => done({ issues: true }));
       },
       null,
     );
     document.getElementById("dialog")?.classList.remove("wide");
     if (!action) return;
-    if ("tab" in action) {
-      tab = action.tab;
-      continue;
-    }
     try {
       if ("use" in action) {
         const book = details.get(action.use.id)!.manifest;
@@ -165,32 +146,4 @@ function issuesDialog(issues: LibraryIssue[]) {
     () => {},
     undefined,
   );
-}
-
-// ------------------------------------------------------------ tabs
-
-function tabs(active: LibraryTab, server: boolean): string {
-  const items: [LibraryTab, string][] = server ? [["books", "Books"], ["tools", "Built-in tools"]] : [["tools", "Built-in tools"]];
-  return `<nav class="lib-tabs" role="tablist">${items
-    .map(([id, label]) => `<button role="tab" data-tab="${id}" aria-selected="${id === active}">${label}</button>`)
-    .join("")}</nav>`;
-}
-
-function wireTabs(el: HTMLElement, go: (t: LibraryTab) => void) {
-  el.querySelectorAll<HTMLButtonElement>("[data-tab]").forEach((b) => b.addEventListener("click", () => go(b.dataset.tab as LibraryTab)));
-}
-
-async function toolsTab(hooks: LibraryHooks, server: boolean): Promise<LibraryTab | null> {
-  const action = await showDialog<Action>(
-    `${tabs("tools", server)}
-     <p class="eyebrow">Built-in tools</p>
-     ${hooks.tools.html()}
-     <footer><button class="primary" data-cancel>Done</button></footer>`,
-    (done, el) => {
-      wireTabs(el, (t) => done({ tab: t }));
-      hooks.tools.wire(el);
-    },
-    null,
-  );
-  return action && "tab" in action ? action.tab : null;
 }

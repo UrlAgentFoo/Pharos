@@ -12,12 +12,11 @@
  * then update each history node as it runs.
  */
 import type { Artifact, BookManifest, Job, ParamSpec, Params, Plan, ServerEvent, ShipManifest, Step } from "@pharos/contracts";
-import type { Image } from "@pharos/core";
 import type { LocalServer } from "./api.js";
 import type { DataWindowHooks, StepSpec, Suggestion } from "./data-window.js";
 import { escapeHtml, showDialog } from "./dialogs.js";
 import { icon } from "./icons.js";
-import { manifestParamFields, readManifestParams } from "./run-dialog.js";
+import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import type { DataDoc, DataStep, Workspace } from "./workspace.js";
 
 export interface ProcessHooks {
@@ -25,10 +24,6 @@ export interface ProcessHooks {
   notify(text: string): void;
   /** Runs slow work with the busy indicator; errors become a dialog. */
   busy<T>(label: string, fn: () => Promise<T>): Promise<T | undefined>;
-  /** Opens an image in the image editor. */
-  openImage(image: Image): void;
-  /** The image a data window shows, if any. */
-  shownImage(doc: DataDoc): Image | null;
   /** The artifact a data window shows. */
   shownArtifact(doc: DataDoc): Promise<Artifact | null>;
 }
@@ -42,7 +37,7 @@ interface Available {
   format: Artifact["format"];
 }
 
-export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" | "openAsImage"> {
+export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify"> {
   private ships = new Map<string, ShipManifest>();
   private trust = new Map<string, string>();
   private shipsLoading: Promise<void> | null = null;
@@ -98,7 +93,8 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     return out;
   }
 
-  async suggestions(doc: DataDoc, artifact: Artifact): Promise<Suggestion[]> {
+  /** Recipes and tools that take `artifact`; the first few tools only, unless `all`. */
+  async suggestions(doc: DataDoc, artifact: Artifact, all = false): Promise<Suggestion[]> {
     await this.loadShips();
     const s = this.server;
     const books = await s
@@ -117,25 +113,28 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     ops.sort((a, b) => Number(b.trust === "verified") - Number(a.trust === "verified"));
     return [
       ...books.map((m): Suggestion => ({ type: "book", id: m.book.id, title: m.book.title, summary: m.book.summary, fit: m.tier === "direct" ? "fits this data" : "fits after conversion", trust: m.book.trust })),
-      ...ops.slice(0, 10),
+      ...(all ? ops : ops.slice(0, 10)),
     ];
   }
 
-  /** The ⋯ menu of a data window: recipes and operations for what's on view, then window actions. */
+  /** The ⋯ menu of a data window: recipes, then every tool for what's on view (by ship), then window actions. */
   async menuHtml(doc: DataDoc): Promise<string> {
     const shown = (await this.hooks.shownArtifact(doc)) ?? doc.source;
-    const list = await this.suggestions(doc, shown).catch(() => [] as Suggestion[]);
+    const list = await this.suggestions(doc, shown, true).catch(() => [] as Suggestion[]);
     this.lastMenu = { doc, list };
     const item = (i: number, s: Suggestion) =>
       `<button data-dp="apply:${i}" role="menuitem">${icon(s.type === "book" ? "script" : "plug", 16)}<span>${escapeHtml(s.title)}${s.trust === "verified" ? " <small>verified</small>" : ""}</span></button>`;
     const books = list.map((s, i) => [i, s] as const).filter(([, s]) => s.type === "book");
-    const ops = list.map((s, i) => [i, s] as const).filter(([, s]) => s.type === "op");
-    const image = this.hooks.shownImage(doc);
+    const byShip = new Map<string, (readonly [number, Suggestion])[]>();
+    list.forEach((s, i) => {
+      if (s.type === "op") byShip.set(s.id.split(".")[0], [...(byShip.get(s.id.split(".")[0]) ?? []), [i, s] as const]);
+    });
+    const tool = (i: number, s: Suggestion) =>
+      `<button data-dp="apply:${i}" role="menuitem" title="${escapeHtml(s.summary)}">${icon("plug", 16)}<span>${escapeHtml(s.id.split(".")[1].replace(/-/g, " "))}</span></button>`;
     return `
       <section><h4>Recipes for ${escapeHtml(shown.name ?? shown.kind)}</h4>${books.map(([i, s]) => item(i, s)).join("") || `<p class="pop-note">No recipe takes this yet.</p>`}</section>
-      <section><h4>Operations</h4>${ops.map(([i, s]) => item(i, s)).join("") || `<p class="pop-note">No operation takes this yet.</p>`}</section>
+      ${[...byShip].map(([ship, ops]) => `<section><h4>${escapeHtml(ship)}${this.trust.get(ship) === "verified" ? " <small>verified</small>" : ""}</h4>${ops.map(([i, s]) => tool(i, s)).join("")}</section>`).join("") || `<section><h4>Tools</h4><p class="pop-note">No tool takes this yet.</p></section>`}
       <section>
-        ${image ? `<button data-dp="image" role="menuitem">${icon("image", 16)}<span>Open in the image editor</span></button>` : ""}
         ${doc.marker > 0 ? `<button data-dp="separate" role="menuitem">${icon("duplicate", 16)}<span>Open this result in its own window</span></button>` : ""}
         <button data-dp="controls" role="menuitem">${icon("panel", 16)}<span>${doc.ui.controls ? "Hide" : "Show"} controls</span></button>
         <button data-dp="close" role="menuitem">${icon("close", 16)}<span>Close window</span></button>
@@ -149,10 +148,6 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     if (!m) return;
     const { doc } = m;
     if (value.startsWith("apply:")) return this.apply(doc, m.list[Number(value.slice(6))]);
-    if (value === "image") {
-      const image = this.hooks.shownImage(doc);
-      if (image) this.hooks.openImage(image);
-    }
     if (value === "separate") {
       const a = await this.hooks.shownArtifact(doc);
       if (a) this.openSeparately(doc, a);
@@ -375,7 +370,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
   }
 
   openSeparately(doc: DataDoc, artifact: Artifact) {
-    this.ws.openData(artifact, doc.workspace);
+    this.ws.open(artifact, doc.workspace);
   }
 
   /**
@@ -387,7 +382,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const errors = (plan.problems ?? []).filter((p) => p.severity === "error");
     if (errors.length) throw new Error(`This plan doesn't fit the data: ${errors.map((p) => p.message).join("; ")}`);
     await this.loadShips();
-    const doc = this.ws.openData(source, plan.workspace);
+    const doc = this.ws.open(source, plan.workspace);
     const book = plan.book ? (await this.server.book(plan.book.id, plan.book.version)).manifest : undefined;
     const inputNames = Object.keys(plan.inputs);
     const rename = new Map<string, string>();

@@ -1,6 +1,18 @@
 /** Rendering helpers: map pixel values to 8-bit RGBA through a display range and LUT. */
 import type { PixelArray } from "./image.js";
 
+/** Min and max over a plane, ignoring NaN. */
+export function minMax(plane: PixelArray): [number, number] {
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < plane.length; i++) {
+    const v = plane[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return [min, max];
+}
+
 /** A lookup table of 256 RGB entries. */
 export interface Lut {
   readonly name: string;

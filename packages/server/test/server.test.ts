@@ -3,30 +3,12 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { readTiff, runSteps, writeTiff } from "@pharos/core";
-import type { AiClient } from "../src/ai.js";
+import { readTiff, writeTiff } from "@pharos/core";
 import { type RunningServer, startServer } from "../src/server.js";
-import { WASM_PATH, syntheticImage, testKernels } from "../../core/test/helpers.js";
+import { syntheticImage } from "../../core/test/helpers.js";
 
 let server: RunningServer;
 
-/** A stand-in for the Anthropic client that records requests and replies with canned content. */
-const aiCalls: { apiKey?: string; body: Record<string, unknown> }[] = [];
-let aiReply: unknown[] = [];
-/** The first canned reply in the multi-turn test, to check it is replayed verbatim. */
-const aiReplyFirst = () => (aiCalls[aiCalls.length - 2] as unknown as { reply: unknown[] }).reply;
-const fakeAi = (apiKey: string | undefined): AiClient =>
-  ({
-    beta: {
-      messages: {
-        create: async (body: Record<string, unknown>) => {
-          // copy the request: the server keeps appending to the same arrays
-          aiCalls.push({ apiKey, body: JSON.parse(JSON.stringify(body)), reply: aiReply } as (typeof aiCalls)[number]);
-          return { model: body.model, stop_reason: "tool_use", content: aiReply };
-        },
-      },
-    },
-  }) as unknown as AiClient;
 let tmp: string;
 const TOKEN = "test-token-0123456789";
 
@@ -52,7 +34,7 @@ beforeAll(async () => {
   await mkdir(ui);
   await writeFile(join(ui, "index.html"), "<!doctype html><title>Pharos</title>");
   await writeFile(join(tmp, "secret.txt"), "do not serve");
-  server = await startServer({ port: 0, uiDir: ui, wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), aiClient: fakeAi, dataDir: join(tmp, "data") });
+  server = await startServer({ port: 0, uiDir: ui, token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data") });
 });
 
 afterAll(async () => {
@@ -102,18 +84,15 @@ describe("security", () => {
 });
 
 describe("static", () => {
-  it("serves the UI and the kernels", async () => {
+  it("serves the UI", async () => {
     expect(await (await fetch(server.url)).text()).toContain("<title>Pharos</title>");
-    const wasm = await fetch(`${server.url}/kernels.wasm`);
-    expect(wasm.headers.get("content-type")).toBe("application/wasm");
-    expect(WebAssembly.validate(new Uint8Array(await wasm.arrayBuffer()))).toBe(true);
   });
 });
 
 describe("api", () => {
   it("reports info and capabilities", async () => {
     const info = await (await api("/api/info")).json();
-    expect(info).toMatchObject({ name: "Pharos", mode: "local", capabilities: { filesystem: true, batch: true } });
+    expect(info).toMatchObject({ name: "Pharos", mode: "local", capabilities: { filesystem: true, ai: true } });
   });
 
   it("lists, writes and reads files", async () => {
@@ -142,43 +121,6 @@ describe("api", () => {
     expect((await api(`/api/fs/read?path=${encodeURIComponent(join(tmp, "missing.tif"))}`)).status).toBe(404);
     expect((await api("/api/nope")).status).toBe(404);
   });
-
-  it("batch-processes a folder of TIFFs on the server", async () => {
-    const input = join(tmp, "batch-in");
-    const output = join(tmp, "batch-out");
-    await mkdir(input);
-    const a = syntheticImage("uint8", 32, 16, 1, 7);
-    const b = syntheticImage("uint16", 20, 20, 2, 8);
-    await writeFile(join(input, "a.tif"), writeTiff(a));
-    await writeFile(join(input, "b.tiff"), writeTiff(b));
-    await writeFile(join(input, "notes.txt"), "ignored");
-    await writeFile(join(input, "broken.tif"), "not a tiff");
-
-    const r = await api("/api/batch", { method: "POST", body: JSON.stringify({ input, output, steps: [{ command: "invert" }] }) });
-    expect(r.status).toBe(200);
-    const result = await r.json();
-    expect(result.processed.map((p: { file: string }) => p.file)).toEqual(["a.tif", "b.tiff"]);
-    expect(result.failed).toHaveLength(1);
-    expect(result.failed[0].file).toBe("broken.tif");
-
-    const outA = await readTiff(await readFile(join(output, "a.tif")));
-    expect(outA.planes[0][0]).toBe(255 - a.planes[0][0]);
-    const outB = await readTiff(await readFile(join(output, "b.tiff")));
-    expect(outB.shape.slices).toBe(2);
-
-    // a whole recipe runs in order
-    const pipeline = [{ command: "flip-horizontal" }, { command: "gaussian-blur", params: { sigma: 1.5 } }];
-    const r2 = await api("/api/batch", { method: "POST", body: JSON.stringify({ input, output: join(tmp, "pipe"), steps: pipeline }) });
-    expect(r2.status).toBe(200);
-    const outPipe = await readTiff(await readFile(join(tmp, "pipe", "a.tif")));
-    expect(outPipe.planes[0]).toEqual(runSteps(a, pipeline, { kernels: await testKernels() }).planes[0]);
-
-    const bad = (steps: unknown, out = join(tmp, "bad")) => api("/api/batch", { method: "POST", body: JSON.stringify({ input, output: out, steps }) });
-    expect((await bad([{ command: "gaussian-blur", params: { sigma: -1 } }])).status).toBe(400);
-    expect((await bad([{ command: "nope" }])).status).toBe(400);
-    expect((await bad([])).status).toBe(400);
-    expect((await bad([{ command: "invert" }], input)).status).toBe(400);
-  });
 });
 
 describe("ai", () => {
@@ -196,65 +138,6 @@ describe("ai", () => {
     expect(JSON.stringify(saved)).not.toContain(key);
     const file = join(tmp, "config", "settings.json");
     expect((await stat(file)).mode & 0o777).toBe(0o600);
-  });
-
-  it("turns tool calls into validated steps and sends metadata, not pixels", async () => {
-    aiReply = [
-      { type: "thinking", thinking: "", signature: "sig-1" },
-      { type: "text", text: "Blur to reduce noise, then invert." },
-      { type: "tool_use", id: "t1", name: "gaussian-blur", input: { sigma: 1.5 } },
-      { type: "tool_use", id: "t2", name: "invert", input: {} },
-      { type: "tool_use", id: "t3", name: "gaussian-blur", input: { sigma: -4 } },
-      { type: "tool_use", id: "t4", name: "open_dialog", input: { command: "rotate-left" } },
-      { type: "tool_use", id: "t5", name: "suggest_controls", input: { title: "Clean up", commands: ["gaussian-blur", "nope", "invert"] } },
-    ];
-    const r = await json("/api/ai/chat", "POST", {
-      message: "denoise and invert",
-      context: { image: { name: "cells.tif", dtype: "uint16", width: 64, height: 32, channels: 1, slices: 3, frames: 1 }, steps: [] },
-    });
-    expect(r.status).toBe(200);
-    const reply = await r.json();
-    expect(reply.sessionId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(reply.steps).toEqual([
-      { command: "gaussian-blur", params: { sigma: 1.5 } },
-      { command: "invert", params: {} },
-    ]);
-    expect(reply.skipped).toHaveLength(1);
-    expect(reply.open).toBe("rotate-left");
-    expect(reply.controls).toEqual({ title: "Clean up", commands: ["gaussian-blur", "invert"] });
-    expect(reply.text).toMatch(/Blur/);
-
-    const call = aiCalls.at(-1)!;
-    expect(call.apiKey).toBe("sk-ant-test-0123456789abcdefWXYZ");
-    expect(call.body.model).toBe("claude-sonnet-5-5");
-    expect(call.body.fallbacks).toBe("default");
-    expect(JSON.stringify(call.body.messages)).toContain("64×32, 3 slices");
-    const tools = call.body.tools as { name: string; strict: boolean }[];
-    expect(tools.map((t) => t.name)).toContain("gaussian-blur");
-    expect(tools.every((t) => t.strict)).toBe(true);
-
-    // the next turn replays the history unchanged and answers every tool call first
-    const firstSystem = call.body.system;
-    const firstTools = JSON.stringify(call.body.tools);
-    aiReply = [{ type: "text", text: "Done." }];
-    const r2 = await json("/api/ai/chat", "POST", { sessionId: reply.sessionId, message: "thanks", outcome: "applied" });
-    expect(r2.status).toBe(200);
-    const next = aiCalls.at(-1)!.body;
-    const msgs = next.messages as { role: string; content: { type: string; tool_use_id?: string; content?: string }[] }[];
-    expect(msgs).toHaveLength(3);
-    expect(msgs[0]).toEqual((call.body.messages as unknown[])[0]);
-    expect(msgs[1]).toEqual({ role: "assistant", content: aiReplyFirst() });
-    expect(msgs[2].content.filter((b) => b.type === "tool_result").map((b) => b.tool_use_id)).toEqual(["t1", "t2", "t3", "t4", "t5"]);
-    expect(msgs[2].content[0].content).toMatch(/applied/);
-    expect(next.system).toBe(firstSystem);
-    expect(JSON.stringify(next.tools)).toBe(firstTools);
-
-    // unknown sessions are reported so the client can start over
-    expect((await json("/api/ai/chat", "POST", { sessionId: "gone", message: "hi" })).status).toBe(404);
-  });
-
-  it("rejects empty requests", async () => {
-    expect((await json("/api/ai/chat", "POST", { message: "  " })).status).toBe(400);
   });
 });
 

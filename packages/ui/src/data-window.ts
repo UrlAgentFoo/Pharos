@@ -19,9 +19,10 @@ import type { Artifact, ParamSpec, Params } from "@pharos/contracts";
 import type { Image } from "@pharos/core";
 import type { LocalServer } from "./api.js";
 import { type Loaded, type Mounted, loadView, mountView, releaseView } from "./data-views.js";
+import { thumbnailElement } from "./viewer.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { icon } from "./icons.js";
-import { manifestParamFields, readManifestParams } from "./run-dialog.js";
+import { manifestParamFields, readManifestParams } from "./param-fields.js";
 import type { DataDoc, DataStep } from "./workspace.js";
 
 /** Something that can be applied to the shown data: a recipe (book) or a single ship operation. */
@@ -51,8 +52,6 @@ export interface DataWindowHooks {
   stepSpec(run: string): StepSpec | undefined;
   /** Opens an artifact in a window of its own. */
   openSeparately(doc: DataDoc, artifact: Artifact): void;
-  /** Opens an image in the image editor (with its tools and timeline). */
-  openAsImage(artifact: Artifact, image: Image): void;
   notify(text: string): void;
 }
 
@@ -389,11 +388,18 @@ export class DataWindow {
     }
   }
 
-  /** The image on view, if the window shows one (for "open in the image editor"). */
+  /** The image on view, if the window shows one. */
   shownImage(): { image: Image; artifactId: string } | null {
     const { artifactId } = this.shown();
     const entry = artifactId ? this.loaded.get(artifactId) : undefined;
     return entry && !(entry instanceof Promise) && entry.type === "image" && artifactId ? { image: entry.image, artifactId } : null;
+  }
+
+  /** A small picture of what the window shows, when it shows an image (for the minimised-window shelf). */
+  thumbnail(max: number): HTMLCanvasElement | null {
+    const { artifactId } = this.shown();
+    const entry = artifactId ? this.loaded.get(artifactId) : undefined;
+    return entry && !(entry instanceof Promise) && entry.type === "image" ? thumbnailElement(entry.image, entry.view, max) : null;
   }
 
   /** The artifact on view, once known. */

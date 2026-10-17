@@ -1,7 +1,7 @@
 /**
  * Talks to the local Pharos server when the page was opened by `pharos`
- * (the launch URL carries the token in its #fragment). Without a server the
- * app runs in browser-only mode.
+ * (the launch URL carries the token in its #fragment). Everything Pharos
+ * does goes through it; without one the page can only say how to start it.
  */
 import type { Artifact, AssistantPlan, CaseSummary, Example, Step, BookManifest, BookMatch, CatalogueEntry, CatalogueStats, DataSummary, Job, LibraryIssue, Params, Plan, Resolution, ServerEvent, ShipManifest, StorageReport, SystemStatus, TestResult, WorkspaceInfo } from "@pharos/contracts";
 
@@ -10,7 +10,7 @@ export interface ServerInfo {
   platform: string;
   home: string;
   separator: string;
-  capabilities: { filesystem: boolean; batch: boolean; ai?: boolean; python: { available: boolean; via?: string } };
+  capabilities: { filesystem: boolean; ai?: boolean; python: { available: boolean; via?: string } };
 }
 
 export interface AiConfig {
@@ -18,22 +18,6 @@ export interface AiConfig {
   model: string;
   keySource: "settings" | "environment" | null;
   keyHint?: string;
-}
-
-export interface ChatReply {
-  sessionId: string;
-  text: string;
-  steps: { command: string; params: Record<string, unknown> }[];
-  open?: string;
-  controls?: { title: string; commands: string[] };
-  skipped: string[];
-  model: string;
-}
-
-export interface AiContext {
-  image?: { name?: string; dtype: string; width: number; height: number; channels: number; slices: number; frames: number; unit?: string; pixelWidth?: number };
-  steps?: { command: string; params: unknown; enabled: boolean }[];
-  shortcuts?: { title: string; shortcut: string }[];
 }
 
 export interface DirEntry {
@@ -107,10 +91,6 @@ export class LocalServer {
     });
   }
 
-  async batch(job: { input: string; output: string; steps: { command: string; params: unknown }[] }) {
-    return (await this.json("/api/batch", "POST", job)) as { processed: { file: string; ms: number }[]; failed: { file: string; error: string }[] };
-  }
-
   async aiConfig(): Promise<AiConfig> {
     return (await this.call("/api/ai/config")).json();
   }
@@ -118,11 +98,6 @@ export class LocalServer {
   /** `apiKey: null` removes the saved key. */
   async setAiConfig(update: { model?: string; apiKey?: string | null }): Promise<AiConfig> {
     return (await this.json("/api/ai/config", "PUT", update)) as AiConfig;
-  }
-
-  /** One chat turn. Throws an Error with `status` 404 when the session has expired. */
-  async chat(req: { sessionId?: string; message: string; context: AiContext; outcome?: "applied" | "dismissed" }): Promise<ChatReply> {
-    return (await this.json("/api/ai/chat", "POST", req)) as ChatReply;
   }
 
   // ---------------------------------------------------------- workspaces and artifacts

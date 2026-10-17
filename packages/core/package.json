@@ -1,7 +1,7 @@
 {
   "name": "@pharos/core",
   "version": "0.1.0",
-  "description": "Pharos headless core: image model, TIFF I/O and operations. Runs in browsers and Node.",
+  "description": "Pharos headless core: image model, TIFF I/O, display and parameter checking. Runs in browsers and Node.",
   "type": "module",
   "license": "MIT",
   "main": "./dist/index.js",
@@ -10,12 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./wasm/pharos_kernels.wasm": "./wasm/pharos_kernels.wasm"
+    }
   },
   "files": [
-    "dist",
-    "wasm"
+    "dist"
   ],
   "scripts": {
     "build": "tsc -p ."

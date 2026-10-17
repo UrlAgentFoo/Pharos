@@ -27,6 +27,9 @@ operations) on this machine. Read `README.md` first.
    default, the host user's uid, memory and GPU limits from `requires`. Never
    mount the home folder or the Docker socket into a ship.
 7. **The assistant sees metadata, never pixels** (a `DataSummary`).
+8. **Every tool is a ship.** No built-in image operations: processing runs
+   as ship operations in a data window, offered by that window for the data
+   it shows, and lands in its history.
 
 ## Lanes
 
@@ -49,11 +52,10 @@ runs and is cached, and the catalogue shows its counts.
 packages/contracts   types + JSON Schemas: artifact, ship.yaml, book.yaml, plan, job, API routes, events
 packages/books       loads ships/ and books/, type-checks pipelines, derives accepted formats, resolves books, builds plans
 packages/orchestrator Docker: pulls, locked-down runs, job queue, progress, cache, run records
-packages/core        headless core: image model, TIFF I/O, operations, command registry, tools, timeline
+packages/core        headless core: image model, TIFF I/O, display, parameter checking (no image operations: those are ships)
 packages/catalogue   data inspector, SQLite full-text index, book matching, MCP server (`pharos mcp`)
 packages/ui          browser UI (Vite + plain TypeScript)
 packages/server      local server and `pharos` launcher (published as pharos-lab)
-kernels/             parked Rust/WASM kernels; the built module is checked in, don't add dependants
 ships/<id>/          ship.yaml, optional Dockerfile, test/ per operation
 books/<id>/          book.yaml, GUIDE.md (assistant instructions), example/
 ```

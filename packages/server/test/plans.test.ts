@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Plan } from "@pharos/contracts";
 import { connect } from "@pharos/orchestrator";
 import { type RunningServer, startServer } from "../src/server.js";
-import { WASM_PATH } from "../../core/test/helpers.js";
 
 const HELLO = fileURLToPath(new URL("../../../ships/hello", import.meta.url));
 const TOKEN = "plans-token-0123456789";
@@ -46,7 +45,7 @@ beforeAll(async () => {
   await mkdir(join(tmp, "ui"));
   await writeFile(join(tmp, "ui", "index.html"), "<!doctype html>");
   await writeFile(join(tmp, "cells.csv"), "label\n1\n2\n");
-  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [lib] });
+  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [lib] });
   await send("POST", "/api/workspaces", { name: "w" });
   table = (await (await send("POST", "/api/workspaces/w/artifacts", { path: join(tmp, "cells.csv") })).json()).id;
 });

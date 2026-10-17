@@ -344,44 +344,6 @@ button:disabled {
   cursor: pointer;
 }
 
-/* the search field floats in the bottom-right corner */
-.search-dock {
-  position: fixed;
-  z-index: 480;
-  right: 24px;
-  bottom: 20px;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: min(340px, calc(100vw - 48px));
-  height: 40px;
-  padding: 0 8px 0 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--sheet);
-  box-shadow: var(--shadow);
-  color: var(--faint);
-  font-size: 13px;
-  cursor: text;
-}
-
-.search-dock span {
-  flex: 1;
-  text-align: left;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.search-dock:hover {
-  border-color: var(--ink);
-}
-
-body.overview-mode .search-dock,
-body.has-expanded .search-dock {
-  display: none; /* ⌘K still opens search */
-}
-
 /* the settings dropdown: a switch row */
 .toggle-row {
   display: flex;
@@ -608,9 +570,9 @@ body.overview-mode .desktop {
   z-index: auto; /* lets windows rise above the overview's backdrop */
 }
 
-/* ---- the project notebook (left column) */
+/* ---- the assistant (left column): the project's name, then the conversation */
 
-.notes {
+.assistant {
   position: absolute;
   left: 28px;
   top: 76px;
@@ -620,7 +582,7 @@ body.overview-mode .desktop {
   flex-direction: column;
 }
 
-.notes-title {
+.assistant-title {
   margin: 8px 0 4px;
   font-size: clamp(34px, 3.4vw, 52px);
   line-height: 1.02;
@@ -629,97 +591,147 @@ body.overview-mode .desktop {
   outline: none;
 }
 
-.notes-title.untitled {
+.assistant-title.untitled {
   color: var(--faint);
 }
 
-.notes-title[contenteditable="true"] {
+.assistant-title[contenteditable="true"] {
   color: var(--ink);
   box-shadow: 0 1px 0 var(--line-strong);
 }
 
-.notes-editor {
-  position: relative;
+.assistant-log {
   flex: 1;
   min-height: 80px;
   overflow-y: auto;
   scrollbar-width: thin;
-  padding: 2px 2px 12px;
-  outline: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 2px 12px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.55;
   color: var(--text);
 }
 
-/* the placeholder sits over the empty editor, so the cursor starts where the text will */
-.notes-editor.empty::before {
-  content: attr(data-placeholder);
+.assistant-intro p {
+  margin: 0 0 8px;
+}
+
+/* bottom left: the input that asks the assistant and searches actions and windows */
+.ask-box {
   position: absolute;
-  top: 2px;
-  left: 2px;
-  right: 2px;
-  color: var(--faint);
-  pointer-events: none;
+  left: 20px;
+  bottom: 20px;
+  width: min(316px, calc(24vw + 16px));
+  z-index: 480;
 }
 
-/* citations: [image.step], linked to the window's state at that moment */
-.cite {
-  display: inline-block;
-  margin: 0 1px;
-  padding: 0 4px;
-  border-radius: 3px;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font: 500 12px/1.5 var(--mono);
-  text-decoration: none;
-  cursor: pointer;
-  user-select: all;
-}
-
-.cite:hover {
-  background: var(--accent);
-  color: var(--accent-text, #fff);
-}
-
-.cite-preview {
-  position: fixed;
-  z-index: 950;
-  display: grid;
-  gap: 2px;
-  width: 200px;
-  padding: 8px;
+.ask {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 8px 8px 12px;
   border: 1px solid var(--line-strong);
-  border-radius: 4px;
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.ask:focus-within {
+  border-color: var(--ink);
+}
+
+.ask-icon {
+  display: grid;
+  place-items: center;
+  height: 22px;
+  color: var(--ai);
+}
+
+.ask textarea {
+  flex: 1;
+  min-height: 22px;
+  max-height: 140px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.ask kbd {
+  align-self: center;
+}
+
+.ask-hits {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 6px);
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
   background: var(--sheet);
   box-shadow: var(--shadow);
-  pointer-events: none;
 }
 
-.cite-preview img {
-  width: 100%;
-  height: 110px;
-  margin-bottom: 4px;
-  object-fit: contain;
-  border-radius: 2px;
-  background: #1e1d1b;
+.ask-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
 }
 
-.cite-preview strong {
-  font-size: 12.5px;
+.ask-hit > span {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+
+.ask-hit small {
+  color: var(--muted);
+  font-size: 11.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.cite-preview small {
-  font: 11px var(--mono);
-  color: var(--muted);
+.ask-hit.sel,
+.ask-hit:hover {
+  background: var(--surface);
 }
 
-/* save, open and export, bottom-left */
+.ask-hit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ask-hint {
+  margin: 4px 8px 2px;
+  color: var(--faint);
+  font: 10.5px var(--mono);
+}
+
+body.overview-mode .ask-box,
+body.has-expanded .ask-box {
+  display: none; /* ⌘K still focuses it once the overview closes */
+}
+
+/* bottom right: save, open and clear the project */
 .project-bar {
   position: absolute;
-  left: 20px;
+  right: 20px;
   bottom: 20px;
   display: flex;
   gap: 6px;
@@ -732,75 +744,6 @@ body.overview-mode .desktop {
 
 .project-bar .tb-text:hover {
   border-color: var(--ink);
-}
-
-/* ---- referencing windows in the notes: marching ants, then solid once added */
-
-/* while writing: a quiet dashed outline on the window under the pointer */
-body.noting .win:hover::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border-radius: inherit;
-  pointer-events: none;
-  box-shadow: inset 0 0 0 2px var(--line-strong);
-}
-
-/* just cited: marching ants until you type a space */
-body.noting .win.noted::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  border-radius: inherit;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, var(--ink) 50%, transparent 0) repeat-x top left / 12px 2px,
-    linear-gradient(90deg, var(--ink) 50%, transparent 0) repeat-x bottom left / 12px 2px,
-    linear-gradient(0deg, var(--ink) 50%, transparent 0) repeat-y top left / 2px 12px,
-    linear-gradient(0deg, var(--ink) 50%, transparent 0) repeat-y top right / 2px 12px;
-  animation: ants 0.9s linear infinite;
-}
-
-@keyframes ants {
-  to {
-    background-position: 12px 0, -12px 100%, 0 -12px, 100% 12px;
-  }
-}
-
-.win-cite-hint {
-  position: absolute;
-  top: 12px;
-  left: 50%;
-  z-index: 4;
-  transform: translateX(-50%);
-  display: none;
-  padding: 6px 11px;
-  border-radius: 3px;
-  background: rgba(30, 29, 27, 0.75);
-  color: #f3f0eb;
-  font: 500 10.5px/1 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  pointer-events: none;
-}
-
-body.noting .win:hover .win-cite-hint {
-  display: block;
-}
-
-body.noting .win.noted .win-cite-hint {
-  display: none;
-}
-
-/* the "cite" cursor only where a click cites: the image and empty space */
-body.noting .win-title,
-body.noting .win-body canvas,
-body.noting .ctl-drawer,
-body.noting .win-history {
-  cursor: copy;
 }
 
 /* ---- welcome */
@@ -1993,7 +1936,7 @@ body.overview-mode .win.ov-dim {
 }
 
 body.overview-mode .shelf,
-body.overview-mode .notes,
+body.overview-mode .assistant,
 body.overview-mode .project-bar {
   display: none;
 }
@@ -2203,79 +2146,6 @@ body.overview-mode .project-bar {
   font-size: 12px;
 }
 
-/* ---- assistant chat */
-
-.chat {
-  position: fixed;
-  z-index: 600;
-  right: 24px;
-  top: 64px;
-  bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  width: min(380px, calc(100vw - 32px));
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--sheet);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  animation: chat-in 0.2s ease-out;
-}
-
-@keyframes chat-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-}
-
-.chat-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 8px 10px 14px;
-  border-bottom: 1px solid var(--line);
-  font: 500 11px/1 var(--mono);
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.chat-head strong {
-  font-weight: 500;
-}
-
-.chat-mark {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--ai);
-  color: #fff;
-}
-
-.chat-log {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-}
-
-.chat-intro p {
-  margin: 0 0 6px;
-}
-
-.chat-intro p strong {
-  display: block;
-  margin-bottom: 4px;
-  font-family: var(--serif);
-  font-size: 26px;
-  font-weight: 400;
-  line-height: 1.1;
-}
-
 .chat-warn {
   padding: 8px 10px;
   border-left: 2px solid var(--warn-line);
@@ -2350,96 +2220,6 @@ body.overview-mode .project-bar {
 
 .chat-card .btn {
   justify-self: start;
-}
-
-.chat-steps {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.chat-steps li {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.chat-steps small {
-  color: var(--muted);
-}
-
-.chat-controls h4 {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font: 500 10.5px/1.4 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--ai);
-}
-
-.chat-cmds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 12.5px;
-}
-
-.chat-cmds span {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.chat-input {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  margin: 0 12px;
-  padding: 8px 8px 8px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 3px;
-  background: var(--surface);
-}
-
-.chat-input:focus-within {
-  border-color: var(--ink);
-}
-
-.chat-input textarea {
-  flex: 1;
-  border: 0;
-  outline: 0;
-  resize: none;
-  background: none;
-  font: inherit;
-  line-height: 1.4;
-  max-height: 140px;
-}
-
-.chat-send {
-  display: grid;
-  place-items: center;
-  flex: none;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: 3px;
-  background: var(--ink);
-  color: var(--paper);
-  cursor: pointer;
-}
-
-.chat-foot {
-  margin: 6px 14px 10px;
-  color: var(--faint);
-  font-size: 11px;
-  text-align: center;
 }
 
 .spinner {
@@ -2654,7 +2434,7 @@ ol.recipe li .icon {
 /* ---- narrow windows */
 
 @media (max-width: 1100px) {
-  .notes {
+  .assistant {
     display: none;
   }
 }
@@ -2662,83 +2442,15 @@ ol.recipe li .icon {
 @media (max-width: 760px) {
   .brand span:last-child,
   .tb-text span,
-  .search-dock span,
-  .search-dock kbd {
+  .ask kbd {
     display: none;
   }
   .topbar {
     padding: 0 12px;
   }
-  .search-dock {
-    width: 44px;
-    padding: 0;
-    justify-content: center;
-  }
   .tl-text span {
     display: none;
   }
-}
-
-/* ---- plugins dialog */
-
-.plugin {
-  margin: 4px 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  background: var(--surface);
-}
-
-.plugin header {
-  display: grid;
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.plugin header small {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.plugin-menu {
-  margin: 10px 12px 2px;
-  font: 10px/1.4 var(--mono);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--faint);
-}
-
-.plugin-cmd {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 12px;
-  cursor: pointer;
-}
-
-.plugin-cmd span {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-}
-
-.plugin-cmd small {
-  color: var(--muted);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.plugin-cmd input {
-  accent-color: var(--ink);
-}
-
-.plugin-soon {
-  border-style: dashed;
-}
-
-.plugin-soon p {
-  margin: 10px 12px;
 }
 
 /* ---- canvas tools (shared by every window, like ImageJ's toolbar), atop each Controls drawer */
@@ -3187,20 +2899,10 @@ dialog.side::backdrop {
   background: var(--sheet);
 }
 
-/* ---- ships: status chip, jobs panel, run and storage dialogs */
-.sys-status .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.sys-status[data-tone="ok"] .dot {
-  background: #3d8b5a;
-}
-
-.sys-status[data-tone="warn"] .dot {
-  background: var(--warn-line);
+/* ---- ships: status, jobs panel, run and storage dialogs */
+/* the Ships button only stands out when something needs attention (no Docker, low disk) */
+.sys-status[data-tone="warn"] {
+  color: var(--warn-text);
 }
 
 .jobs-btn .badge {
@@ -3211,12 +2913,6 @@ dialog.side::backdrop {
   color: #fff;
   font: 600 11px/16px var(--mono);
   text-align: center;
-}
-
-.chat.jobs {
-  right: auto;
-  left: 24px;
-  bottom: 72px; /* stop above the project bar (Save, Open, Export, Clear) */
 }
 
 .jobs-mark {
@@ -3502,10 +3198,6 @@ dialog.side::backdrop {
   color: var(--danger);
 }
 
-.chat.plan-panel {
-  width: min(420px, calc(100vw - 32px));
-}
-
 .plan-mark {
   background: var(--ink);
 }
@@ -3683,45 +3375,6 @@ dialog.side::backdrop {
   font-style: italic;
 }
 
-.samples-line {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-/* ---- library tabs */
-.lib-tabs {
-  display: flex;
-  gap: 2px;
-  margin: -4px 0 12px;
-  border-bottom: 1px solid var(--line);
-}
-
-.lib-tabs button {
-  padding: 8px 12px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: none;
-  color: var(--muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.lib-tabs button[aria-selected="true"] {
-  border-bottom-color: var(--ink);
-  color: var(--ink);
-}
-
-.ship-ops {
-  margin: 0;
-  padding-left: 16px;
-  font-size: 12px;
-}
-
-.ship-ops small {
-  color: var(--muted);
-}
-
 /* ---- data windows: a dataset, its history of processes, and the result on view */
 .data-win .win-kind {
   display: inline-flex;
@@ -3779,6 +3432,15 @@ dialog.side::backdrop {
   background: var(--sheet);
   font: 11px var(--mono);
   color: var(--muted);
+}
+
+.dv-contrast {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .dv-sliders:empty {

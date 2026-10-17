@@ -7,20 +7,7 @@ import { homedir, platform } from "node:os";
 import { basename, extname, isAbsolute, join, normalize, resolve, sep } from "node:path";
 import { Library, type TrustLookup, resolveBook } from "@pharos/books";
 import type { Step } from "@pharos/contracts";
-import { type Kernels, findCommand, loadKernels, parseParams, readTiff, runSteps, writeTiff } from "@pharos/core";
-import {
-  AiError,
-  type AiClientFactory,
-  ChatStore,
-  type ChatRequest,
-  configDir,
-  configView,
-  defaultClientFactory,
-  loadSettings,
-  chatTurn,
-  saveSettings,
-  updateSettings,
-} from "./ai.js";
+import { AiError, type AiClientFactory, configDir, configView, defaultClientFactory, loadSettings, saveSettings, updateSettings } from "./ai.js";
 import { SECURITY_HEADERS, isAllowedHost, isAllowedOrigin, newToken, tokenMatches } from "./security.js";
 import { CatalogueHolder } from "./catalogue.js";
 import { Orchestration, OrchestrationError, TrustStore } from "./orchestration.js";
@@ -37,8 +24,6 @@ export interface ServerOptions {
   port?: number;
   /** Directory with the built UI (index.html + assets). */
   uiDir: string;
-  /** Path to pharos_kernels.wasm. */
-  wasmPath: string;
   /** Fixed token, for tests. A random one is generated otherwise. */
   token?: string;
   /** Where settings (including a saved API key) live. Defaults to ~/.config/pharos. */
@@ -80,7 +65,6 @@ const MIME: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
-  ".wasm": "application/wasm",
 };
 
 /** Content types for artifact downloads, by format. */
@@ -97,17 +81,13 @@ export function defaultDataDir(): string {
   return process.env.PHAROS_HOME ?? join(homedir(), "Pharos");
 }
 
-const TIFF_EXT = new Set([".tif", ".tiff"]);
 const MAX_JSON_BODY = 1 << 20;
 const MAX_FILE_BODY = 4 * 1024 ** 3;
 
 export async function startServer(opts: ServerOptions): Promise<RunningServer> {
   const token = opts.token ?? newToken();
-  const wasm = await readFile(opts.wasmPath);
-  const kernels = await loadKernels(wasm);
   const settingsDir = opts.configDir ?? configDir();
   const makeClient = opts.aiClient ?? defaultClientFactory;
-  const chats = new ChatStore();
   const dataDir = opts.dataDir ?? defaultDataDir();
   const workspaces = new WorkspaceStore(dataDir);
   const trust = await TrustStore.load(dataDir);
@@ -141,7 +121,6 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return api(req, res, url);
     }
     if (req.method !== "GET" && req.method !== "HEAD") throw new HttpError(405, "method not allowed");
-    if (url.pathname === "/kernels.wasm") return sendBytes(res, wasm, MIME[".wasm"]);
     return serveStatic(res, url.pathname);
   }
 
@@ -156,7 +135,7 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
           platform: platform(),
           home: homedir(),
           separator: sep,
-          capabilities: { filesystem: true, batch: true, ai: true, python: detectPython() },
+          capabilities: { filesystem: true, ai: true, python: detectPython() },
         });
       case "GET /api/fs/list": {
         const dir = requirePath(url.searchParams.get("path") ?? homedir());
@@ -195,27 +174,12 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
         });
         return sendJson(res, 200, { path: file, bytes: body.length });
       }
-      case "POST /api/batch": {
-        const job = await readJson<BatchRequest>(req);
-        return sendJson(res, 200, await runBatch(kernels, job));
-      }
       case "GET /api/ai/config":
         return sendJson(res, 200, configView(await loadSettings(settingsDir)));
       case "PUT /api/ai/config": {
         const next = updateSettings(await loadSettings(settingsDir), await readJson(req));
         await saveSettings(settingsDir, next);
         return sendJson(res, 200, configView(next));
-      }
-      case "POST /api/ai/chat": {
-        const body = await readJson<ChatRequest>(req);
-        const settings = await loadSettings(settingsDir);
-        let client;
-        try {
-          client = makeClient(settings.apiKey);
-        } catch {
-          throw new HttpError(400, "No API key configured. Add one in Settings.");
-        }
-        return sendJson(res, 200, await chatTurn(client, chats, settings.model, body));
       }
       case "GET /api/workspaces":
         return sendJson(res, 200, await workspaces.list());
@@ -522,57 +486,6 @@ class LibraryHolder {
     clearTimeout(this.timer);
     for (const w of this.watchers) w.close();
   }
-}
-
-// ---------------------------------------------------------------- batch
-
-export interface BatchRequest {
-  input: string;
-  output: string;
-  /** The steps to run on every image, e.g. a timeline's recipe. */
-  steps: { command: string; params?: unknown }[];
-}
-
-export interface BatchResult {
-  processed: { file: string; output: string; ms: number }[];
-  failed: { file: string; error: string }[];
-}
-
-/** Applies one operation to every TIFF in `input`, writing results to `output`. */
-export async function runBatch(kernels: Kernels, job: BatchRequest): Promise<BatchResult> {
-  const input = requirePath(job.input);
-  const output = requirePath(job.output);
-  if (resolve(input) === resolve(output)) throw new HttpError(400, "output folder must differ from input folder");
-  if (!Array.isArray(job.steps) || job.steps.length === 0) throw new HttpError(400, "steps must be a non-empty list");
-  // validate the whole recipe before touching any file
-  for (const s of job.steps) {
-    const cmd = findCommand(s?.command);
-    if (!cmd) throw new HttpError(400, `unknown command ${String(s?.command)}`);
-    try {
-      parseParams(cmd, s.params);
-    } catch (e) {
-      throw new HttpError(400, e instanceof Error ? e.message : String(e));
-    }
-  }
-  const files = (await readdir(input).catch(() => {
-    throw new HttpError(404, `cannot read folder ${input}`);
-  })).filter((f) => TIFF_EXT.has(extname(f).toLowerCase()));
-  await mkdir(output, { recursive: true });
-
-  const result: BatchResult = { processed: [], failed: [] };
-  for (const f of files.sort()) {
-    const t0 = performance.now();
-    try {
-      const img = await readTiff(await readFile(join(input, f)), f);
-      const out = join(output, basename(f));
-      await writeFile(out, writeTiff(runSteps(img, job.steps, { kernels })));
-      result.processed.push({ file: f, output: out, ms: Math.round(performance.now() - t0) });
-    } catch (e) {
-      if (e instanceof HttpError) throw e;
-      result.failed.push({ file: f, error: e instanceof Error ? e.message : String(e) });
-    }
-  }
-  return result;
 }
 
 // ---------------------------------------------------------------- helpers

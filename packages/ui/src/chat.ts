@@ -1,152 +1,231 @@
 /**
- * The assistant chat: a floating panel where the model answers questions,
- * proposes steps (applied only when the user says so) and suggests a small
- * control panel for the task at hand, which is pinned to that image's
- * Controls drawer so it stays with the image it was made for.
+ * The assistant, in the left column: the project's name, then the
+ * conversation. You say what you want to find out about the active window's
+ * data; the assistant picks a recipe (book) that fits and proposes its steps
+ * in that window's history, and nothing runs until you approve them there.
+ *
+ * Its input sits in the bottom-left corner and doubles as search: as you
+ * type, matching actions and windows show above it (arrows pick one, Enter
+ * runs it); Enter with nothing picked sends the text to the assistant.
  */
-import { getCommand } from "@pharos/core";
-import type { ChatReply } from "./api.js";
 import { escapeHtml } from "./dialogs.js";
 import { icon } from "./icons.js";
+import { formatShortcut } from "./keys.js";
 
-export interface ChatHooks {
-  /** null when the assistant can be used; otherwise why not. */
-  unavailable(): string | null;
-  send(req: { sessionId?: string; message: string; outcome?: "applied" | "dismissed" }): Promise<ChatReply>;
-  applySteps(steps: ChatReply["steps"]): Promise<void>;
-  openCommand(id: string): void;
-  openSettings(): void;
-  hasImage(): boolean;
-  /** Adds a suggested panel to the active image's Controls; returns that image's name. */
-  pinControls(controls: NonNullable<ChatReply["controls"]>): string | null;
+/** What the assistant made of a request: its message, and the window it proposed steps in, if it did. */
+export interface AskReply {
+  text: string;
+  proposed?: { window: string; steps: number; title: string };
 }
 
-type Message =
-  | { role: "user"; text: string }
-  | { role: "assistant"; reply: ChatReply; applied: boolean; pinnedTo: string | null }
-  | { role: "note"; text: string; error?: boolean };
+/** Something the input's search can run: an action or a window. */
+export interface SearchHit {
+  icon: string;
+  title: string;
+  subtitle: string;
+  shortcut?: string;
+  enabled: boolean;
+  run(): void;
+}
 
-const STARTERS = ["Suggest controls for this image", "Reduce the noise in this stack", "How do I count nuclei?", "What does Gaussian blur do?"];
+export interface AssistantHooks {
+  /** null when the assistant can be used; otherwise why not. */
+  unavailable(): string | null;
+  /** The name of the window the assistant would work on, or null when none is open. */
+  target(): string | null;
+  ask(message: string): Promise<AskReply>;
+  /** Actions and windows matching `query`, best first. */
+  search(query: string): SearchHit[];
+  openSettings(): void;
+  /** The project was renamed. */
+  renamed(): void;
+}
 
-export class Chat {
-  readonly el: HTMLElement;
+type Message = { role: "user"; text: string } | { role: "assistant"; reply: AskReply } | { role: "note"; text: string; error?: boolean };
+
+const UNTITLED = "Untitled project";
+const STARTERS = ["Count the nuclei and measure them", "Track the cells over time", "Reduce the noise and find the objects", "Make a video of this"];
+
+export class Assistant {
   private readonly log: HTMLElement;
+  private readonly title: HTMLElement;
+  private readonly status: HTMLElement;
   private readonly input: HTMLTextAreaElement;
+  private readonly hits: HTMLElement;
   private messages: Message[] = [];
-  private sessionId: string | undefined;
   private busy = false;
+  private name = UNTITLED;
+  private found: SearchHit[] = [];
+  /** The search hit Enter runs; -1 sends the text to the assistant instead. */
+  private sel = -1;
 
-  constructor(private readonly hooks: ChatHooks) {
-    this.el = document.createElement("aside");
-    this.el.className = "chat";
-    this.el.hidden = true;
-    this.el.setAttribute("aria-label", "Assistant");
-    this.el.innerHTML = `
-      <header class="chat-head">
-        <span class="chat-mark">${icon("sparkle", 16)}</span><strong>Assistant</strong>
-        <span class="spacer"></span>
-        <button class="icon-btn" data-chat="new" title="New conversation" aria-label="New conversation">${icon("new", 17)}</button>
-        <button class="icon-btn" data-chat="close" title="Close (Esc)" aria-label="Close">${icon("close", 16)}</button>
-      </header>
-      <div class="chat-log" aria-live="polite"></div>
-      <form class="chat-input">
-        <textarea rows="1" placeholder="Ask, or describe what you want to do…" aria-label="Message"></textarea>
-        <button class="chat-send" title="Send (Enter)" aria-label="Send">${icon("send", 16)}</button>
-      </form>
-      <p class="chat-foot">Sees image size, type and steps, never pixels. Nothing runs until you apply it.</p>`;
-    document.body.append(this.el);
-    this.log = this.el.querySelector(".chat-log")!;
-    this.input = this.el.querySelector("textarea")!;
+  constructor(
+    column: HTMLElement,
+    private readonly box: HTMLElement,
+    private readonly hooks: AssistantHooks,
+  ) {
+    column.innerHTML = `
+      <p class="eyebrow assistant-status"></p>
+      <h1 class="display assistant-title" tabindex="0" title="Click to rename the project" spellcheck="false"></h1>
+      <div class="assistant-log" aria-live="polite"></div>`;
+    this.log = column.querySelector(".assistant-log")!;
+    this.title = column.querySelector(".assistant-title")!;
+    this.status = column.querySelector(".assistant-status")!;
+    box.innerHTML = `
+      <div class="ask-hits" role="listbox" hidden></div>
+      <form class="ask">
+        <span class="ask-icon">${icon("sparkle", 15)}</span>
+        <textarea rows="1" placeholder="Ask, or search actions and windows" aria-label="Ask the assistant or search"></textarea>
+        <kbd>${formatShortcut("Mod+K")}</kbd>
+      </form>`;
+    this.input = box.querySelector("textarea")!;
+    this.hits = box.querySelector(".ask-hits")!;
+    this.renderTitle();
 
-    this.el.querySelector(".chat-head")!.addEventListener("click", (e) => {
-      const what = (e.target as HTMLElement).closest<HTMLElement>("[data-chat]")?.dataset.chat;
-      if (what === "close") this.close();
-      if (what === "new") this.reset();
+    // click the title to rename; Enter or leaving the field keeps the name
+    this.title.addEventListener("click", () => this.editTitle());
+    this.title.addEventListener("keydown", (e) => {
+      if (this.title.isContentEditable) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          this.title.blur();
+        }
+        if (e.key === "Escape") {
+          this.title.textContent = this.name;
+          this.title.blur();
+        }
+      } else if (e.key === "Enter") this.editTitle();
     });
-    this.el.querySelector("form")!.addEventListener("submit", (e) => {
+    this.title.addEventListener("blur", () => {
+      if (!this.title.isContentEditable) return;
+      this.title.contentEditable = "false";
+      this.name = (this.title.textContent ?? "").replace(/\.$/, "").trim() || UNTITLED;
+      this.renderTitle();
+      this.hooks.renamed();
+    });
+
+    box.querySelector("form")!.addEventListener("submit", (e) => {
       e.preventDefault();
-      void this.send(this.input.value);
+      this.enter();
     });
     this.input.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
-        void this.send(this.input.value);
+        this.enter();
+      } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (!this.found.length) return;
+        e.preventDefault();
+        const n = this.found.length;
+        this.sel = e.key === "ArrowDown" ? Math.min(n - 1, this.sel + 1) : Math.max(-1, this.sel - 1);
+        this.renderHits();
+      } else if (e.key === "Escape") {
+        if (this.input.value) this.clearInput();
+        else this.input.blur();
       }
-      if (e.key === "Escape") this.close();
     });
     this.input.addEventListener("input", () => {
       this.input.style.height = "auto";
       this.input.style.height = `${Math.min(140, this.input.scrollHeight)}px`;
+      this.sel = -1;
+      this.search();
     });
+    this.input.addEventListener("blur", () => setTimeout(() => (this.hits.hidden = true), 150));
+    this.input.addEventListener("focus", () => this.search());
     this.render();
   }
 
-  get isOpen() {
-    return !this.el.hidden;
+  get projectName() {
+    return this.name;
   }
 
-  /** Opens the panel; with a message, sends it straight away. */
-  open(message?: string) {
-    this.el.hidden = false;
-    this.render();
+  setProjectName(name: string) {
+    this.name = name || UNTITLED;
+    this.renderTitle();
+  }
+
+  setStatus(text: string) {
+    this.status.textContent = text;
+  }
+
+  /** Puts the cursor in the input, optionally with a request to send straight away. */
+  focus(message?: string) {
     if (message) void this.send(message);
     else this.input.focus();
   }
 
-  close() {
-    if (!this.isOpen) return;
-    this.el.hidden = true;
-  }
-
-  toggle() {
-    if (this.isOpen) this.close();
-    else this.open();
-  }
-
-  private reset() {
+  /** Clears the conversation. */
+  reset() {
     this.messages = [];
-    this.sessionId = undefined;
     this.render();
-    this.input.focus();
+  }
+
+  /** Re-renders the intro, which names the active window. */
+  refresh() {
+    if (!this.messages.length) this.render();
+  }
+
+  private enter() {
+    const hit = this.found[this.sel];
+    if (hit) {
+      if (!hit.enabled) return;
+      this.clearInput();
+      this.input.blur();
+      hit.run();
+      return;
+    }
+    void this.send(this.input.value);
+  }
+
+  private clearInput() {
+    this.input.value = "";
+    this.input.style.height = "auto";
+    this.sel = -1;
+    this.search();
+  }
+
+  private search() {
+    const q = this.input.value.trim();
+    this.found = q && !this.busy ? this.hooks.search(q).slice(0, 7) : [];
+    this.renderHits();
+  }
+
+  private renderHits() {
+    this.hits.hidden = !this.found.length;
+    this.hits.innerHTML = this.found
+      .map(
+        (h, i) => `<button type="button" class="ask-hit${i === this.sel ? " sel" : ""}" data-hit="${i}" role="option" aria-selected="${i === this.sel}" ${h.enabled ? "" : "disabled"}>
+          ${icon(h.icon, 15)}<span><span>${escapeHtml(h.title)}</span><small>${escapeHtml(h.subtitle)}</small></span>${h.shortcut ? `<kbd>${formatShortcut(h.shortcut)}</kbd>` : ""}</button>`,
+      )
+      .join("") + (this.found.length ? `<p class="ask-hint">${this.sel < 0 ? "Enter asks the assistant · ↑↓ picks an action" : "Enter runs it · ↑ back to asking"}</p>` : "");
+    this.hits.querySelectorAll<HTMLButtonElement>("[data-hit]").forEach((b) =>
+      b.addEventListener("mousedown", (e) => {
+        e.preventDefault(); // keep the input focused until the action runs
+        this.sel = Number(b.dataset.hit);
+        this.enter();
+      }),
+    );
   }
 
   private async send(text: string) {
     const message = text.trim();
     if (!message || this.busy) return;
-    const why = this.hooks.unavailable();
+    this.clearInput();
+    const why = this.hooks.unavailable() ?? (this.hooks.target() ? null : "Open your data first (Add data, or an example): the assistant works on the active window.");
+    this.messages.push({ role: "user", text: message });
     if (why) {
       this.messages.push({ role: "note", text: why, error: true });
       this.render();
       return;
     }
-    this.input.value = "";
-    this.input.style.height = "auto";
-    // tell the model what happened to its last suggestions
-    const last = [...this.messages].reverse().find((m) => m.role === "assistant");
-    const hadSuggestions = last?.role === "assistant" && (last.reply.steps.length || last.reply.controls || last.reply.open);
-    // pinned controls count as taken up: the user now has them on their image
-    const outcome = hadSuggestions ? (last.applied || last.pinnedTo ? "applied" : "dismissed") : undefined;
-    this.messages.push({ role: "user", text: message });
     this.busy = true;
     this.render();
     try {
-      let reply: ChatReply;
-      try {
-        reply = await this.hooks.send({ sessionId: this.sessionId, message, outcome });
-      } catch (e) {
-        if ((e as { status?: number }).status !== 404) throw e;
-        this.messages.splice(this.messages.length - 1, 0, { role: "note", text: "The previous conversation expired, so this starts a new one." });
-        reply = await this.hooks.send({ message });
-      }
-      this.sessionId = reply.sessionId;
-      const pinnedTo = reply.controls ? this.hooks.pinControls(reply.controls) : null;
-      this.messages.push({ role: "assistant", reply, applied: false, pinnedTo });
+      this.messages.push({ role: "assistant", reply: await this.hooks.ask(message) });
     } catch (e) {
       this.messages.push({ role: "note", text: e instanceof Error ? e.message : String(e), error: true });
     } finally {
       this.busy = false;
       this.render();
-      this.input.focus();
     }
   }
 
@@ -155,20 +234,19 @@ export class Chat {
     log.innerHTML = "";
     if (!this.messages.length) {
       const why = this.hooks.unavailable();
+      const target = this.hooks.target();
       log.innerHTML = `
-        <div class="chat-intro">
-          <p><strong>What are you trying to do?</strong></p>
-          <p class="muted">Describe your goal and the assistant suggests steps or builds a small control panel for it.</p>
+        <div class="assistant-intro">
+          <p class="muted">${target ? `Say what you want to find out about <strong>${escapeHtml(target)}</strong>: the assistant picks a recipe and proposes its steps in that window. Nothing runs until you approve.` : "Add your data, then say what you want to find out: the assistant picks a recipe and proposes its steps. Nothing runs until you approve."}</p>
           ${why ? `<p class="chat-warn">${escapeHtml(why)}</p><button class="btn" data-settings>${icon("settings", 16)}<span>Open settings</span></button>` : ""}
-          <div class="chat-starters">${STARTERS.map((s) => `<button class="chip" data-starter="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("")}</div>
+          ${target ? `<div class="chat-starters">${STARTERS.map((s) => `<button class="chip" data-starter="${escapeHtml(s)}">${escapeHtml(s)}</button>`).join("")}</div>` : ""}
         </div>`;
       log.querySelector("[data-settings]")?.addEventListener("click", () => this.hooks.openSettings());
       log.querySelectorAll<HTMLElement>("[data-starter]").forEach((b) => b.addEventListener("click", () => void this.send(b.dataset.starter!)));
     }
     for (const m of this.messages) log.append(this.messageEl(m));
-    if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Thinking…</p></div>`);
+    if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Choosing a recipe…</p></div>`);
     log.scrollTop = log.scrollHeight;
-    (this.el.querySelector(".chat-send") as HTMLButtonElement).disabled = this.busy;
   }
 
   private messageEl(m: Message): HTMLElement {
@@ -193,52 +271,27 @@ export class Chat {
     const { reply } = m;
     el.className = "msg assistant";
     if (reply.text) el.insertAdjacentHTML("beforeend", `<p>${escapeHtml(reply.text).replace(/\n/g, "<br>")}</p>`);
-
-    if (reply.steps.length) {
-      const card = document.createElement("div");
-      card.className = "chat-card";
-      card.innerHTML = `<ol class="chat-steps">${reply.steps
-        .map((s) => {
-          const cmd = getCommand(s.command);
-          const summary = cmd.summary?.(s.params as never);
-          return `<li>${icon(cmd.icon, 16)}<span>${escapeHtml(cmd.title.replace(/…$/, ""))}${summary ? ` <small>${escapeHtml(summary)}</small>` : ""}</span></li>`;
-        })
-        .join("")}</ol>`;
-      const apply = document.createElement("button");
-      apply.className = "btn primary";
-      const label = m.applied ? "Applied" : !this.hooks.hasImage() ? "Open an image first" : `Apply ${reply.steps.length} step${reply.steps.length > 1 ? "s" : ""}`;
-      apply.innerHTML = `${icon("check", 16)}<span>${label}</span>`;
-      apply.disabled = m.applied || !this.hooks.hasImage();
-      apply.addEventListener("click", async () => {
-        await this.hooks.applySteps(reply.steps);
-        m.applied = true;
-        this.render();
-      });
-      card.append(apply);
-      el.append(card);
+    if (reply.proposed) {
+      const p = reply.proposed;
+      el.insertAdjacentHTML(
+        "beforeend",
+        `<div class="chat-card"><p>${icon("script", 15)} <strong>${escapeHtml(p.title)}</strong>: ${p.steps} step${p.steps > 1 ? "s" : ""} proposed in <strong>${escapeHtml(p.window)}</strong>.</p>
+         <p class="small muted">Check them in the window's history, then Approve to run them.</p></div>`,
+      );
     }
-
-    if (reply.controls) {
-      const card = document.createElement("div");
-      card.className = "chat-card chat-controls";
-      card.innerHTML = `<h4>${icon("panel", 15)} ${escapeHtml(reply.controls.title)}</h4>
-        <p class="chat-cmds">${reply.controls.commands.map((id) => `<span>${icon(getCommand(id).icon, 13)}${escapeHtml(getCommand(id).title.replace(/…$/, ""))}</span>`).join("")}</p>
-        <p class="small muted">${m.pinnedTo ? `Added to the Controls of <strong>${escapeHtml(m.pinnedTo)}</strong>.` : "Open an image to pin these controls to it."}</p>`;
-      el.append(card);
-    }
-
-    if (reply.open) {
-      const cmd = getCommand(reply.open);
-      const b = document.createElement("button");
-      b.className = "btn";
-      b.innerHTML = `${icon(cmd.icon, 16)}<span>Open ${escapeHtml(cmd.title.replace(/…$/, ""))}</span>`;
-      b.addEventListener("click", () => {
-        m.applied = true;
-        this.hooks.openCommand(cmd.id);
-      });
-      el.append(b);
-    }
-    if (reply.skipped.length) el.insertAdjacentHTML("beforeend", `<p class="small muted">Ignored ${reply.skipped.length} invalid suggestion(s).</p>`);
     return el;
+  }
+
+  private editTitle() {
+    if (this.title.isContentEditable) return;
+    this.title.contentEditable = "true";
+    this.title.textContent = this.name;
+    this.title.focus();
+    getSelection()?.selectAllChildren(this.title);
+  }
+
+  private renderTitle() {
+    this.title.textContent = `${this.name}.`;
+    this.title.classList.toggle("untitled", this.name === UNTITLED);
   }
 }

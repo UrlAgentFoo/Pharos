@@ -6,7 +6,6 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Job, ServerEvent } from "@pharos/contracts";
 import { connect } from "@pharos/orchestrator";
 import { type RunningServer, startServer } from "../src/server.js";
-import { WASM_PATH } from "../../core/test/helpers.js";
 
 const REPO = fileURLToPath(new URL("../../../", import.meta.url));
 const TOKEN = "jobs-token-0123456789";
@@ -54,7 +53,7 @@ beforeAll(async () => {
   await mkdir(join(tmp, "ui"));
   await writeFile(join(tmp, "ui", "index.html"), "<!doctype html>");
   await writeFile(join(tmp, "cells.csv"), "label,area\n1,12\n2,30\n");
-  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [REPO] });
+  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [REPO] });
 });
 
 afterAll(async () => {

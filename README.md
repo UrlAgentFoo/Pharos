@@ -19,6 +19,11 @@ local app, no dependency hell.
 Users pick books; Pharos fetches only the ships those books need. Nothing runs
 until you approve the plan, and every container step is cached.
 
+**Every tool is a ship.** Even everyday image processing (blur, threshold,
+binary operations, particles, measurements) is the `image-ops` ship: each
+data window offers, in its ⋯ menu, the recipes and ship operations that fit
+the data it shows, and each one lands in that window's history.
+
 **The UI is the product.** Browsing and installing books, downloading ships,
 checking Docker and GPU status, running and cancelling jobs and managing disk
 all happen in the app. The command line is a thin layer over the same server
@@ -31,12 +36,11 @@ API, for authors and automation.
 | `packages/contracts` (`@pharos/contracts`) | Shared types and JSON Schemas: artifacts, `ship.yaml`, `book.yaml`, plans, jobs, the server API and its events. |
 | `packages/books` (`@pharos/books`) | Loads and checks ships and books, type-checks pipelines, resolves books and builds plans. |
 | `packages/orchestrator` (`@pharos/orchestrator`) | Runs ship operations in Docker: downloads, jobs, progress, caching and run records. |
-| `packages/core` (`@pharos/core`) | Headless core: image model, TIFF I/O, operations, the command registry, tools and the timeline. Runs in browsers and Node. |
+| `packages/core` (`@pharos/core`) | Headless core: the image model, TIFF I/O and display (for viewing data in windows), and parameter checking for ship operations. Runs in browsers and Node. |
 | `packages/catalogue` (`@pharos/catalogue`) | Data inspector, full-text catalogue of ships and books, book matching, and the MCP server. |
 | `packages/ui` (`@pharos/ui`) | The browser UI: Vite + TypeScript. |
 | `packages/server` (`pharos-lab`) | The local server and `pharos` launcher: workspaces, library, plans, jobs, the assistant and authoring commands. |
-| `ships/`, `books/` | The ships (`bio-utils`, `cellpose`, `ultrack`, `render`, and `hello` for tests) and books (Segment and measure, Track cells in a time-lapse) in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
-| `kernels/` | Rust pixel kernels compiled to WebAssembly. Parked: the built module is checked in at `packages/core/wasm/`, and nothing new should depend on it. |
+| `ships/`, `books/` | The ships (`image-ops` for everyday image processing, `bio-utils`, `cellpose`, `ultrack`, `space-time-field`, `geff`, `render`, `openfoam`, and `hello` for tests) and books in this repo. Ship images build from each ship's Dockerfile the first time they're needed. |
 
 ## Development
 
@@ -58,8 +62,7 @@ To use the catalogue from Claude Code, Claude Desktop or another MCP client,
 add a stdio server that runs `pharos mcp --library <this repo>`.
 
 The server only listens on `127.0.0.1` and requires the secret token in the
-launch URL. Rebuilding the kernels needs Rust with the
-`wasm32-unknown-unknown` target: `npm run build:wasm`.
+launch URL.
 
 ## Licence
 

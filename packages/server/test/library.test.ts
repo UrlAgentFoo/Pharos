@@ -6,7 +6,6 @@ import { newBook, newShip } from "@pharos/books";
 import { createImage, writeTiff } from "@pharos/core";
 import { runAuthorCommand } from "../src/author.js";
 import { type RunningServer, startServer } from "../src/server.js";
-import { WASM_PATH } from "../../core/test/helpers.js";
 
 const TOKEN = "library-token-0123456789";
 let tmp: string;
@@ -22,7 +21,7 @@ beforeAll(async () => {
   await newBook(lib, "my-book", "my-tool");
   await mkdir(join(tmp, "ui"));
   await writeFile(join(tmp, "ui", "index.html"), "<!doctype html>");
-  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), wasmPath: WASM_PATH, token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [lib] });
+  server = await startServer({ port: 0, uiDir: join(tmp, "ui"), token: TOKEN, configDir: join(tmp, "config"), dataDir: join(tmp, "data"), libraryDirs: [lib] });
 });
 
 afterAll(async () => {

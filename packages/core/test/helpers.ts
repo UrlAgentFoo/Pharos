@@ -1,12 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { type DType, type Image, type Kernels, allocPlane, createImage, loadKernels } from "@pharos/core";
-
-export const WASM_PATH = fileURLToPath(new URL("../wasm/pharos_kernels.wasm", import.meta.url));
-
-export async function testKernels(): Promise<Kernels> {
-  return loadKernels(await readFile(WASM_PATH));
-}
+import { type DType, type Image, allocPlane, createImage } from "@pharos/core";
 
 /** Deterministic PRNG (mulberry32) so test images are reproducible. */
 export function rng(seed: number): () => number {
@@ -40,38 +32,4 @@ export function syntheticImage(dtype: DType, width: number, height: number, slic
     return p;
   });
   return createImage({ dtype, width, height, slices, planes });
-}
-
-/**
- * A particle test image: dark noisy background with bright blobs of several
- * sizes, two that touch, one cut by the left edge, and a ring with a hole.
- */
-export function blobImage(dtype: DType, width = 96, height = 80, seed = 9): Image {
-  const rand = rng(seed);
-  const max = dtype === "uint8" ? 255 : dtype === "uint16" ? 4000 : 1;
-  const blobs: [number, number, number][] = [
-    [20, 18, 6],
-    [48, 20, 9],
-    [62, 22, 7], // touches the previous one
-    [2, 50, 6], // cut by the left edge
-    [30, 58, 3],
-    [80, 60, 5],
-    [56, 64, 2],
-  ];
-  const p = allocPlane(dtype, width * height);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let v = 0.08 + (rand() - 0.5) * 0.06;
-      for (const [cx, cy, r] of blobs) {
-        const d = Math.hypot(x - cx, y - cy);
-        v += 0.8 / (1 + Math.exp((d - r) * 1.5));
-      }
-      // a ring: bright annulus with a dark hole
-      const dr = Math.hypot(x - 76, y - 30);
-      if (dr > 5 && dr < 10) v += 0.7;
-      v = Math.min(1, Math.max(0, v));
-      p[y * width + x] = dtype === "float32" ? v * 3 - 0.5 : Math.round(v * max);
-    }
-  }
-  return createImage({ dtype, width, height, planes: [p], calibration: { pixelWidth: 0.5, pixelHeight: 0.5, unit: "µm" } });
 }
