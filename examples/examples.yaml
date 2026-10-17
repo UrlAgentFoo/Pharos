@@ -2,7 +2,9 @@
 # they'd been dropped in, and suggests a problem statement for the assistant.
 # `run` says how to run it quickly: a book action with parameters small enough to
 # finish in seconds (a short simulated time); `pharos warm` runs them all once, so
-# opening an example later comes straight from the cache. `image` is the card's
+# opening an example later comes straight from the cache. It's also the example's
+# preferred action: its window's Controls list it first, in bold, with these
+# parameters, and the Suggested tab lays it out. `image` is the card's
 # picture (480 × 300; make_images.py draws them).
 # Paths are relative to this folder.
 - id: nuclei-timelapse

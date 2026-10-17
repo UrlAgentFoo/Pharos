@@ -10,10 +10,13 @@
     <header class="topbar" id="toolbar" aria-label="Pharos"></header>
 
     <main class="desktop" id="desktop">
-      <!-- the assistant: the project's name, then the conversation -->
-      <aside class="assistant" id="assistant" aria-label="Assistant"></aside>
-      <!-- bottom left: ask the assistant, or search actions and windows -->
-      <div class="ask-box" id="ask-box"></div>
+      <!-- the left column, full height: the conversation, scrolling under its top, over the input -->
+      <div class="assistant-col">
+        <!-- the assistant: the project's name, then the conversation -->
+        <aside class="assistant" id="assistant" aria-label="Assistant"></aside>
+        <!-- ask the assistant, or search actions and windows; it stays when the conversation is hidden -->
+        <div class="ask-box" id="ask-box"></div>
+      </div>
       <!-- bottom right: the project -->
       <div class="project-bar" id="project-bar">
         <button class="tb-text" data-action="save-project" title="Save the project (windows, their histories and layout) as one .pharos file"></button>

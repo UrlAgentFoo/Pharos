@@ -738,8 +738,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
 
   /**
    * What the Controls offer to run next: on the data itself, every book
-   * action that fits it; after a finished run of a book action, the actions
-   * that one names as `next`.
+   * action that fits it, the one the data came to try first (with its
+   * settings); after a finished run of a book action, the actions that one
+   * names as `next`.
    */
   async nextActions(doc: DataDoc): Promise<NextAction[]> {
     await this.loadShips();
@@ -752,7 +753,12 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
           if (a) out.push(a);
         }
       }
-      return out;
+      const p = doc.prefer;
+      // without an action named, the book's first that fits
+      const i = p ? out.findIndex((a) => a.book.id === p.book && (!p.action || a.action === p.action)) : -1;
+      if (i < 0) return out;
+      const [preferred] = out.splice(i, 1);
+      return [{ ...preferred, values: { ...preferred.values, ...p!.values }, preferred: true }, ...out];
     }
     const step = doc.steps[doc.marker - 1];
     const block = timeBlocks(doc)[blockAt(timeBlocks(doc), doc.marker)];
@@ -867,7 +873,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const names = new Set(this.ws.docs.map((d) => d.name));
     let name = `${doc.name} (fork)`;
     for (let n = 2; names.has(name); n++) name = `${doc.name} (fork ${n})`;
-    return this.ws.restore({ name, workspace: doc.workspace, source: doc.source, steps, marker: steps.length, output: doc.output, ui: { ...doc.ui, results: false } });
+    return this.ws.restore({ name, workspace: doc.workspace, source: doc.source, steps, marker: steps.length, output: doc.output, prefer: doc.prefer, ui: { ...doc.ui, results: false } });
   }
 
   openSeparately(doc: DataDoc, artifact: Artifact) {
@@ -929,7 +935,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const action = bookAction(book, plan.book.action);
     if (!action) throw new Error(`${book.title} has no action "${plan.book.action}"`);
     const doc = this.ws.open(source, plan.workspace);
-    doc.suggestion = { book: { id: book.id, title: book.title }, action: action.name, values: { ...plan.parameters }, rationale: plan.rationale, request };
+    doc.suggestion = { book: { id: book.id, title: book.title }, action: action.name, title: action.title, values: { ...plan.parameters }, rationale: plan.rationale, request };
     doc.ui.controlsTab = "suggested";
     this.ws.activate(doc.id);
     this.ws.touch();
@@ -962,7 +968,9 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
       if (run && a) return { kind: "run", book: { id: book!.id, title: book!.title }, action: a.name, title: a.title, specs: run.sections.flatMap((sec) => sec.params), values: run.values, first: block.first };
     }
     const next = (await this.nextActions(doc))[0];
-    return next ? { kind: "next", book: next.book, action: next.action, title: next.title, specs: next.sections.flatMap((sec) => sec.params), values: next.values } : null;
+    // the settings the data came with win over the layout's, as a suggestion's do
+    const chosen = next?.preferred ? doc.prefer?.values : undefined;
+    return next ? { kind: "next", book: next.book, action: next.action, title: next.title, specs: next.sections.flatMap((sec) => sec.params), values: next.values, ...(chosen ? { chosen } : {}) } : null;
   }
 
   /** Runs the Suggested tab's action with its values: a re-run of the run on view, or a new run. */

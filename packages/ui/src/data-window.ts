@@ -66,6 +66,8 @@ export interface NextAction extends RunControls {
   action: string;
   title: string;
   summary?: string;
+  /** The action the data came to try (an example's): listed first, in bold. */
+  preferred?: boolean;
 }
 
 export interface StepSpec {
@@ -643,7 +645,7 @@ export class DataWindow {
   /**
    * Actions to run from the Controls: each laid out by its book's design (its sections that fit
    * this data, with their notes), its defaults filled in, and one button named for what it does.
-   * With several, the first is open and the rest fold away.
+   * Each folds away under its title, so the list reads as a menu; the data's own action leads, in bold.
    */
   private nextHtml(list: NextAction[], heading: string): string {
     if (!list.length) return "";
@@ -659,10 +661,9 @@ export class DataWindow {
       return `<form class="dv-next-form">${a.summary ? `<p class="muted small">${escapeHtml(a.summary)}</p>` : ""}${sections}
         <button type="button" class="primary run-btn" data-act="next" data-next="${i}" title="${escapeHtml(a.title)}"><span>${escapeHtml(a.title)}</span>${icon("arrow-right", 14)}</button></form>`;
     };
-    const items = list.map((a, i) =>
-      list.length === 1
-        ? `<p class="dv-next-title">${escapeHtml(a.title)} <small>${escapeHtml(a.book.title)}</small></p>${one(a, i)}`
-        : `<details class="dv-more dv-next-item"${i === 0 ? " open" : ""}><summary class="ctl-sec-title">${icon("chevron-right", 12)}${escapeHtml(a.title)} <small>${escapeHtml(a.book.title)}</small></summary>${one(a, i)}</details>`,
+    const items = list.map(
+      (a, i) =>
+        `<details class="dv-more dv-next-item${a.preferred ? " preferred" : ""}"><summary class="ctl-sec-title">${icon("chevron-right", 12)}<span>${escapeHtml(a.title)} <small>${escapeHtml(a.book.title)}</small></span></summary>${one(a, i)}</details>`,
     );
     return `<section class="ctl-sec dv-next"><p class="ctl-sec-title">${escapeHtml(heading)}</p>${items.join("")}</section>`;
   }

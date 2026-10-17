@@ -56,9 +56,12 @@ export class WindowSummary {
   private runsOpen = new Set<string>();
   private place = "";
   private html = "";
+  private topHtml = "";
 
+  /** `top` takes the window's name and data, which stay put; `el` the rest, which scrolls. */
   constructor(
     private readonly el: HTMLElement,
+    private readonly top: HTMLElement,
     private readonly hooks: SummaryHooks,
   ) {
     el.addEventListener("click", (e) => {
@@ -97,10 +100,19 @@ export class WindowSummary {
   /** Redraws from what's known, e.g. as a download moves on. */
   render() {
     const doc = this.doc;
+    const top = doc ? this.topOf(doc) : "";
+    if (top !== this.topHtml) this.top.innerHTML = this.topHtml = top;
     const html = doc ? this.windowHtml(doc) : "";
     if (html === this.html) return; // no flicker, and focus stays put
     this.html = html;
     this.el.innerHTML = html;
+  }
+
+  /** "Window · 2 of 2", its name, and its data in one line. */
+  private topOf(doc: DataDoc): string {
+    return `<p class="eyebrow">${escapeHtml(this.place)}</p>
+      <h2 class="display ws-title">${escapeHtml(doc.name)}</h2>
+      <p class="ws-meta">${escapeHtml(this.dataLine(doc, this.fit(doc)?.summary))}</p>`;
   }
 
   private load() {
@@ -136,12 +148,9 @@ export class WindowSummary {
   private windowHtml(doc: DataDoc): string {
     if (!this.library) this.load();
     const fit = this.fit(doc);
-    const head = `<header class="ws-top"><p class="eyebrow">${escapeHtml(this.place)}</p>
-      <h2 class="display ws-title">${escapeHtml(doc.name)}</h2>
-      <p class="ws-meta">${escapeHtml(this.dataLine(doc, fit?.summary))}</p></header>`;
-    if (!this.hooks.server()) return `${head}<p class="muted small">Books and ships show here once Pharos's local server is running.</p>`;
+    if (!this.hooks.server()) return `<p class="muted small">Books and ships show here once Pharos's local server is running.</p>`;
     const lib = this.library;
-    if (!lib || (!doc.steps.length && !fit)) return `${head}<p class="muted small">Reading what this window needs…</p>`;
+    if (!lib || (!doc.steps.length && !fit)) return `<p class="muted small">Reading what this window needs…</p>`;
 
     // the books and ships its history runs; with no history yet, the books that fit and theirs
     const used = new Map<string, Set<string>>();
@@ -179,7 +188,7 @@ export class WindowSummary {
     const shipsHtml = ships.size
       ? `<section><p class="ws-head"><span class="eyebrow">Ships</span><small>${ready === ships.size ? "all ready" : `${ready} of ${ships.size} ready`}</small></p><ul class="ws-list">${shipRows.join("")}</ul></section>`
       : "";
-    return `${head}${runLog(doc, this.runsOpen.has(doc.id))}${booksHtml}${shipsHtml}`;
+    return `${runLog(doc, this.runsOpen.has(doc.id))}${booksHtml}${shipsHtml}`;
   }
 
   /** Ready, downloading, or what's left to download. */

@@ -19,6 +19,7 @@ export interface ProjectDoc {
   marker: number;
   output?: string;
   rationale?: string;
+  prefer?: DataDoc["prefer"];
   ui: DataDoc["ui"];
   minimized: boolean;
   rect: { x: number; y: number; w: number; h: number } | null;

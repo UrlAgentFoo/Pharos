@@ -258,12 +258,17 @@ function updateEnabled() {
 
 // ------------------------------------------------------------ the desktop around the windows
 
+/** Where the assistant column ends, or 0 while it's hidden (narrow screens, or no window on screen). */
+function columnRight(): number {
+  const column = $("assistant");
+  return getComputedStyle(column).display !== "none" ? column.getBoundingClientRect().right : 0;
+}
+
 /** Space taken by the toolbar, the assistant column and the bottom bar, which windows avoid. */
 function insets() {
   const tb = $("toolbar").getBoundingClientRect();
-  const column = $("assistant");
   // windows open beside the assistant column when it is shown (wide screens)
-  const left = getComputedStyle(column).display !== "none" ? column.getBoundingClientRect().right + 32 : 0;
+  const left = columnRight() ? columnRight() + 32 : 0;
   return { top: Math.max(16, tb.bottom + 14), left: Math.max(24, left), right: 24, bottom: 76 };
 }
 
@@ -366,6 +371,7 @@ function gatherProject(): ProjectFile {
       marker: d.marker,
       output: d.output,
       rationale: d.rationale,
+      prefer: d.prefer,
       ui: d.ui,
       minimized: place?.minimized ?? false,
       rect: place?.rect ?? null,
@@ -417,7 +423,7 @@ async function restoreProject(project: ProjectFile) {
       missing.push(pd.name);
       continue;
     }
-    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps: pd.steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, ui: pd.ui });
+    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps: pd.steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, ui: pd.ui });
     windows.sync();
     windows.restorePlacement(doc.id, pd.rect, pd.minimized);
     void processes.reattach(doc);
@@ -659,11 +665,12 @@ async function ask(text: string, history: ChatTurn[]): Promise<AskReply> {
   if (r.plan.book) {
     const target = await processes.suggest(r.plan, shown, text);
     void s.cancelPlan(r.plan.id).catch(() => {}); // the server's copy isn't needed: it runs from the Controls
-    return { text: r.plan.rationale ?? r.message, suggested: { window: target.name, title: r.plan.title } };
+    const sug = target.suggestion;
+    return { text: r.plan.rationale ?? r.message, suggested: { window: target.name, windowId: target.id, title: sug?.title ?? r.plan.title, book: sug?.book.title ?? "" } };
   }
   const target = await processes.fromPlan(r.plan, shown);
   const steps = r.plan.steps.length;
-  return { text: r.plan.rationale ?? r.message, proposed: { window: target.name, steps, title: r.plan.title } };
+  return { text: r.plan.rationale ?? r.message, proposed: { window: target.name, windowId: target.id, steps, title: r.plan.title } };
 }
 
 function aiUnavailable(): string | null {
@@ -678,12 +685,14 @@ function aiUnavailable(): string | null {
 /**
  * Once data is in the workspace, each item opens in its own window; with a
  * question (an example's, and the assistant set up) the assistant proposes a plan.
+ * An example's own action (`prefer`) leads its window's Controls.
  */
-async function dataFlow(workspace: string, artifacts: Artifact[], text = "") {
+async function dataFlow(workspace: string, artifacts: Artifact[], text = "", prefer?: DataDoc["prefer"]) {
   if (!server || !artifacts.length) return;
   for (const a of artifacts) {
     const fresh = !ws.docs.some((d) => d.source.id === a.id && d.workspace === workspace);
     const doc = ws.open(a, workspace);
+    if (prefer) doc.prefer = prefer;
     // a window new to this data opens with its book's opening action (an OpenFOAM case: its 3D model)
     if (fresh) void processes.openWith(doc).catch((e: unknown) => notify(e instanceof Error ? e.message : String(e)));
   }
@@ -737,7 +746,7 @@ async function loadExample(s: LocalServer, e: Example) {
   const workspace = currentWorkspace();
   const added = await run(`Loading ${e.title}`, () => s.loadExample(e.id, workspace));
   if (!added) return;
-  await dataFlow(workspace, added, e.prompt);
+  await dataFlow(workspace, added, e.prompt, e.run && { book: e.run.book, action: e.run.action, values: e.run.params });
 }
 
 async function showExamples(s: LocalServer) {
@@ -890,14 +899,28 @@ const assistant = new Assistant($("assistant"), $("ask-box"), {
     updateDesk();
     scheduleAutosave();
   },
+  show: (id, place) => {
+    const doc = ws.get(id);
+    if (!doc) return notify("That window has been closed.");
+    if (place === "suggested") {
+      doc.ui.controls = true;
+      doc.ui.controlsTab = "suggested";
+    }
+    windows.restore(id); // forward and active, out of the minimised stack if it was there
+    ws.touch();
+  },
 });
 
 // the active window, atop the left column in the project's place (its name is top right)
+// its name and data stay at the column's top; what it needs scrolls with the conversation, above it
+const summaryTop = document.createElement("div");
+summaryTop.className = "window-top";
+$("assistant").querySelector(".assistant-head")!.append(summaryTop);
 const summaryEl = document.createElement("section");
 summaryEl.className = "window-summary";
 summaryEl.setAttribute("aria-label", "The active window");
-$("assistant").insertBefore(summaryEl, $("assistant").querySelector(".assistant-log"));
-const windowSummary = new WindowSummary(summaryEl, {
+assistant.scroller.prepend(summaryEl);
+const windowSummary = new WindowSummary(summaryEl, summaryTop, {
   server: () => server,
   pulls: () => pulls,
   formatTitle,
@@ -955,9 +978,11 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     stepSpec: (r) => processes.stepSpec(r),
   },
   insets,
+  // below the top bar, beside the assistant column, which stays in view
   expandArea: () => {
     const top = $("toolbar").getBoundingClientRect().bottom;
-    return { x: 0, y: top, w: innerWidth, h: innerHeight - top };
+    const left = columnRight();
+    return { x: left, y: top, w: innerWidth - left, h: innerHeight - top };
   },
 });
 

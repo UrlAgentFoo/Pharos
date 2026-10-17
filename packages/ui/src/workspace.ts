@@ -55,7 +55,9 @@ export interface DataDoc {
    * it waits in the Controls' Suggested tab, not in the history, until it's
    * run or dismissed.
    */
-  suggestion?: { book: { id: string; title: string }; action: string; values: Params; rationale?: string; request?: string };
+  suggestion?: { book: { id: string; title: string }; action: string; title?: string; values: Params; rationale?: string; request?: string };
+  /** The book action the data came to try (an example's `run`): first in the Controls, in bold, with these settings. */
+  prefer?: { book: string; action?: string; values?: Params };
   /** Side panel open, history line full or slim, the Controls' results section open, and which Controls tab shows. */
   ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested" };
 }

@@ -1,6 +1,7 @@
 /**
- * The assistant, in the left column: a chat panel whose top is the active
- * window (or, with none active, the project's name), then the conversation.
+ * The assistant, in the left column: a chat panel whose top, which stays put,
+ * is the active window's name (or, with none active, the project's), then
+ * what the window needs and the conversation, which scroll under it.
  * Say hello, ask about the data, or say what you want to find out: the
  * assistant answers, and when asked to do something picks a book that fits
  * and proposes its steps in that window's history, where nothing runs until
@@ -18,9 +19,10 @@ import { formatShortcut } from "./keys.js";
 /** What the assistant made of a request: its message, and the window it proposed steps in, if it did. */
 export interface AskReply {
   text: string;
-  proposed?: { window: string; steps: number; title: string };
-  /** A book action it suggests, waiting in that window's Controls (Suggested tab). */
-  suggested?: { window: string; title: string };
+  /** Steps it proposed in a window's history, waiting for Approve. */
+  proposed?: { window: string; windowId: string; steps: number; title: string };
+  /** A book action it set up in a window's Controls (Suggested tab), waiting to be run. */
+  suggested?: { window: string; windowId: string; title: string; book: string };
 }
 
 /** Something the input's search can run: an action or a window. */
@@ -44,6 +46,8 @@ export interface AssistantHooks {
   search(query: string): SearchHit[];
   /** The project was renamed. */
   renamed(): void;
+  /** Brings a window forward, showing what the assistant left there: its Controls' Suggested tab, or its history. */
+  show(windowId: string, place: "suggested" | "history"): void;
 }
 
 type Message = { role: "user"; text: string } | { role: "assistant"; reply: AskReply } | { role: "note"; text: string; error?: boolean };
@@ -54,7 +58,8 @@ const ASK = "Ask Pharos";
 
 export class Assistant {
   private readonly log: HTMLElement;
-  private readonly column: HTMLElement;
+  /** What scrolls: the window's summary (put in by its owner) and the conversation. */
+  readonly scroller: HTMLElement;
   private readonly title: HTMLElement;
   private readonly status: HTMLElement;
   private readonly input: HTMLTextAreaElement;
@@ -72,10 +77,12 @@ export class Assistant {
     private readonly hooks: AssistantHooks,
   ) {
     column.innerHTML = `
-      <p class="eyebrow assistant-status"></p>
-      <h1 class="display assistant-title" tabindex="0" title="Click to name the project" spellcheck="false"></h1>
-      <div class="assistant-log" aria-live="polite"></div>`;
-    this.column = column;
+      <header class="assistant-head">
+        <p class="eyebrow assistant-status"></p>
+        <h1 class="display assistant-title" tabindex="0" title="Click to name the project" spellcheck="false"></h1>
+      </header>
+      <div class="assistant-scroll"><div class="assistant-log" aria-live="polite"></div></div>`;
+    this.scroller = column.querySelector(".assistant-scroll")!;
     this.log = column.querySelector(".assistant-log")!;
     this.title = column.querySelector(".assistant-title")!;
     this.status = column.querySelector(".assistant-status")!;
@@ -108,6 +115,12 @@ export class Assistant {
       this.name = (this.title.textContent ?? "").replace(/\.$/, "").trim() || UNTITLED;
       this.renderTitle();
       this.hooks.renamed();
+    });
+
+    // a reply's "Show in Controls" or "Show the steps"
+    this.log.addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-show]");
+      if (b) this.hooks.show(b.dataset.show!, b.dataset.place === "history" ? "history" : "suggested");
     });
 
     box.querySelector("form")!.addEventListener("submit", (e) => {
@@ -245,8 +258,8 @@ export class Assistant {
     if (why) log.innerHTML = `<div class="assistant-intro"><p class="chat-warn">${escapeHtml(why)}</p></div>`;
     for (const m of this.messages) log.append(this.messageEl(m));
     if (this.busy) log.insertAdjacentHTML("beforeend", `<div class="msg assistant"><p class="chat-wait"><span class="spinner"></span> Thinking…</p></div>`);
-    // the panel scrolls as one, the window's summary at its top: keep the latest message in view
-    if (this.messages.length || this.busy) this.column.scrollTop = this.column.scrollHeight;
+    // the window's summary scrolls with the conversation, above it: keep the latest message in view
+    if (this.messages.length || this.busy) this.scroller.scrollTop = this.scroller.scrollHeight;
   }
 
   private messageEl(m: Message): HTMLElement {
@@ -264,20 +277,21 @@ export class Assistant {
     const { reply } = m;
     el.className = "msg assistant";
     if (reply.text) el.insertAdjacentHTML("beforeend", `<p>${escapeHtml(reply.text).replace(/\n/g, "<br>")}</p>`);
+    // what it left in a window, in two lines: what, then where it waits, with a way there
     if (reply.proposed) {
       const p = reply.proposed;
       el.insertAdjacentHTML(
         "beforeend",
-        `<div class="chat-card"><p>${icon("script", 15)} <strong>${escapeHtml(p.title)}</strong>: ${p.steps} step${p.steps > 1 ? "s" : ""} proposed in <strong>${escapeHtml(p.window)}</strong>.</p>
-         <p class="small muted">Check them in the window's history, then Approve to run them.</p></div>`,
+        `<div class="chat-card"><p class="chat-card-title">${icon("script", 14)}<strong>${escapeHtml(p.title)}</strong></p>
+         <p class="chat-card-note">${p.steps} step${p.steps > 1 ? "s" : ""} waiting for your approval in ${escapeHtml(p.window)}. <button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="history">Show the steps</button></p></div>`,
       );
     }
     if (reply.suggested) {
       const p = reply.suggested;
       el.insertAdjacentHTML(
         "beforeend",
-        `<div class="chat-card"><p>${icon("sparkle", 15)} <strong>${escapeHtml(p.title)}</strong>: suggested in <strong>${escapeHtml(p.window)}</strong>'s Controls.</p>
-         <p class="small muted">Check its settings there, then run it. Nothing runs until you do.</p></div>`,
+        `<div class="chat-card"><p class="chat-card-title">${icon("sparkle", 14)}<span><strong>${escapeHtml(p.title)}</strong> <small>${escapeHtml(p.book)}</small></span></p>
+         <p class="chat-card-note">Ready to run in ${escapeHtml(p.window)}. <button type="button" class="link-btn" data-show="${escapeHtml(p.windowId)}" data-place="suggested">Show in Controls</button></p></div>`,
       );
     }
     return el;

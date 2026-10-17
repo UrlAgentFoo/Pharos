@@ -593,24 +593,55 @@ body.overview-mode .desktop {
 
 /* ---- the assistant (left column): the project's name, then the conversation */
 
-/* a chat panel straight on the desk: the active window at its top, then the conversation, scrolling
-   as one down to the input (.ask-box, kept apart so search works while the panel is hidden), whose
-   height the bottom padding keeps clear; the side padding lines the text up with the input's */
-.assistant {
+/* the left column, full height: the conversation (.assistant) over the input (.ask-box), kept apart
+   so search works while the conversation is hidden. No background or rules, so it reads as part of
+   the desk and windows' shadows reach under it; no z-index either, so windows stack over the
+   conversation while the input (480) stays above them */
+.assistant-col {
   position: absolute;
-  left: 20px;
-  top: 64px;
-  bottom: 20px;
-  width: min(316px, calc(24vw + 16px));
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(336px, calc(24vw + 36px));
   display: flex;
   flex-direction: column;
-  padding: 12px 8px 64px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  pointer-events: none; /* only its parts take clicks: the welcome screen beside them stays usable */
 }
 
-.assistant > * {
+.assistant-col > * {
+  pointer-events: auto;
+}
+
+/* its top (the window's or the project's name) stays put, level with the project's name top right;
+   the rest scrolls under it. The side padding lines the text up with the input's */
+.assistant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 76px;
+}
+
+.assistant-head {
   flex: none;
+  padding: 0 12px 0 28px;
+}
+
+/* what the window needs and the conversation: fading out under the top and into the input, the scroll
+   bar on the left, away from the windows */
+.assistant-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 12px 12px 28px;
+  overflow-y: auto;
+  direction: rtl; /* puts the scroll bar on the left; its children read left to right again */
+  scrollbar-width: thin;
+  /* a mask: only its alpha counts */
+  mask-image: linear-gradient(to bottom, transparent, black 24px, black calc(100% - 12px), transparent);
+}
+
+.assistant-scroll > * {
+  direction: ltr;
 }
 
 .assistant-title {
@@ -637,7 +668,8 @@ body.overview-mode .desktop {
   box-shadow: 0 1px 0 var(--line-strong);
 }
 
-/* the active window leads the column, in the project's place: its data, what fits it, its books and ships, its history */
+/* the active window leads the column, in the project's place: its name and data stay at the top; its
+   history, books and ships scroll with the conversation */
 .assistant.showing-window .assistant-status,
 .assistant.showing-window .assistant-title {
   display: none;
@@ -653,23 +685,28 @@ body.overview-mode .desktop {
   display: none;
 }
 
-.window-summary p {
+.window-summary p,
+.window-top p {
   margin: 0;
 }
 
-.window-summary .ws-top {
+.window-top {
   display: grid;
   gap: 6px;
 }
 
-.window-summary .ws-title {
+.window-top:empty {
+  display: none;
+}
+
+.window-top .ws-title {
   margin: 4px 0 0;
   font-size: 34px;
   line-height: 1.1;
   overflow-wrap: anywhere;
 }
 
-.window-summary .ws-meta,
+.window-top .ws-meta,
 .window-summary .ws-note {
   color: var(--muted);
   font-size: 14px;
@@ -790,13 +827,12 @@ body.overview-mode .desktop {
   margin: 0 0 8px;
 }
 
-/* bottom left: the input that asks the assistant and searches actions and windows */
+/* the column's foot: the input that asks the assistant and searches actions and windows */
 .ask-box {
-  position: absolute;
-  left: 20px;
-  bottom: 20px;
-  width: min(316px, calc(24vw + 16px));
+  position: relative;
   z-index: 480;
+  margin-top: auto; /* at the bottom, also when the conversation above it is hidden */
+  padding: 8px 0 20px 20px;
 }
 
 .ask {
@@ -829,9 +865,9 @@ body.overview-mode .desktop {
 
 .ask-hits {
   position: absolute;
-  left: 0;
+  left: 20px;
   right: 0;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% - 2px);
   display: grid;
   gap: 1px;
   padding: 6px;
@@ -884,8 +920,8 @@ body.overview-mode .desktop {
   font: 10.5px var(--mono);
 }
 
-body.overview-mode .ask-box,
-body.has-expanded .ask-box {
+/* an expanded window stops at the column (main.ts › expandArea), so only the overview hides it */
+body.overview-mode .assistant-col {
   display: none;
 }
 
@@ -2497,13 +2533,32 @@ body.overview-mode .project-bar {
   color: var(--muted);
 }
 
+/* what the assistant left in a window: what (one line), then where it waits, with a way there */
 .chat-card {
   display: grid;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 2px;
+  padding: 8px 10px;
   border: 1px solid var(--line);
   border-radius: 3px;
   background: var(--surface);
+}
+
+.chat-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chat-card-title .icon {
+  flex: none;
+  align-self: center;
+  color: var(--ai);
+}
+
+.chat-card-title small,
+.chat-card-note {
+  color: var(--muted);
+  font-size: 12px;
 }
 
 .chat-card .btn {
@@ -2827,6 +2882,10 @@ ol.recipe li .icon {
 
 @media (max-width: 1100px) {
   .assistant {
+    display: none;
+  }
+  /* without the column, an expanded window fills the width: the input steps aside */
+  body.has-expanded .ask-box {
     display: none;
   }
 }
@@ -4595,19 +4654,18 @@ dialog.side::backdrop {
   width: 100%;
 }
 
-/* what to run next from the Controls: each action in its book's sections, one button that names it */
-.dv-next-title {
-  margin: 0 0 4px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.dv-next-title small,
+/* what to run next from the Controls: each action folded under its title, in its book's sections, one button that names it */
 .dv-next-item > summary small {
   color: var(--muted);
   font: 400 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   letter-spacing: 0;
   text-transform: none;
+}
+
+/* the action the data came to try (an example's) leads the list */
+.dv-next-item.preferred > summary {
+  color: var(--ink);
+  font-weight: 700;
 }
 
 .dv-next-form {
