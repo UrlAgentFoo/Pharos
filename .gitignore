@@ -7,3 +7,6 @@ packages/server/ui/
 .env.*
 .claude/worktrees/
 for_demo/
+for_demo_2/
+for_demo_3_irl/
+for_demo_4_irl/

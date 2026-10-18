@@ -64,6 +64,25 @@ let lastSaveDir: string | undefined;
 
 const ws = new Workspace();
 
+// Layout › Hide controls closes every window's Controls, and new windows open
+// without them, until Show controls: remembered per browser
+const CONTROLS_KEY = "pharos.controls";
+try {
+  ws.controlsOpen = localStorage.getItem(CONTROLS_KEY) !== "hidden";
+} catch {
+  /* open, the default */
+}
+function setAllControls(open: boolean) {
+  ws.controlsOpen = open;
+  for (const d of ws.docs) d.ui.controls = open;
+  try {
+    localStorage.setItem(CONTROLS_KEY, open ? "shown" : "hidden");
+  } catch {
+    /* not remembered: fine */
+  }
+  ws.touch();
+}
+
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shows a short message at the bottom of the window. */
 function notify(text: string) {
@@ -130,12 +149,17 @@ const ACTIONS: AppAction[] = [
   act({ id: "controls", title: "Show or hide the side panel", menu: ["Window"], icon: "panel", shortcut: "\\", keywords: ["inspector", "panel", "drawer", "settings"], enabled: hasWindow, run: () => ws.active && windows.toggleControls(ws.active.id) }),
   act({ id: "chain", title: "Show the chain…", menu: ["Window"], icon: "link", keywords: ["graph", "nodes", "pipeline", "how", "made", "steps", "flow", "tools", "why", "provenance"], description: "How this window's results were made: each step, what it passed to the next, and why each run ran", enabled: () => !!ws.active?.steps.length, run: () => ws.active && void showChain(ws.active) }),
   act({ id: "fork", title: "Fork from this point", menu: ["Window"], icon: "branch", keywords: ["branch", "copy", "duplicate", "history", "try", "compare"], description: "A new window with the history up to the step on view", enabled: hasWindow, run: () => ws.active && processes.fork(ws.active) }),
+  act({ id: "centre", title: "Bring window into view", menu: ["Window"], icon: "fit", keywords: ["centre", "center", "move", "lost", "stuck", "reset", "position", "window"], description: "Centres it below the top bar, shrunk to fit if it's larger; or double-click any part of a window that isn't a control", enabled: () => !!ws.active && !windows.isMinimized(ws.active.id), run: () => ws.active && windows.centre(ws.active.id) }),
   act({ id: "minimize", title: "Minimise window", menu: ["Window"], icon: "collapse", shortcut: "Mod+Shift+M", keywords: ["hide", "window"], enabled: hasWindow, run: () => ws.active && windows.minimize(ws.active.id) }),
   act({ id: "close", title: "Close window", menu: ["Window"], icon: "close", keywords: ["window"], enabled: hasWindow, run: () => ws.active && closeDoc(ws.active) }),
   act({ id: "layout-stack", title: "Stack windows", menu: ["Layout"], icon: "duplicate", keywords: ["cascade", "arrange", "cards"], enabled: hasWindow, run: () => windows.arrange("stack") }),
   act({ id: "layout-columns", title: "Side by side", menu: ["Layout"], icon: "layout", keywords: ["split", "compare", "arrange", "columns"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("columns") }),
-  act({ id: "layout-grid", title: "Grid", menu: ["Layout"], icon: "overview", keywords: ["split", "tile", "arrange"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("grid") }),
+  act({ id: "layout-grid", title: "Grid", menu: ["Layout"], icon: "overview", keywords: ["split", "tile", "arrange"], description: "Up to 12 windows at a time, 4 across; more go on pages you turn beside Save project", enabled: () => visibleDocs().length > 1, run: () => windows.arrange("grid") }),
+  act({ id: "page-previous", title: "Previous page of windows", menu: ["Layout"], icon: "chevron-left", keywords: ["grid", "page", "back", "windows"], enabled: () => windows.canTurn(-1), run: () => windows.turnPage(-1) }),
+  act({ id: "page-next", title: "Next page of windows", menu: ["Layout"], icon: "chevron-right", keywords: ["grid", "page", "more", "windows"], enabled: () => windows.canTurn(1), run: () => windows.turnPage(1) }),
   act({ id: "layout-focus", title: "Focus on this window", menu: ["Layout"], icon: "expand", keywords: ["maximise", "full", "arrange"], enabled: hasWindow, run: () => windows.arrange("focus") }),
+  act({ id: "controls-hide", title: "Hide controls", menu: ["Layout"], icon: "eye-off", keywords: ["side panel", "drawer", "inspector", "tokens", "suggested", "all windows"], description: "Closes every window's Controls, and new windows open without them; the assistant lays out no suggestions while they're closed", enabled: () => ws.controlsOpen || ws.docs.some((d) => d.ui.controls), run: () => setAllControls(false) }),
+  act({ id: "controls-show", title: "Show controls", menu: ["Layout"], icon: "eye", keywords: ["side panel", "drawer", "inspector", "suggested", "all windows"], description: "Opens every window's Controls, and new windows open with them", enabled: () => !ws.controlsOpen || ws.docs.some((d) => !d.ui.controls), run: () => setAllControls(true) }),
 ];
 const actionById = new Map(ACTIONS.map((a) => [a.id, a]));
 
@@ -144,7 +168,7 @@ async function runAction(id: string, from?: HTMLElement) {
   if (id === "palette") return assistant.focus();
   const anchor = from?.getBoundingClientRect();
   if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "examples", "workspace"]));
-  if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]));
+  if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]) + listHtml(["controls-hide", "controls-show"]));
   if (id === "settings-menu" && anchor) return togglePopover(id, anchor, settingsHtml);
   if (id === "activity" && anchor) return togglePopover(id, anchor, activityHtml, true);
   const a = actionById.get(id);
@@ -282,7 +306,10 @@ function insets() {
   const tb = $("toolbar").getBoundingClientRect();
   // windows open beside the assistant column when it is shown (wide screens)
   const left = columnRight() ? columnRight() + 32 : 0;
-  return { top: Math.max(16, tb.bottom + 14), left: Math.max(24, left), right: 24, bottom: 76 };
+  // windows end above the project buttons, which they'd otherwise cover
+  const bar = $("project-bar").getBoundingClientRect();
+  const bottom = bar.height ? innerHeight - bar.top + 8 : 76;
+  return { top: Math.max(16, tb.bottom + 14), left: Math.max(24, left), right: 24, bottom };
 }
 
 let lastSaved: Date | null = null;
@@ -385,6 +412,7 @@ function gatherProject(): ProjectFile {
       output: d.output,
       rationale: d.rationale,
       prefer: d.prefer,
+      inputs: d.inputs,
       ui: d.ui,
       minimized: place?.minimized ?? false,
       rect: place?.rect ?? null,
@@ -544,7 +572,7 @@ async function restoreProject(project: ProjectFile) {
           }),
         )
       : pd.steps;
-    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, ui: pd.ui });
+    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, inputs: pd.inputs, ui: pd.ui });
     windows.sync();
     windows.restorePlacement(doc.id, pd.rect, pd.minimized);
     void processes.reattach(doc);
@@ -1232,16 +1260,20 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     suggestMenu: (doc, anchor) => void suggestMenu(doc, anchor),
     // the assistant's layout leads while it can be used; the window remembers a choice of tab
     controlsTab: (doc) => doc.ui.controlsTab ?? (aiUnavailable() ? "manual" : "suggested"),
-    renderSuggested: (doc, host) => void suggested.render(doc, host),
+    // the layout costs the assistant tokens: none while the Controls are closed (opening them draws it)
+    renderSuggested: (doc, host) => {
+      if (doc.ui.controls) void suggested.render(doc, host);
+    },
     stepSpec: (r) => processes.stepSpec(r),
   },
   insets,
-  // below the top bar, beside the assistant column, which stays in view
+  // below the top bar, beside the assistant column and above the project buttons, which stay in view
   expandArea: () => {
     const top = $("toolbar").getBoundingClientRect().bottom;
     const left = columnRight();
-    return { x: left, y: top, w: innerWidth - left, h: innerHeight - top };
+    return { x: left, y: top, w: innerWidth - left, h: innerHeight - insets().bottom - top };
   },
+  pager: $("pager"),
 });
 
 const overview = new Overview({

@@ -121,6 +121,11 @@ export function scaledCopy(source: CanvasImageSource, width: number, height: num
 export class Viewer {
   image: Image | null = null;
   view: ViewState | null = null;
+  /**
+   * Draws over the image after it (tracks, say), with the context in the image's pixels: (0, 0) its top
+   * left corner, 1 one image pixel. `zoom` is screen pixels per image pixel, for sizes that stay the same on screen.
+   */
+  overlay: ((ctx: CanvasRenderingContext2D, view: ViewState, zoom: number) => void) | null = null;
 
   private bitmap: HTMLCanvasElement = document.createElement("canvas");
   private readonly ctx: CanvasRenderingContext2D;
@@ -247,6 +252,10 @@ export class Viewer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.imageSmoothingEnabled = view.zoom < 1; // crisp pixels when zoomed in
     ctx.drawImage(this.bitmap, view.offX, view.offY, image.shape.width * view.zoom, image.shape.height * view.zoom);
+    if (this.overlay) {
+      ctx.setTransform(dpr * view.zoom, 0, 0, dpr * view.zoom, dpr * view.offX, dpr * view.offY);
+      this.overlay(ctx, view, view.zoom);
+    }
   }
 
   private onWheel(e: WheelEvent) {

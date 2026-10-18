@@ -74,6 +74,18 @@ function takeToken(): string | null {
   }
 }
 
+/**
+ * How a preview samples a larger image, per axis: how many of the full image's pixels, slices, frames or
+ * channels one step of the preview covers (preview index i is full index i × the step).
+ */
+export interface PreviewSampling {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  c: number;
+}
+
 export class LocalServer {
   private constructor(
     private readonly token: string,
@@ -170,10 +182,12 @@ export class LocalServer {
   }
 
   /** An image or labels artifact as TIFF bytes, for the image viewer; `note` when it's a preview of something larger. */
-  async artifactImage(workspace: string, id: string): Promise<{ data: ArrayBuffer; note?: string }> {
+  /** An image as TIFF, with what a preview of a larger one left out (`note`) and how it samples the full image. */
+  async artifactImage(workspace: string, id: string): Promise<{ data: ArrayBuffer; note?: string; sampling?: PreviewSampling }> {
     const r = await this.call(`${artifactsPath(workspace)}/${id}/image`);
     const note = r.headers.get("x-pharos-preview");
-    return { data: await r.arrayBuffer(), ...(note ? { note: decodeURIComponent(note) } : {}) };
+    const sampling = r.headers.get("x-pharos-preview-sampling");
+    return { data: await r.arrayBuffer(), ...(note ? { note: decodeURIComponent(note) } : {}), ...(sampling ? { sampling: JSON.parse(sampling) as PreviewSampling } : {}) };
   }
 
   async caseSummary(workspace: string, id: string): Promise<CaseSummary> {

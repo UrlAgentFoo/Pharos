@@ -1,11 +1,19 @@
 # Pharos
 
+**An app store for open-source tools, where everything runs locally.**
+
 Pharos - Light House of Alexandria Library.
+
+![The Pharos start screen: drop your data, with examples on a carousel](docs/screenshots/home.png)
 
 A generalised, open-source library of scientific tools in one local app.
 Describe a problem and drop in data; an assistant picks a book, you approve
 it, and it runs on your machine in containers. Every scientific tool, one
 local app, no dependency hell.
+
+![One project, fourteen windows: Hubble galaxies measured, nuclei and 3D cells segmented, stem cells and a zebrafish embryo tracked, a flow simulated, laser scans decimated and a building splatted from photos](docs/screenshots/case-studies.png)
+
+*Real-world case studies in one project, each window with its results in its history.*
 
 ## Ships and books
 

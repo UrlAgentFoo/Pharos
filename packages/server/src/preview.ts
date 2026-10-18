@@ -10,7 +10,7 @@ import { readFile, readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import type { Artifact, CaseSummary } from "@pharos/contracts";
 import { type Image, writeTiff } from "@pharos/core";
-import { ZarrError, readZarrImage } from "./zarr.js";
+import { type PreviewSampling, ZarrError, readZarrImage } from "./zarr.js";
 
 export class PreviewError extends Error {
   constructor(
@@ -27,13 +27,16 @@ export async function imageAsTiff(a: Artifact): Promise<Uint8Array> {
   return (await imagePreview(a)).tiff;
 }
 
-/** An image or labels as TIFF for the window, with a note when it's a preview of something larger (which frames, which pixels). */
-export async function imagePreview(a: Artifact): Promise<{ tiff: Uint8Array; note?: string }> {
+/**
+ * An image or labels as TIFF for the window, with a note when it's a preview of something larger (which frames,
+ * which pixels), and its sampling: how its pixels and frames map to the full image's.
+ */
+export async function imagePreview(a: Artifact): Promise<{ tiff: Uint8Array; note?: string; sampling?: PreviewSampling }> {
   if (a.kind !== "volume" && a.kind !== "labels") throw new PreviewError(415, `${a.kind} data isn't an image`);
   if (a.format === "tiff" || a.format === "ome-tiff") return { tiff: await readFile(a.uri) };
   if (a.format === "ome-zarr") {
-    const { image, note } = await zarrPreview(a.uri, a.name);
-    return { tiff: writeTiff(image), ...(note ? { note } : {}) };
+    const { image, note, sampling } = await zarrPreview(a.uri, a.name);
+    return { tiff: writeTiff(image), sampling, ...(note ? { note } : {}) };
   }
   throw new PreviewError(415, `Pharos can't preview ${a.format} images yet; convert them to OME-Zarr first (bio-utils › convert)`);
 }
@@ -43,7 +46,7 @@ export async function readOmeZarr(dir: string, name?: string): Promise<Image> {
   return (await zarrPreview(dir, name)).image;
 }
 
-async function zarrPreview(dir: string, name?: string): Promise<{ image: Image; note?: string }> {
+async function zarrPreview(dir: string, name?: string): Promise<{ image: Image; note?: string; sampling: PreviewSampling }> {
   try {
     return await readZarrImage(dir, name);
   } catch (e) {

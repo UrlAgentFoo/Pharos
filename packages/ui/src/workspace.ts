@@ -62,8 +62,13 @@ export interface DataDoc {
   suggestion?: { book: { id: string; title: string }; action: string; title?: string; values: Params; rationale?: string; request?: string };
   /** The book action the data came to try (an example's `run`): first in the Controls, in bold, with these settings. */
   prefer?: { book: string; action?: string; values?: Params };
-  /** Side panel open, history line full or slim, the Controls' results section open, and which Controls tab shows. */
-  ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested" };
+  /**
+   * Other data its steps read, by the name their wires give it (`$truth`): a book action's further inputs,
+   * taken from other windows' data (the ground truth to score tracks against, say). `$data` is `source`.
+   */
+  inputs?: Record<string, string>;
+  /** Side panel open, history line full or slim, the Controls' results section open, which Controls tab shows, and its page of Layout › Grid (with more windows than one page holds). */
+  ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested"; page?: number };
 }
 
 let nextDoc = 0;
@@ -73,6 +78,8 @@ export class Workspace {
   private _activeId: string | null = null;
   private lastRef = 0;
   private listeners = new Set<() => void>();
+  /** Whether a new window opens with its Controls (Layout › Hide controls closes them everywhere). */
+  controlsOpen = true;
 
   get docs(): readonly DataDoc[] {
     return this._docs;
@@ -94,7 +101,7 @@ export class Workspace {
       this.activate(open.id);
       return open;
     }
-    return this.add({ kind: "data", id: `d${++nextDoc}`, name: source.name ?? source.id.slice(0, 12), workspace, source, steps: [], marker: 0, ui: { controls: true, history: "full" } });
+    return this.add({ kind: "data", id: `d${++nextDoc}`, name: source.name ?? source.id.slice(0, 12), workspace, source, steps: [], marker: 0, ui: { controls: this.controlsOpen, history: "full" } });
   }
 
   /** Adds a window restored from a project, as it was. */

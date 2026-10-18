@@ -37,8 +37,10 @@ export type Layout = "stack" | "columns" | "grid" | "focus";
 export interface WindowHooks {
   /** Space other floating UI keeps for itself (toolbar), so windows avoid it. */
   insets(): { top: number; right: number; bottom: number; left: number };
-  /** The area an expanded window fills: everything below the top bar. */
+  /** The area an expanded window fills: everything below the top bar and above the project buttons. */
   expandArea(): Rect;
+  /** Where the page buttons go while Layout › Grid has more windows than one page holds. */
+  pager: HTMLElement;
   /** Opens a window's ⋯ menu under `anchor`. */
   dataMenu(doc: DataDoc, anchor: DOMRect): void;
   /** Closes a window, once you've confirmed. */
@@ -51,6 +53,8 @@ const MIN_W = 300;
 const MIN_H = 220;
 /** Where a window can be resized from: the bottom and side edges, and both bottom corners (the top is its title bar). */
 const EDGES = ["s", "e", "w", "se", "sw"] as const;
+/** The most windows a page of Layout › Grid holds: 4 across, 3 down. */
+const PAGE_SIZE = 12;
 
 export class WindowManager {
   private wins = new Map<string, Win>();
@@ -58,6 +62,8 @@ export class WindowManager {
   private overviewOn = false;
   private lastOrder: DataDoc[] = [];
   private readonly shelf: HTMLElement;
+  /** The page of the grid on view, while there's more than one. */
+  private page = 0;
 
   constructor(
     private readonly desktop: HTMLElement,
@@ -67,6 +73,15 @@ export class WindowManager {
     this.shelf = document.createElement("div");
     this.shelf.className = "shelf";
     desktop.append(this.shelf);
+    // built once and updated, so a button keeps the focus as you turn pages from the keyboard
+    hooks.pager.innerHTML = `
+      <button class="icon-btn" data-page="-1" aria-label="Previous page of windows" title="Previous page of windows">${icon("chevron-left", 16)}</button>
+      <span class="pager-text" aria-live="polite"></span>
+      <button class="icon-btn" data-page="1" aria-label="Next page of windows" title="Next page of windows">${icon("chevron-right", 16)}</button>`;
+    hooks.pager.addEventListener("click", (e) => {
+      const b = (e.target as HTMLElement).closest<HTMLElement>("[data-page]");
+      if (b) this.turnPage(b.dataset.page === "1" ? 1 : -1);
+    });
     window.addEventListener("resize", () => {
       for (const w of this.wins.values()) this.place(w, w.zoomedFrom ? this.hooks.expandArea() : this.clampRect(w.rect));
       if (this.overviewOn) this.layoutOverview(this.lastOrder);
@@ -99,13 +114,61 @@ export class WindowManager {
       if (w.minimized && !this.overviewOn) this.restore(active.id);
       if (w.z !== this.topZ) w.z = ++this.topZ;
     }
+    const pages = this.livePages();
+    // the page follows the active window, however it was picked (the overview, a citation, the shelf)
+    if (active?.ui.page !== undefined && pages.includes(active.ui.page)) this.page = active.ui.page;
+    else if (!pages.includes(this.page)) this.page = pages.find((p) => p > this.page) ?? pages.at(-1) ?? 0;
     for (const w of this.wins.values()) {
       w.el.classList.toggle("active", w.doc === active);
       w.el.classList.toggle("minimized", w.minimized);
+      w.el.classList.toggle("off-page", this.offPage(w));
       if (!this.overviewOn) w.el.style.zIndex = String(w.z);
     }
     this.renderShelf();
+    this.renderPager();
     this.markExpanded();
+  }
+
+  // ------------------------------------------------------------ pages of the grid
+
+  /** The grid's pages with a window on show, in order; there are pages to turn while there are two or more. */
+  private livePages(): number[] {
+    const pages = new Set<number>();
+    for (const w of this.wins.values()) if (!w.minimized && w.doc.ui.page !== undefined) pages.add(w.doc.ui.page);
+    return [...pages].sort((a, b) => a - b);
+  }
+
+  /** Whether a window is on a page of the grid other than the one on view (a window opened since shows on every page). */
+  private offPage(w: Win): boolean {
+    const p = w.doc.ui.page;
+    return p !== undefined && p !== this.page && !this.overviewOn && this.livePages().length > 1;
+  }
+
+  /** Whether there's a page of the grid that way. */
+  canTurn(step: 1 | -1): boolean {
+    const pages = this.livePages();
+    return pages.length > 1 && pages[pages.indexOf(this.page) + step] !== undefined;
+  }
+
+  /** Shows the next (1) or previous (-1) page of the grid, its topmost window active. */
+  turnPage(step: 1 | -1) {
+    if (!this.canTurn(step) || this.overviewOn) return;
+    const pages = this.livePages();
+    this.page = pages[pages.indexOf(this.page) + step];
+    const top = [...this.wins.values()].filter((w) => !w.minimized && w.doc.ui.page === this.page).sort((a, b) => b.z - a.z)[0];
+    this.ws.activate(top.doc.id);
+  }
+
+  /** "‹ Page 2 of 3 ›" beside the project buttons, while the grid has more than one page. */
+  private renderPager() {
+    const pages = this.livePages();
+    const el = this.hooks.pager;
+    el.hidden = pages.length < 2 || this.overviewOn;
+    if (el.hidden) return;
+    const k = pages.indexOf(this.page);
+    el.querySelector(".pager-text")!.textContent = `Page ${k + 1} of ${pages.length}`;
+    el.querySelector<HTMLButtonElement>('[data-page="-1"]')!.disabled = k <= 0;
+    el.querySelector<HTMLButtonElement>('[data-page="1"]')!.disabled = k >= pages.length - 1;
   }
 
   /** A window's own view, e.g. to read the image it shows. */
@@ -155,7 +218,7 @@ export class WindowManager {
     const free = this.free();
     const w = Math.min(980, free.w * 0.78);
     const h = Math.min(660, free.h * 0.82);
-    const last = [...this.wins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
+    const last = [...this.wins.values()].filter((x) => !x.minimized && !this.offPage(x)).sort((a, b) => b.z - a.z)[0];
     let x = last ? last.rect.x + 32 : free.x + (free.w - w) / 2;
     let y = last ? last.rect.y + TITLE_H + 6 : free.y + Math.max(0, (free.h - h) / 2);
     if (y + TITLE_H * 3 > free.y + free.h) y = free.y; // ran out of room: start again at the top
@@ -193,10 +256,14 @@ export class WindowManager {
   /**
    * Arranges the visible windows in the free desktop area: a cascading
    * stack, side by side, a grid, or the active window filling the space.
+   * A grid of more than twelve windows goes on pages of twelve.
    */
   arrange(layout: Layout) {
     const visible = this.ws.docs.map((d) => this.wins.get(d.id)!).filter((w) => w && !w.minimized);
     if (!visible.length) return;
+    // every layout starts from one page, minimised windows included
+    for (const w of this.wins.values()) delete w.doc.ui.page;
+    const paged = layout === "grid" && visible.length > PAGE_SIZE;
     const f = this.free();
     const gap = 12;
     const cell = (cols: number, rows: number, i: number) => {
@@ -214,14 +281,21 @@ export class WindowManager {
         const cols = Math.min(visible.length, 3);
         this.place(w, cell(cols, Math.ceil(visible.length / cols), i), true);
       } else if (layout === "grid") {
-        const cols = Math.ceil(Math.sqrt(visible.length));
-        this.place(w, cell(cols, Math.ceil(visible.length / cols), i), true);
+        // each page its own grid, at most 4 × 3
+        const page = Math.floor(i / PAGE_SIZE);
+        const onPage = Math.min(PAGE_SIZE, visible.length - page * PAGE_SIZE);
+        const cols = Math.ceil(Math.sqrt(onPage));
+        if (paged) w.doc.ui.page = page;
+        this.place(w, cell(cols, Math.ceil(onPage / cols), i % PAGE_SIZE), true);
       } else if (w.doc === this.ws.active) {
         w.zoomedFrom = { ...w.rect };
         this.place(w, this.hooks.expandArea(), true);
       }
       this.setZoomButton(w);
     });
+    // on view: the active window's page; the pages are kept with the project
+    this.page = this.ws.active?.ui.page ?? 0;
+    this.ws.touch();
   }
 
   minimize(id: string) {
@@ -230,8 +304,9 @@ export class WindowManager {
     // its card shows what you were looking at, so take the picture while it's still on screen
     w.thumb = w.view.thumbnail(120);
     w.minimized = true;
-    // hand focus to the topmost visible window, or to none if this was the last one
-    const next = [...this.wins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z)[0];
+    // hand focus to the topmost visible window (on this page of the grid if one's left there), or to none if this was the last one
+    const rest = [...this.wins.values()].filter((x) => !x.minimized).sort((a, b) => b.z - a.z);
+    const next = rest.find((x) => !this.offPage(x)) ?? rest[0];
     if (next) this.ws.activate(next.doc.id);
     else this.ws.deactivate();
     this.sync();
@@ -287,6 +362,9 @@ export class WindowManager {
     this.overviewOn = true;
     this.lastOrder = order;
     document.body.classList.add("overview-mode");
+    // the overview shows every page
+    for (const w of this.wins.values()) w.el.classList.remove("off-page");
+    this.hooks.pager.hidden = true;
     const n = order.length;
     const out = new Map<string, Rect>();
     if (!n) return out;
@@ -354,13 +432,32 @@ export class WindowManager {
     return { x: i.left, y: i.top, w: innerWidth - i.left - i.right, h: innerHeight - i.top - i.bottom };
   }
 
+  /** How low a window's bottom edge may go: above the project buttons. */
+  private floor(): number {
+    return innerHeight - this.hooks.insets().bottom;
+  }
+
   private clampRect(r: Rect): Rect {
+    // the top bar covers the desktop's top edge, and windows would cover the project buttons at its foot: they stay between
+    const top = this.hooks.expandArea().y;
+    const floor = this.floor();
     const w = Math.min(Math.max(MIN_W, r.w), innerWidth - 16);
-    const h = Math.min(Math.max(MIN_H, r.h), innerHeight - 16);
+    // no taller than the space between, so the title bar and the bottom edge can both be reached
+    const h = Math.min(Math.max(MIN_H, r.h), floor - top);
     // keep the title bar reachable
     const x = Math.min(Math.max(r.x, 8 - w + 120), innerWidth - 120);
-    const y = Math.min(Math.max(r.y, 8), innerHeight - TITLE_H - 8);
+    const y = Math.min(Math.max(r.y, top), floor - h);
     return { x, y, w, h };
+  }
+
+  /** Brings a window back into view: centred on the free desktop, and shrunk to fit it when it's larger. */
+  centre(id: string) {
+    const w = this.wins.get(id);
+    if (!w || w.minimized || w.zoomedFrom || this.overviewOn) return;
+    const f = this.free();
+    const width = Math.min(w.rect.w, f.w);
+    const height = Math.min(w.rect.h, f.h);
+    this.place(w, this.clampRect({ x: f.x + (f.w - width) / 2, y: f.y + (f.h - height) / 2, w: width, h: height }), true);
   }
 
   private place(w: Win, r: Rect, animate = false) {
@@ -419,6 +516,13 @@ export class WindowManager {
     title.addEventListener("dblclick", (e) => {
       if (!this.overviewOn && !(e.target as HTMLElement).closest("button")) this.toggleZoom(id);
     });
+    // double-clicking anywhere else that isn't a control brings a window back, e.g. one whose title bar is out of reach
+    el.addEventListener("dblclick", (e) => {
+      if ((e.target as HTMLElement).closest(".win-title, button, a, input, select, textarea, label, summary, [contenteditable], [role=slider]")) return;
+      // a double-click that selected a word was meant for the text
+      if (getSelection()?.toString().trim()) return;
+      this.centre(id);
+    });
 
     // resize from an edge or a bottom corner: each edge moves only its own side
     for (const grip of el.querySelectorAll<HTMLElement>(".win-resize")) {
@@ -439,7 +543,7 @@ export class WindowManager {
             r.w = Math.max(MIN_W, start.w - dx);
             r.x = start.x + start.w - r.w;
           }
-          if (edge.includes("s")) r.h = Math.max(MIN_H, start.h + dy);
+          if (edge.includes("s")) r.h = Math.min(Math.max(MIN_H, start.h + dy), this.floor() - r.y);
           this.place(w, r);
         };
         const up = () => {

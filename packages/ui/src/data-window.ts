@@ -22,7 +22,7 @@ import type { Artifact, ParamSpec, Params } from "@pharos/contracts";
 import type { Image } from "@pharos/core";
 import type { LocalServer } from "./api.js";
 import { CadEditor, isEditablePart } from "./cad-editor.js";
-import { type Loaded, type Mounted, loadView, mountView, releaseView } from "./data-views.js";
+import { type Loaded, type Mounted, loadTracksView, loadView, mountView, releaseView } from "./data-views.js";
 import { forgetView, holdView, touchView } from "./view-memory.js";
 import { thumbnailElement } from "./viewer.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
@@ -301,7 +301,14 @@ export class DataWindow {
     const key = `${this.doc.id}/${id}`;
     let entry = this.loaded.get(id);
     if (!entry) {
-      entry = this.artifact(id).then((a) => loadView(this.hooks.server()!, this.doc.workspace, a));
+      // tracks are shown over the movie they came from: the window's own data, when that's a movie
+      // (the one already held, if its data has been on view)
+      const movie = this.doc.source.kind === "volume" ? this.doc.source : null;
+      entry = this.artifact(id).then((a) => {
+        if (!movie || a.kind !== "tracks" || a.format !== "csv") return loadView(this.hooks.server()!, this.doc.workspace, a);
+        const held = this.loaded.get(movie.id);
+        return loadTracksView(this.hooks.server()!, this.doc.workspace, a, movie, held && !(held instanceof Promise) && held.type === "image" ? held : undefined);
+      });
       this.loaded.set(id, entry);
     }
     if (entry instanceof Promise) {
