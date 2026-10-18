@@ -1,9 +1,10 @@
 # Cell imaging
 
-Fluorescence microscopy of nuclei or cells. Three actions: `measure` counts
+Fluorescence microscopy of nuclei or cells. Four actions: `measure` counts
 and measures objects in an image or stack; `track` follows them through a
-time-lapse; `score` tracks a light-sheet time-lapse and scores the result
-against ground-truth tracks.
+time-lapse; `track_field` tracks a 3D light-sheet time-lapse without a
+segmentation model; `score` does that and scores the result against
+ground-truth tracks.
 
 ## When to use
 
@@ -15,6 +16,10 @@ against ground-truth tracks.
   the cells", "how fast do they move", "measure each cell over time",
   "lineages", "migration". Works on 2D+t and 3D+t data; the summary must
   show a time axis (`t` in its axes, more than one time point).
+- `track_field`: the user has a 3D light-sheet time-lapse of nuclei (t, z, y,
+  x) and asks for the Space Time Field tracker, or wants tracks without a
+  segmentation: "track with the space-time field", "track this embryo". No
+  ground truth needed.
 - `score`: the user has a 3D time-lapse **and** ground-truth tracks for it
   as a GEFF graph (a `.geff` folder), and wants to see how well tracking
   does: "score my tracks", "evaluate against the ground truth", "Biohub /
@@ -30,7 +35,7 @@ against ground-truth tracks.
 - `track` on a single time point or a z-stack with no time axis: use
   `measure`. Very fast-moving or very dense cells where nuclei overlap from
   frame to frame: tracking will be unreliable; say so.
-- `score` without ground truth (no `.geff`): use `track`. `score` needs t, z,
+- `score` without ground truth (no `.geff`): use `track_field` (or `track`). `score` and `track_field` need t, z,
   y and x, and was tuned on Biohub light-sheet zebrafish data (voxels about
   1.625 × 0.406 × 0.406 µm, nuclei 5-8 µm); elsewhere it may do poorly, say so.
 
@@ -58,7 +63,7 @@ against ground-truth tracks.
 - **min_size** (voxels): leave at 50 unless the images are very small
   (then lower it).
 
-`score`: leave the defaults unless the user asks; they are the tuned
+`track_field` and `score`: leave the defaults unless the user asks; they are the tuned
 configuration. **num_dog** 2 finds small nuclei too (1 for fewer false
 tracks); **temporal_radius** 2 (1 if cells move fast between frames);
 **value_floor** and **lambda_termination** are tuning knobs;
@@ -72,6 +77,7 @@ challenge's 100-frame videos, 0 halves other movies.
 - `track`: a track table (one row per cell per time point, positions in
   pixels), a per-cell measurement table over time, the tracked labels and a
   video of the tracks.
+- `track_field`: the track table and a video of the tracks.
 - `score`: a score table with one row each for the first part (tuning), the
   second part (held out) and the whole movie (`combined` is the challenge's
   score), the track table, and a video of the tracks.

@@ -54,6 +54,28 @@ actions:
       - { id: measure, run: bio-utils.measure, in: { labels: track.labels, image: convert.zarr } }
       - { id: render, run: render.tracks-video, in: { image: convert.zarr, tracks: track.tracks } }
     outputs: { tracks: track.tracks, table: measure.table, video: render.video, labels: track.labels }
+  track_field:
+    title: Track with Space Time Field
+    summary: Tracks every nucleus in a 3D light-sheet time-lapse with the detector-free Space Time Field tracker (no segmentation model; its DoG bands picked per video, its best setting), and makes a video of the tracks.
+    inputs:
+      - name: timelapse
+        description: A 3D fluorescence time-lapse of nuclei (t, z, y, x), e.g. a Biohub light-sheet movie's .zarr.
+        accepts: { kind: volume, axes: tzyx, edam: data_2968 }
+    parameters:
+      - { name: auto_bands, label: Pick bands per video, type: boolean, default: true, description: "A quick prerun decides: an active video (dividing, migrating cells) gets 3 bands, a calm one 1. Turn off to set the bands yourself.", sets: track.auto_bands }
+      - { name: num_dog, label: DoG bands, type: integer, default: 1, min: 1, max: 3, description: "With bands not picked per video: 1 looks for one nucleus size; more also find smaller nuclei (more recall, a few more false tracks).", sets: track.num_dog }
+      - { name: temporal_radius, label: Frames pooled, type: integer, default: 2, min: 0, max: 8, description: "Neighbouring frames on each side pooled into each frame: more ignores flicker but blurs fast cells.", sets: track.temporal_radius }
+      - { name: value_floor, label: Detection floor, type: number, default: 0.0175, min: 0, max: 1, description: "Raise it to drop dim false detections.", sets: track.value_floor }
+      - { name: lambda_termination, label: Track end cost, type: number, default: 0.6, min: 0, description: "Higher keeps tracks whole rather than ending them inside the view.", sets: track.lambda_termination }
+      - { name: channel, label: Channel, type: integer, default: 0, min: 0, max: 16, description: "The channel with the nuclear stain, counting from 0.", sets: [track.channel, video.channel] }
+    controls:
+      - { title: Detection, note: "Raise the floor to drop dim false detections. Bands are picked per video unless you turn that off.", params: [auto_bands, num_dog, value_floor, temporal_radius] }
+      - { title: Linking, params: [lambda_termination] }
+      - { title: Stain, note: "This movie has several channels: pick the one with the nuclear stain.", params: [channel], when: { has: [channels] } }
+    steps:
+      - { id: track, run: space-time-field.track, in: { movie: $timelapse } }
+      - { id: video, run: space-time-field.tracks-video, in: { image: $timelapse, tracks: track.tracks } }
+    outputs: { tracks: track.tracks, video: video.video }
   score:
     title: Score against ground truth
     summary: Tracks nuclei in a 3D light-sheet time-lapse with the detector-free Space Time Field tracker (its DoG bands picked per video, its best setting), scores the tracks against ground-truth tracks (GEFF) with the Biohub challenge's edge-Jaccard metric, and makes a video of the tracks.
