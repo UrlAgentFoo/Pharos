@@ -37,7 +37,7 @@ export interface BundleObject {
 /** The parts of a saved project the bundle reads; the rest (window layout, history details) passes through. */
 interface ProjectLike {
   version?: number;
-  docs?: { workspace: string; source: Artifact; steps?: { status?: string; outputs?: Record<string, string> }[] }[];
+  docs?: { workspace: string; source: Artifact; inputs?: Record<string, string>; steps?: { status?: string; outputs?: Record<string, string> }[] }[];
   objects?: Record<string, BundleObject>;
   [key: string]: unknown;
 }
@@ -364,6 +364,8 @@ export async function exportProject(workspaces: WorkspaceStore, project: Project
   const wanted = new Map<string, { workspace: string; role: BundleObject["role"] }>();
   for (const d of docs) {
     if (d?.source?.id && HASH.test(d.source.id)) wanted.set(d.source.id, { workspace: d.workspace, role: "data" });
+    // and the other data its steps read (the ground truth a run scored against, say)
+    for (const id of Object.values(d?.inputs ?? {})) if (HASH.test(id) && !wanted.has(id)) wanted.set(id, { workspace: d.workspace, role: "data" });
   }
   if (opts.results) {
     for (const d of docs) {
@@ -425,11 +427,12 @@ export async function importProject(workspaces: WorkspaceStore, path: string): P
   const objects = project.objects ?? {};
   const docs = Array.isArray(project.docs) ? project.docs : [];
 
-  // which workspaces want each object: every window that shows it or whose steps made it
+  // which workspaces want each object: every window that shows it, reads it or whose steps made it
   const homes = new Map<string, Set<string>>();
   const want = (id: string, workspace: string) => homes.set(id, (homes.get(id) ?? new Set()).add(workspace));
   for (const d of docs) {
     if (d?.source?.id) want(d.source.id, d.workspace);
+    for (const id of Object.values(d?.inputs ?? {})) want(id, d.workspace);
     for (const s of d.steps ?? []) for (const id of Object.values(s.outputs ?? {})) want(id, d.workspace);
   }
 

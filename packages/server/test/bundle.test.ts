@@ -91,6 +91,18 @@ describe("project bundles", () => {
     expect(opened.missing.sort()).toEqual([folderResult.id, tableResult.id].sort());
   });
 
+  it("carry the other data a window's steps read (its further inputs), as data, results or not", async () => {
+    await writeFile(join(tmp, "truth.csv"), "track_id,t\n1,0\n");
+    const truth = await here.importPath("lab", join(tmp, "truth.csv"));
+    const p = project();
+    Object.assign(p.docs[0], { inputs: { truth: truth.id } });
+    const file = join(tmp, "inputs.pharos");
+    expect(await exportProject(here, p, file, { results: false, overwrite: false })).toMatchObject({ objects: 2, missing: [] });
+    const there = new WorkspaceStore(join(tmp, "inputs-there"));
+    expect(await importProject(there, file)).toMatchObject({ imported: 2 });
+    expect(await there.get("lab", truth.id)).toMatchObject({ id: truth.id, name: truth.name });
+  });
+
   it("replaces a file only when asked, and never leaves a partial one", async () => {
     const file = join(tmp, "once.pharos");
     await exportProject(here, project(), file, { results: false, overwrite: false });

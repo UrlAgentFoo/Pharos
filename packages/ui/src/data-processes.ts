@@ -278,7 +278,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const title = card?.entry.title ?? choice.title;
     const s = this.server;
     const saved = await this.hooks.busy("Saving the book", async () => {
-      const plan = await s.createStepsPlan(doc.workspace, title, { [SOURCE]: doc.source.id }, steps.map((x): Step => ({ id: x.id, run: x.run, in: x.in, with: x.with })));
+      const plan = await s.createStepsPlan(doc.workspace, title, { ...doc.inputs, [SOURCE]: doc.source.id }, steps.map((x): Step => ({ id: x.id, run: x.run, in: x.in, with: x.with })));
       try {
         return await s.saveAsBook(plan.id, {
           id: card?.entry.id ?? slug(title, "-"),
@@ -312,6 +312,47 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     if (!hit) throw new Error(`${what} needs ${kind} data${formats ? ` (${formats.join(", ")})` : ""}, and nothing in this window's history is that yet`);
     used.add(hit.wire);
     return hit.wire;
+  }
+
+  /** Data another open window in the same workspace shows, of `kind` (and one of `formats`), for a further input. */
+  private elsewhere(doc: DataDoc, kind: string, formats: readonly string[] | undefined): Artifact | undefined {
+    return this.ws.docs.find((d) => d !== doc && d.workspace === doc.workspace && d.source.kind === kind && (!formats || formats.includes(d.source.format)))?.source;
+  }
+
+  /** Records data `id` as one of the window's further inputs, under `base` or a name like it that's free, and gives the name. */
+  private inputName(doc: DataDoc, base: string, id: string): string {
+    let name = base === SOURCE ? `${base}_2` : base;
+    for (let n = 2; doc.inputs?.[name] && doc.inputs[name] !== id; n++) name = `${base}_${n}`;
+    doc.inputs = { ...doc.inputs, [name]: id };
+    return name;
+  }
+
+  /**
+   * What `steps` read: the window's data and its further inputs, by name. One it lost (a window saved before
+   * they were kept) is found again in another open window, as the step's book action takes it; a step that
+   * reads one that isn't anywhere is given with why.
+   */
+  private async inputsFor(doc: DataDoc, steps: DataStep[]): Promise<{ inputs: Record<string, string> } | { step: DataStep; error: string }> {
+    const inputs: Record<string, string> = { [SOURCE]: doc.source.id };
+    for (const step of steps) {
+      for (const w of Object.values(step.in)) {
+        if (!w.startsWith("$") || w === `$${SOURCE}`) continue;
+        const name = w.slice(1);
+        let id = doc.inputs?.[name];
+        const book = !id && step.book ? await this.manifest(step.book.id).catch(() => null) : null;
+        const spec = book && bookAction(book, step.book!.action)?.inputs?.find((i) => i.name === name);
+        if (!id && spec) {
+          id = this.elsewhere(doc, spec.accepts.kind, spec.accepts.formats)?.id;
+          if (id) doc.inputs = { ...doc.inputs, [name]: id };
+        }
+        if (!id) {
+          const what = spec ? `${spec.accepts.kind} data${spec.accepts.formats ? ` (${spec.accepts.formats.join(", ")})` : ""}` : `the data it calls ${name}`;
+          return { step, error: `this step also reads ${what}, from another window: open it in its own window, then run this again` };
+        }
+        inputs[name] = id;
+      }
+    }
+    return { inputs };
   }
 
   private uniqueId(doc: DataDoc, base: string): string {
@@ -362,7 +403,17 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     if (!action) throw new Error(`${book.title} has no action "${actionName}"`);
     const used = new Set<string>();
     const inputWire: Record<string, string> = {};
-    for (const input of action.inputs ?? []) inputWire[input.name] = this.pick(doc, input.accepts.kind, input.accepts.formats, used, `"${action.title}"`);
+    for (const input of action.inputs ?? []) {
+      const { kind, formats } = input.accepts;
+      try {
+        inputWire[input.name] = this.pick(doc, kind, formats, used, `"${action.title}"`);
+      } catch (e) {
+        // a further input (the ground truth to score against, say) from another window's data
+        const other = Object.keys(inputWire).length ? this.elsewhere(doc, kind, formats) : undefined;
+        if (!other) throw Object.keys(inputWire).length ? new Error(`"${action.title}" also needs ${kind} data${formats ? ` (${formats.join(", ")})` : ""}: open it in its own window, then run this again`) : e;
+        inputWire[input.name] = `$${this.inputName(doc, input.name, other.id)}`;
+      }
+    }
     const rename = new Map<string, string>();
     const block = newBlock();
     for (const s of action.steps) {
@@ -411,8 +462,14 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     if (!steps.length) return;
     for (const step of steps) if (step.status !== "done") Object.assign(step, { status: "queued", error: undefined, message: undefined, progress: undefined });
     this.ws.touch();
+    const read = await this.inputsFor(doc, steps);
+    if ("error" in read) {
+      Object.assign(read.step, { status: "failed", error: read.error });
+      this.settle(doc, "failed", read.error);
+      return this.hooks.notify(read.error);
+    }
     const plan = await this.hooks.busy("Checking the steps", () =>
-      s.createStepsPlan(doc.workspace, doc.name, { [SOURCE]: doc.source.id }, steps.map((x): Step => ({ id: x.id, run: x.run, in: x.in, with: x.with }))),
+      s.createStepsPlan(doc.workspace, doc.name, read.inputs, steps.map((x): Step => ({ id: x.id, run: x.run, in: x.in, with: x.with }))),
     );
     if (!plan) return this.settle(doc, "failed", "couldn't check the steps");
     const errors = plan.problems.filter((p) => p.severity === "error");
@@ -930,7 +987,7 @@ export class DataProcesses implements Omit<DataWindowHooks, "server" | "notify" 
     const names = new Set(this.ws.docs.map((d) => d.name));
     let name = `${doc.name} (fork)`;
     for (let n = 2; names.has(name); n++) name = `${doc.name} (fork ${n})`;
-    return this.ws.restore({ name, workspace: doc.workspace, source: doc.source, steps, marker: steps.length, output: doc.output, prefer: doc.prefer, ui: { ...doc.ui, results: false } });
+    return this.ws.restore({ name, workspace: doc.workspace, source: doc.source, steps, marker: steps.length, output: doc.output, prefer: doc.prefer, inputs: doc.inputs, ui: { ...doc.ui, results: false } });
   }
 
   openSeparately(doc: DataDoc, artifact: Artifact) {

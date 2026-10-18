@@ -412,6 +412,7 @@ function gatherProject(): ProjectFile {
       output: d.output,
       rationale: d.rationale,
       prefer: d.prefer,
+      inputs: d.inputs,
       ui: d.ui,
       minimized: place?.minimized ?? false,
       rect: place?.rect ?? null,
@@ -571,7 +572,7 @@ async function restoreProject(project: ProjectFile) {
           }),
         )
       : pd.steps;
-    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, ui: pd.ui });
+    const doc = ws.restore({ name: pd.name, workspace: pd.workspace, source, steps, marker: pd.marker, output: pd.output, rationale: pd.rationale, prefer: pd.prefer, inputs: pd.inputs, ui: pd.ui });
     windows.sync();
     windows.restorePlacement(doc.id, pd.rect, pd.minimized);
     void processes.reattach(doc);

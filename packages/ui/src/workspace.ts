@@ -62,6 +62,11 @@ export interface DataDoc {
   suggestion?: { book: { id: string; title: string }; action: string; title?: string; values: Params; rationale?: string; request?: string };
   /** The book action the data came to try (an example's `run`): first in the Controls, in bold, with these settings. */
   prefer?: { book: string; action?: string; values?: Params };
+  /**
+   * Other data its steps read, by the name their wires give it (`$truth`): a book action's further inputs,
+   * taken from other windows' data (the ground truth to score tracks against, say). `$data` is `source`.
+   */
+  inputs?: Record<string, string>;
   /** Side panel open, history line full or slim, the Controls' results section open, which Controls tab shows, and its page of Layout › Grid (with more windows than one page holds). */
   ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested"; page?: number };
 }

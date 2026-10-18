@@ -24,6 +24,7 @@ export interface ProjectDoc {
   output?: string;
   rationale?: string;
   prefer?: DataDoc["prefer"];
+  inputs?: DataDoc["inputs"];
   ui: DataDoc["ui"];
   minimized: boolean;
   rect: { x: number; y: number; w: number; h: number } | null;
