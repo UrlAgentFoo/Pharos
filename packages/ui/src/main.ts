@@ -64,6 +64,25 @@ let lastSaveDir: string | undefined;
 
 const ws = new Workspace();
 
+// Layout › Hide controls closes every window's Controls, and new windows open
+// without them, until Show controls: remembered per browser
+const CONTROLS_KEY = "pharos.controls";
+try {
+  ws.controlsOpen = localStorage.getItem(CONTROLS_KEY) !== "hidden";
+} catch {
+  /* open, the default */
+}
+function setAllControls(open: boolean) {
+  ws.controlsOpen = open;
+  for (const d of ws.docs) d.ui.controls = open;
+  try {
+    localStorage.setItem(CONTROLS_KEY, open ? "shown" : "hidden");
+  } catch {
+    /* not remembered: fine */
+  }
+  ws.touch();
+}
+
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 /** Shows a short message at the bottom of the window. */
 function notify(text: string) {
@@ -136,6 +155,8 @@ const ACTIONS: AppAction[] = [
   act({ id: "layout-columns", title: "Side by side", menu: ["Layout"], icon: "layout", keywords: ["split", "compare", "arrange", "columns"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("columns") }),
   act({ id: "layout-grid", title: "Grid", menu: ["Layout"], icon: "overview", keywords: ["split", "tile", "arrange"], enabled: () => visibleDocs().length > 1, run: () => windows.arrange("grid") }),
   act({ id: "layout-focus", title: "Focus on this window", menu: ["Layout"], icon: "expand", keywords: ["maximise", "full", "arrange"], enabled: hasWindow, run: () => windows.arrange("focus") }),
+  act({ id: "controls-hide", title: "Hide controls", menu: ["Layout"], icon: "eye-off", keywords: ["side panel", "drawer", "inspector", "tokens", "suggested", "all windows"], description: "Closes every window's Controls, and new windows open without them; the assistant lays out no suggestions while they're closed", enabled: () => ws.controlsOpen || ws.docs.some((d) => d.ui.controls), run: () => setAllControls(false) }),
+  act({ id: "controls-show", title: "Show controls", menu: ["Layout"], icon: "eye", keywords: ["side panel", "drawer", "inspector", "suggested", "all windows"], description: "Opens every window's Controls, and new windows open with them", enabled: () => !ws.controlsOpen || ws.docs.some((d) => !d.ui.controls), run: () => setAllControls(true) }),
 ];
 const actionById = new Map(ACTIONS.map((a) => [a.id, a]));
 
@@ -144,7 +165,7 @@ async function runAction(id: string, from?: HTMLElement) {
   if (id === "palette") return assistant.focus();
   const anchor = from?.getBoundingClientRect();
   if (id === "add-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["add-data", "examples", "workspace"]));
-  if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]));
+  if (id === "layout-menu" && anchor) return togglePopover(id, anchor, () => listHtml(["layout-stack", "layout-columns", "layout-grid", "layout-focus"]) + listHtml(["controls-hide", "controls-show"]));
   if (id === "settings-menu" && anchor) return togglePopover(id, anchor, settingsHtml);
   if (id === "activity" && anchor) return togglePopover(id, anchor, activityHtml, true);
   const a = actionById.get(id);
@@ -1232,7 +1253,10 @@ const windows: WindowManager = new WindowManager($("desktop"), ws, {
     suggestMenu: (doc, anchor) => void suggestMenu(doc, anchor),
     // the assistant's layout leads while it can be used; the window remembers a choice of tab
     controlsTab: (doc) => doc.ui.controlsTab ?? (aiUnavailable() ? "manual" : "suggested"),
-    renderSuggested: (doc, host) => void suggested.render(doc, host),
+    // the layout costs the assistant tokens: none while the Controls are closed (opening them draws it)
+    renderSuggested: (doc, host) => {
+      if (doc.ui.controls) void suggested.render(doc, host);
+    },
     stepSpec: (r) => processes.stepSpec(r),
   },
   insets,

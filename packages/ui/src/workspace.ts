@@ -73,6 +73,8 @@ export class Workspace {
   private _activeId: string | null = null;
   private lastRef = 0;
   private listeners = new Set<() => void>();
+  /** Whether a new window opens with its Controls (Layout › Hide controls closes them everywhere). */
+  controlsOpen = true;
 
   get docs(): readonly DataDoc[] {
     return this._docs;
@@ -94,7 +96,7 @@ export class Workspace {
       this.activate(open.id);
       return open;
     }
-    return this.add({ kind: "data", id: `d${++nextDoc}`, name: source.name ?? source.id.slice(0, 12), workspace, source, steps: [], marker: 0, ui: { controls: true, history: "full" } });
+    return this.add({ kind: "data", id: `d${++nextDoc}`, name: source.name ?? source.id.slice(0, 12), workspace, source, steps: [], marker: 0, ui: { controls: this.controlsOpen, history: "full" } });
   }
 
   /** Adds a window restored from a project, as it was. */
