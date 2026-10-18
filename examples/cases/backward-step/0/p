@@ -1,0 +1,17 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Flow over a backward-facing step: a small 2D case for Pharos (Re = U h / nu = 100 at 1 m/s).
+\*---------------------------------------------------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object p; }
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+
+boundaryField
+{
+    inlet        { type zeroGradient; }
+    outlet       { type fixedValue; value uniform 0; }
+    bottom       { type zeroGradient; }
+    top          { type zeroGradient; }
+    obstacle     { type zeroGradient; }
+    frontAndBack { type empty; }
+}

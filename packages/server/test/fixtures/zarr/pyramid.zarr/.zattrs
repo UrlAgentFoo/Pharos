@@ -1,0 +1,29 @@
+{
+  "multiscales": [
+    {
+      "version": "0.4",
+      "axes": [
+        {
+          "name": "t",
+          "type": "time"
+        },
+        {
+          "name": "y",
+          "type": "space"
+        },
+        {
+          "name": "x",
+          "type": "space"
+        }
+      ],
+      "datasets": [
+        {
+          "path": "0"
+        },
+        {
+          "path": "1"
+        }
+      ]
+    }
+  ]
+}

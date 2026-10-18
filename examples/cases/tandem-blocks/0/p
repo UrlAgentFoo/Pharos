@@ -1,0 +1,17 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  Flow past two blocks in a row: a small 2D case for Pharos (Re = 100 at 1 m/s).
+\*---------------------------------------------------------------------------*/
+FoamFile { version 2.0; format ascii; class volScalarField; object p; }
+
+dimensions      [0 2 -2 0 0 0 0];
+internalField   uniform 0;
+
+boundaryField
+{
+    inlet        { type zeroGradient; }
+    outlet       { type fixedValue; value uniform 0; }
+    bottom       { type symmetryPlane; }
+    top          { type symmetryPlane; }
+    obstacle     { type zeroGradient; }
+    frontAndBack { type empty; }
+}

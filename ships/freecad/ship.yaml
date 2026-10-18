@@ -1,0 +1,82 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: freecad
+version: 0.1.0
+image: pharos/freecad:0.1.0    # built from this folder's Dockerfile (Debian 13: FreeCAD 1.0, OpenCASCADE 7.8)
+summary: Edits STEP parts with FreeCAD - makes them longer or shorter, pushes and pulls faces, resizes or fills holes, rounds edges, takes features off, and scales, mirrors, turns and moves them - and lists a part's faces and holes by number for an editor.
+citation: "The FreeCAD project, FreeCAD: an open-source parametric 3D CAD modeler. https://www.freecad.org"
+license: LGPL-2.0-or-later
+homepage: https://www.freecad.org
+tags: [cad, step, editing, direct-modeling, freecad, opencascade, parts, design, engineering, 3d-printing]
+requires: { memory_gb: 2, network: none }
+# edits follow each other quickly in the editor: one container stays up, with FreeCAD already loaded
+mode: warm
+warm: { start: python3 /opt/pharos/pharos_warm.py serve /opt/pharos/pharos_freecad.py }
+operations:
+  inspect:
+    summary: Reads a part's size, volume and every face (flat, cylinder and so on, with its size, direction and position) and hole (diameter, depth, axis) by number, with a 3D model whose faces carry those numbers, so an editor can show and pick them.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py inspect --part {in.part} --out /out
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    outputs:
+      - { name: faces, kind: table, format: json, path: /out/part.json }
+      - { name: model, kind: mesh, format: ply, path: /out/part.ply }
+    cache: { deterministic: true }
+  stretch:
+    summary: Makes a part longer or shorter along x, y or z by cutting it across and filling the gap with its own cross-section (or taking a slice out), so holes and ends keep their size; cut where the part is the same all along.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py stretch --part {in.part} --out /out/part.step --axis {axis} --length {length} --at {at}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: axis, label: Along, type: enum, options: [x, y, z], default: x, description: "The direction to make it longer or shorter in." }
+      - { name: length, label: New length, type: number, unit: mm, default: 100, min: 0.01, max: 100000, description: "How long the part should be along that direction." }
+      - { name: at, label: Cut at, type: number, default: 0.5, min: 0.01, max: 0.99, description: "Where it's cut across, as a fraction of its length from the low end (0.5 is the middle): somewhere the part is the same all along." }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }
+  push-pull:
+    summary: Moves a flat face of a part along its normal - out to add material, in to take it away - like pulling the end of a bar to lengthen it or pushing a boss down.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py push-pull --part {in.part} --out /out/part.step --face {face} --distance {distance}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: face, label: Face, type: integer, default: 1, min: 1, description: "The face's number, as inspect lists it (Face7 is 7)." }
+      - { name: distance, label: Distance, type: number, unit: mm, default: 5, min: -100000, max: 100000, description: "How far to move it: positive pulls it out, negative pushes it in." }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }
+  hole:
+    summary: Gives a hole a new diameter along the same axis and depth, or fills it (diameter 0); pick it by the number of its wall's face.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py hole --part {in.part} --out /out/part.step --face {face} --diameter {diameter}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: face, label: Hole wall, type: integer, default: 1, min: 1, description: "The number of a face of the hole's wall, as inspect lists it." }
+      - { name: diameter, label: New diameter, type: number, unit: mm, default: 5, min: 0, max: 100000, description: "The hole's new diameter; 0 fills it." }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }
+  fillet:
+    summary: Rounds every edge around one face of a part to the radius you choose.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py fillet --part {in.part} --out /out/part.step --face {face} --radius {radius}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: face, label: Face, type: integer, default: 1, min: 1, description: "The face whose edges are rounded, as inspect numbers it." }
+      - { name: radius, label: Radius, type: number, unit: mm, default: 2, min: 0.01, max: 10000, description: "How round the edges get; too large for the part and it fails." }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }
+  remove:
+    summary: Takes features off a part - a fillet, a chamfer, a hole, a boss - by the numbers of their faces, and closes the part up where they were.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py remove --part {in.part} --out /out/part.step --faces {faces}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: faces, label: Faces, type: string, default: "", description: "The faces to take off, by number, separated by commas (3, 7): all the faces of each feature." }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }
+  transform:
+    summary: Scales, mirrors, turns and moves a part, in that order; scaling, mirroring and turning are about the middle of the part, so it stays where it was.
+    command: python3 /opt/pharos/pharos_warm.py run /opt/pharos/pharos_freecad.py transform --part {in.part} --out /out/part.step --scale {scale} --mirror {mirror} --rotate-x {rotate_x} --rotate-y {rotate_y} --rotate-z {rotate_z} --move-x {move_x} --move-y {move_y} --move-z {move_z}
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    parameters:
+      - { name: scale, label: Scale, type: number, default: 1, min: 0.001, max: 1000, description: "Bigger above 1, smaller below." }
+      - { name: mirror, label: Mirror, type: enum, options: [none, x, y, z], default: none, description: "Mirrors it across the plane through its middle, facing this way." }
+      - { name: rotate_x, label: Turn about x, type: number, unit: "°", default: 0, min: -360, max: 360 }
+      - { name: rotate_y, label: Turn about y, type: number, unit: "°", default: 0, min: -360, max: 360 }
+      - { name: rotate_z, label: Turn about z, type: number, unit: "°", default: 0, min: -360, max: 360 }
+      - { name: move_x, label: Move x, type: number, unit: mm, default: 0, min: -100000, max: 100000 }
+      - { name: move_y, label: Move y, type: number, unit: mm, default: 0, min: -100000, max: 100000 }
+      - { name: move_z, label: Move z, type: number, unit: mm, default: 0, min: -100000, max: 100000 }
+    outputs: [{ name: part, kind: cad, format: step, path: /out/part.step }]
+    cache: { deterministic: true }

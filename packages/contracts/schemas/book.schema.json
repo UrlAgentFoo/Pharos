@@ -1,0 +1,448 @@
+{
+  "additionalProperties": false,
+  "$id": "book.schema.json",
+  "title": "Pharos book",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "title",
+    "summary",
+    "ships",
+    "actions"
+  ],
+  "properties": {
+    "id": {
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "description": "The domain, as people name it: \"Fluid flow\".",
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "description": "One or two sentences, searched and read by the assistant.",
+      "type": "string"
+    },
+    "how_to_use": {
+      "minLength": 1,
+      "description": "Two or three plain sentences shown on the book's card; the summary when absent.",
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "authors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "citation": {
+      "type": "string"
+    },
+    "ships": {
+      "minProperties": 1,
+      "description": "Ship id → tested version range.",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]*$": {
+          "minLength": 1,
+          "type": "string"
+        }
+      }
+    },
+    "actions": {
+      "minProperties": 1,
+      "description": "Action name (lowercase_snake) → what it does; the first is the book's main action.",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-z0-9_]*$": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "title",
+            "steps",
+            "outputs"
+          ],
+          "properties": {
+            "title": {
+              "minLength": 1,
+              "description": "What it does, as a button or menu item: \"Simulate the flow\".",
+              "type": "string"
+            },
+            "summary": {
+              "description": "One sentence more, for the assistant and tooltips.",
+              "type": "string"
+            },
+            "inputs": {
+              "description": "Empty for actions that start from parameters alone.",
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "accepts"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "accepts": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "kind"
+                    ],
+                    "properties": {
+                      "kind": {
+                        "pattern": "^[a-z][a-z0-9-]*$",
+                        "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
+                        "type": "string"
+                      },
+                      "formats": {
+                        "minItems": 1,
+                        "description": "Formats read directly; converter ships widen this automatically.",
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
+                          "type": "string"
+                        }
+                      },
+                      "axes": {
+                        "pattern": "^[tczyx]+$",
+                        "description": "Axes the data must have, e.g. tzyx for 3D + time.",
+                        "type": "string"
+                      },
+                      "channels": {
+                        "description": "A count, or a range like 1-4.",
+                        "anyOf": [
+                          {
+                            "minimum": 1,
+                            "type": "integer"
+                          },
+                          {
+                            "pattern": "^\\d+(-\\d+)?$",
+                            "type": "string"
+                          }
+                        ]
+                      },
+                      "dtype": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "max_size_gb": {
+                        "exclusiveMinimum": 0,
+                        "type": "number"
+                      },
+                      "edam": {
+                        "pattern": "^data_\\d+$",
+                        "description": "EDAM data term.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "type",
+                  "sets"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "number",
+                        "type": "string"
+                      },
+                      {
+                        "const": "integer",
+                        "type": "string"
+                      },
+                      {
+                        "const": "string",
+                        "type": "string"
+                      },
+                      {
+                        "const": "boolean",
+                        "type": "string"
+                      },
+                      {
+                        "const": "enum",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "description": "Dialog label; defaults to the name.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "One sentence for the dialog tooltip and the assistant.",
+                    "type": "string"
+                  },
+                  "default": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "options": {
+                    "minItems": 1,
+                    "description": "Allowed values (enum only).",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "unit": {
+                    "description": "e.g. px, µm, s, m/s",
+                    "type": "string"
+                  },
+                  "sets": {
+                    "anyOf": [
+                      {
+                        "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                        "type": "string"
+                      },
+                      {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                          "type": "string"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            },
+            "controls": {
+              "minItems": 1,
+              "description": "How the Controls panel lays out a run of this action. Parameters in no section show under \"More settings\"; a section whose `when` doesn't fit the window's data hides its parameters. Without it, every parameter shows in one section.",
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "title"
+                ],
+                "properties": {
+                  "title": {
+                    "minLength": 1,
+                    "description": "Names what the section changes: \"Flow\", \"Tracking\".",
+                    "type": "string"
+                  },
+                  "note": {
+                    "description": "One plain sentence of help, shown under the title.",
+                    "type": "string"
+                  },
+                  "params": {
+                    "description": "The action's parameters, in the order shown.",
+                    "type": "array",
+                    "items": {
+                      "pattern": "^[a-z][a-z0-9_]*$",
+                      "type": "string"
+                    }
+                  },
+                  "when": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z][a-z0-9-]*$",
+                          "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
+                          "type": "string"
+                        }
+                      },
+                      "formats": {
+                        "minItems": 1,
+                        "type": "array",
+                        "items": {
+                          "pattern": "^[a-z0-9][a-z0-9-]*$",
+                          "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
+                          "type": "string"
+                        }
+                      },
+                      "has": {
+                        "minItems": 1,
+                        "description": "More than one time point, z slice or channel.",
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "const": "time",
+                              "type": "string"
+                            },
+                            {
+                              "const": "z",
+                              "type": "string"
+                            },
+                            {
+                              "const": "channels",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      },
+                      "lacks": {
+                        "minItems": 1,
+                        "description": "Only one time point, z slice or channel.",
+                        "type": "array",
+                        "items": {
+                          "anyOf": [
+                            {
+                              "const": "time",
+                              "type": "string"
+                            },
+                            {
+                              "const": "z",
+                              "type": "string"
+                            },
+                            {
+                              "const": "channels",
+                              "type": "string"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "steps": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "id",
+                  "run"
+                ],
+                "properties": {
+                  "id": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "run": {
+                    "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z][a-z0-9-]*$",
+                    "description": "<ship>.<operation>",
+                    "type": "string"
+                  },
+                  "in": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-z][a-z0-9_]*$": {
+                        "pattern": "^(\\$[a-z][a-z0-9_]*|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*)$",
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "with": {
+                    "additionalProperties": false,
+                    "type": "object",
+                    "patternProperties": {
+                      "^[a-z][a-z0-9_]*$": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "boolean"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "outputs": {
+              "minProperties": 1,
+              "additionalProperties": false,
+              "type": "object",
+              "patternProperties": {
+                "^[a-z][a-z0-9_]*$": {
+                  "pattern": "^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$",
+                  "type": "string"
+                }
+              }
+            },
+            "quick": {
+              "description": "It finishes in seconds, so as the book's `opens_with` it may run as soon as its data opens, without a click.",
+              "type": "boolean"
+            },
+            "next": {
+              "minItems": 1,
+              "description": "The book's actions to offer in the Controls panel after a run of this one, on the window's data: what to do next.",
+              "type": "array",
+              "items": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "opens_with": {
+      "pattern": "^[a-z][a-z0-9_]*$",
+      "description": "The action to apply when data it takes opens in a window: it runs straight away when it's `quick` and its ships are on this computer (opening the data approves it), and is proposed for one click otherwise.",
+      "type": "string"
+    }
+  }
+}

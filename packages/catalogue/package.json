@@ -1,0 +1,28 @@
+{
+  "name": "@pharos/catalogue",
+  "version": "0.1.0",
+  "description": "The Pharos catalogue: data inspector, full-text index of ships and books, file-based book matching, and an MCP server.",
+  "type": "module",
+  "license": "MIT",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "@pharos/books": "*",
+    "@pharos/contracts": "*",
+    "@pharos/core": "*",
+    "geotiff": "^3.0.5",
+    "semver": "7.8.5"
+  }
+}

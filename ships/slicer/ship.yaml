@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: slicer
+version: 0.1.0
+image: pharos/slicer:0.1.0    # built from this folder's Dockerfile (Debian bookworm: PrusaSlicer 2.5)
+summary: Gets a part ready to 3D print with PrusaSlicer (lays it on the bed and slices it) and says how long it takes to print, how much filament it uses and what that costs, with the G-code and its toolpath to look at.
+citation: https://www.prusa3d.com/page/prusaslicer_424/
+license: AGPL-3.0-only
+homepage: https://github.com/prusa3d/PrusaSlicer
+tags: [3d-printing, slicing, g-code, fdm, manufacturing, print-time, prusaslicer]
+requires: { memory_gb: 2, network: none }
+formats:
+  stl: { kind: mesh, title: STL mesh, extensions: [.stl] }
+  gcode: { kind: gcode, title: G-code, extensions: [.gcode] }
+operations:
+  slice:
+    summary: Lays a part on the bed of a generic 0.4 mm-nozzle printer (250 × 210 mm) with the axis you choose pointing up, slices it with the layers, walls and infill you choose, and reports the print time, filament and cost, with the G-code and the toolpath coloured by what each line is.
+    command: python3 /opt/pharos/pharos_slicer.py --in {in.model} --out /out --up {up} --layer-height {layer_height} --walls {walls} --infill {infill} --material {material} --price {price} --supports {supports}
+    inputs: [{ name: model, kind: mesh, formats: [ply, stl] }]
+    parameters:
+      - { name: up, label: Up, type: enum, options: [z, y, x], default: z, description: "Which of the part's axes points up on the printer. For a bracket from the cad ship, y lays it on its side: its layers then run along both arms, and it needs no supports." }
+      - { name: layer_height, label: Layer height, type: number, unit: mm, default: 0.2, min: 0.05, max: 0.32, description: "Thinner layers look smoother and take longer." }
+      - { name: walls, label: Walls, type: integer, default: 3, min: 1, max: 10, description: "How many outlines each layer gets: more are stronger." }
+      - { name: infill, label: Infill, type: number, unit: "%", default: 20, min: 0, max: 100, description: "How full the inside is: more is stronger, heavier and slower." }
+      - { name: material, label: Filament, type: enum, options: [pla, petg, abs], default: pla, description: "The filament, for its density and temperatures." }
+      - { name: price, label: Filament price, type: number, unit: per kg, default: 25, min: 0, max: 1000, description: "What a kilogram of filament costs you, for the cost of the print." }
+      - { name: supports, label: Supports, type: boolean, default: false, description: "Adds supports under overhangs; a bracket on its side needs none." }
+    outputs:
+      - { name: toolpath, kind: mesh, format: ply, path: /out/toolpath.ply }
+      - { name: print, kind: table, format: csv, path: /out/print.csv }
+      - { name: gcode, kind: gcode, format: gcode, path: /out/part.gcode }
+    cache: { deterministic: true }

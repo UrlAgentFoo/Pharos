@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: media-ops
+version: 0.1.0
+image: pharos/media-ops:0.1.0    # built from this folder's Dockerfile (FFmpeg from Debian, Pillow)
+summary: Makes videos and photo sets smaller - scales them down to the size you choose, and videos to fewer frames per second - so they're lighter to keep, share and process.
+license: LGPL-2.1-or-later
+tags: [video, photos, resize, downsample, ffmpeg]
+requires: { memory_gb: 1, network: none }
+operations:
+  resize-video:
+    summary: Scales a video down so its longer side is at most the size you choose, optionally at fewer frames per second, as an MP4 (H.264, without sound).
+    command: python /opt/pharos/pharos_media.py resize-video --video {in.video} --out /out/video.mp4 --max-size {max_size} --fps {fps} --crf {crf}
+    inputs: [{ name: video, kind: video, formats: [mp4, mov] }]
+    parameters:
+      - { name: max_size, type: integer, unit: px, default: 720, min: 64, max: 4096, description: "The longest side after scaling; smaller videos are left at their size." }
+      - { name: fps, type: number, default: 0, min: 0, max: 120, description: "Frames per second to keep; 0 keeps the video's own." }
+      - { name: crf, type: integer, default: 23, min: 15, max: 40, description: "Quality: lower is better and larger (18 looks like the original, 28 is small)." }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }
+  resize-photos:
+    summary: Scales the photos of a photo set down so each one's longer side is at most the size you choose, turned the right way up.
+    command: python /opt/pharos/pharos_media.py resize-photos --photos {in.photos} --out /out/photos --max-size {max_size} --quality {quality}
+    inputs: [{ name: photos, kind: photos, formats: [photo-set] }]
+    parameters:
+      - { name: max_size, type: integer, unit: px, default: 1280, min: 64, max: 8192, description: "The longest side after scaling; smaller photos are left at their size." }
+      - { name: quality, type: integer, default: 92, min: 50, max: 100, description: "JPEG quality: higher is sharper and larger." }
+    outputs: [{ name: photos, kind: photos, format: photo-set, path: /out/photos }]
+    cache: { deterministic: true }

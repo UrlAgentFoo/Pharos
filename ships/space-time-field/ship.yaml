@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: space-time-field
+version: 0.1.1
+image: pharos/space-time-field:0.1.0    # built from this folder's Dockerfile
+summary: Detector-free cell tracking - finds nuclei by how they persist through space and time (a DoG field pooled over neighbouring frames), then picks paths with a min-cost flow.
+license: MIT
+tags: [microscopy, tracking, light-sheet, 3d+t, nuclei, min-cost-flow]
+requires: { memory_gb: 8, network: none }
+operations:
+  track:
+    summary: Tracks nuclei in a 3D time-lapse without a segmentation model, giving a track table. Tuned on Biohub light-sheet zebrafish data (1.625 × 0.406 × 0.406 µm voxels, nuclei 5-8 µm); by default it picks its DoG bands per video, its best setting (leave-one-out CV 0.7823 on the challenge's edge-Jaccard).
+    command: >-
+      python /opt/pharos/pharos_stf.py track --movie {in.movie} --channel {channel} --num-dog {num_dog}
+      --auto-bands {auto_bands} --jitter-threshold {jitter_threshold}
+      --temporal-radius {temporal_radius} --value-floor {value_floor} --lambda-termination {lambda_termination}
+      --lambda-start {lambda_start} --max-nodes {max_nodes}
+    inputs: [{ name: movie, kind: volume, formats: [ome-zarr] }]
+    parameters:
+      - { name: channel, type: integer, default: 0, min: 0, max: 16, description: "The channel with the nuclear stain, counting from 0." }
+      - { name: auto_bands, type: boolean, default: true, description: "Pick the DoG bands per video: a quick prerun measures how much small-cell detections jitter; an active video (dividing, migrating cells) gets 3 bands with each scale normalised, a calm one keeps 1 band. Overrides num_dog." }
+      - { name: jitter_threshold, type: number, default: 0.059, min: 0, max: 1, description: "With auto_bands: the small-band detection jitter at and above which a video counts as active." }
+      - { name: num_dog, type: integer, default: 1, min: 1, max: 3, description: "DoG bands when auto_bands is off: 1 is one nucleus size; more also find smaller nuclei (better recall, a few more false tracks)." }
+      - { name: temporal_radius, type: integer, default: 2, min: 0, max: 8, description: "Neighbouring frames on each side pooled into each frame's field: more ignores flicker but blurs fast cells." }
+      - { name: value_floor, type: number, default: 0.0175, min: 0, max: 1, description: "Field values below this are never a cell: raise it to drop dim false detections." }
+      - { name: lambda_termination, type: number, default: 0.6, min: 0, description: "Cost of a track ending inside the view: higher keeps tracks whole." }
+      - { name: lambda_start, type: number, default: 0.15, min: 0, description: "Cost of a track starting inside the view: higher means fewer new tracks." }
+      - { name: max_nodes, type: integer, default: 1500, min: 10, max: 20000, description: "Most candidate cells per frame: the main lever on solve time." }
+    outputs: [{ name: tracks, kind: tracks, format: csv, path: /out/tracks.csv }]
+    cache: { deterministic: true }
+  tracks-video:
+    summary: Makes an MP4 of tracks over an image's max projection along z - a dot per cell, coloured by track, and an arrow for each cell's last step.
+    command: python /opt/pharos/pharos_stf.py tracks-video --image {in.image} --tracks {in.tracks} --fps {fps} --channel {channel}
+    inputs:
+      - { name: image, kind: volume, formats: [ome-zarr] }
+      - { name: tracks, kind: tracks, formats: [csv] }
+    parameters:
+      - { name: fps, type: number, default: 10, min: 0.5, max: 60, description: Frames per second. }
+      - { name: channel, type: integer, default: 0, min: 0, description: Channel to show. }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }

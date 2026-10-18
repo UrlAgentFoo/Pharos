@@ -1,0 +1,5440 @@
+/*
+ * Pharos, light. A quiet, editorial workspace: warm paper, ink text, a serif
+ * for titles, small spaced capitals for labels, thin rules instead of boxes.
+ * Image windows float on it like sheets on a desk.
+ */
+
+:root {
+  --paper: #f3f0eb;
+  --sheet: #fbfaf7;
+  --surface: #ffffff;
+  --well: #e9e6e0;
+  --ink: #2b2a27;
+  --text: #2b2a27;
+  --muted: #6f6b64;
+  --faint: #a29d95;
+  --line: rgba(43, 42, 39, 0.12);
+  --line-strong: rgba(43, 42, 39, 0.24);
+  --accent: #2f5d8a;
+  --accent-soft: rgba(47, 93, 138, 0.1);
+  --ai: #6a55b8;
+  --ai-soft: rgba(106, 85, 184, 0.1);
+  --danger: #b5412e;
+  --ok: #3d8b5a;
+  --hover: rgba(43, 42, 39, 0.05);
+  --hist: #b7b1a7;
+  --shadow-sm: 0 1px 2px rgba(43, 42, 39, 0.06);
+  --shadow: 0 1px 2px rgba(43, 42, 39, 0.06), 0 10px 30px rgba(43, 42, 39, 0.1);
+  --shadow-lg: 0 2px 6px rgba(43, 42, 39, 0.08), 0 24px 60px rgba(43, 42, 39, 0.16);
+  --glass: rgba(243, 240, 235, 0.92);
+  --glass-soft: rgba(251, 250, 247, 0.6);
+  --scrim: rgba(238, 234, 227, 0.8);
+  --backdrop: rgba(43, 42, 39, 0.18);
+  /* the beam rising behind the start screen's drop area: by day a soft shade, as light can't show on paper */
+  --beam: rgba(43, 42, 39, 0.094);
+  --beam-core: rgba(43, 42, 39, 0.2); /* the heart of the pool on the floor it rises from */
+  --beam-halo: rgba(243, 240, 235, 0.94); /* the veil in the beam, hiding the cards behind the drop area */
+  --beam-button: #fbfaf7; /* the upload button in it, and its arrow */
+  --beam-button-ink: #2b2a27;
+  --warn-bg: #fbf3e6;
+  --warn-text: #7a4a12;
+  --warn-line: #c9862e;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  color-scheme: light;
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* dark mode: the same quiet desk, at night */
+:root[data-theme="dark"] {
+  --paper: #191816;
+  --sheet: #21201d;
+  --surface: #2a2926;
+  --well: #121110;
+  --ink: #ece8e1;
+  --text: #ece8e1;
+  --muted: #a7a197;
+  --faint: #77726a;
+  --line: rgba(236, 232, 225, 0.1);
+  --line-strong: rgba(236, 232, 225, 0.2);
+  --accent: #7fa9d6;
+  --accent-soft: rgba(127, 169, 214, 0.14);
+  --ai: #a896ea;
+  --ai-soft: rgba(168, 150, 234, 0.14);
+  --danger: #e57d68;
+  --ok: #7cc49a;
+  --hover: rgba(236, 232, 225, 0.06);
+  --hist: #6f6a62;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 10px 30px rgba(0, 0, 0, 0.35);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.35), 0 24px 60px rgba(0, 0, 0, 0.5);
+  --glass: rgba(25, 24, 22, 0.9);
+  --glass-soft: rgba(33, 32, 29, 0.6);
+  --scrim: rgba(18, 17, 16, 0.8);
+  --backdrop: rgba(0, 0, 0, 0.45);
+  --beam: rgba(236, 232, 225, 0.085);
+  --beam-core: rgba(236, 232, 225, 0.24);
+  --beam-halo: rgba(25, 24, 22, 0.92);
+  --beam-button: #d8d3ca; /* lit by the beam */
+  --beam-button-ink: #191816;
+  --warn-bg: #3a2c19;
+  --warn-text: #f0c98d;
+  --warn-line: #c9862e;
+  color-scheme: dark;
+}
+
+:root[data-theme="dark"] .brand-mark {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg stroke='%23191816' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.5 9 16 6.5 19.5 9Z'/%3E%3Cpath d='M13.5 9v3.5h5V9'/%3E%3Cpath d='M12.5 12.5h7'/%3E%3Cpath d='M14 12.5 12.5 24.5h7L18 12.5'/%3E%3Cpath d='M13.2 18.5h5.6'/%3E%3Cpath d='M10 24.5h12'/%3E%3Cpath d='M10.5 10.2 7 9.2M21.5 10.2l3.5-1'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* author `display` rules would otherwise override the hidden attribute */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--text);
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+code {
+  font-family: var(--mono);
+  font-size: 0.92em;
+}
+
+.icon {
+  flex: none;
+  display: block;
+}
+
+p .icon,
+small .icon,
+strong .icon,
+span.chat-cmds .icon {
+  display: inline-block;
+  vertical-align: -2px;
+}
+
+kbd {
+  font: 10.5px/1 var(--mono);
+  padding: 3px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* labels in small spaced capitals, as in the reference */
+.eyebrow {
+  margin: 0;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.display {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 12px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--danger);
+  margin: 8px 0 0;
+}
+
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.icon-btn:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.btn,
+dialog footer button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  cursor: pointer;
+}
+
+button.primary,
+.btn.primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 9px 16px;
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+/* the confirm button of a warning (Remove ship, Clear cache) */
+button.primary.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: var(--sheet);
+}
+
+/* a destructive action that stays grey until pointed at, so it doesn't compete with Close */
+button.quiet-danger {
+  color: var(--muted);
+}
+
+button.quiet-danger:hover,
+button.quiet-danger:focus-visible {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.chip {
+  padding: 3px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chip:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+
+.link:hover {
+  text-decoration-color: var(--ink);
+}
+
+/* ---- the top bar: full width, app-wide actions only */
+
+.topbar {
+  position: fixed;
+  z-index: 500;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  height: 52px;
+  padding: 0 16px 0 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+}
+
+.tb-left,
+.tb-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.tb-right {
+  justify-content: flex-end;
+}
+
+.tb-center {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: 6px;
+  font: 600 12px/1 var(--mono);
+  letter-spacing: 0.24em;
+  white-space: nowrap;
+}
+
+.brand-mark {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--ink) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cg stroke='%23f3f0eb' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M12.5 9 16 6.5 19.5 9Z'/%3E%3Cpath d='M13.5 9v3.5h5V9'/%3E%3Cpath d='M12.5 12.5h7'/%3E%3Cpath d='M14 12.5 12.5 24.5h7L18 12.5'/%3E%3Cpath d='M13.2 18.5h5.6'/%3E%3Cpath d='M10 24.5h12'/%3E%3Cpath d='M10.5 10.2 7 9.2M21.5 10.2l3.5-1'/%3E%3C/g%3E%3C/svg%3E") center / 100% no-repeat;
+}
+
+.tb-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tb-text .caret,
+.tl-text .caret {
+  margin-left: -2px;
+  font-size: 9px;
+  color: var(--faint);
+}
+
+.tb-text[aria-haspopup] {
+  padding-right: 8px;
+}
+
+.tb-text:hover,
+.tb-icon:hover {
+  background: var(--hover);
+}
+
+.tb-icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  cursor: pointer;
+}
+
+.pop-note {
+  margin: 4px 8px 6px;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+/* ---- popovers: top-bar menus and each window's ⋯ menu */
+
+.menu-pop {
+  position: fixed;
+  z-index: 700;
+  display: grid;
+  gap: 4px 18px;
+  min-width: 230px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+}
+
+.menu-pop.wide {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  width: min(820px, calc(100vw - 16px));
+  padding: 14px;
+}
+
+.menu-pop section + section:not(.group-card) {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+
+.menu-pop.wide section + section {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.menu-pop h4 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 8px 6px;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.menu-pop h4 small {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+
+.menu-pop button[data-action],
+.menu-pop button[data-dp],
+.menu-pop button[data-cut] {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-pop button[data-action] span,
+.menu-pop button[data-dp] span,
+.menu-pop button[data-cut] span {
+  flex: 1;
+}
+
+.menu-pop button[data-action] .icon,
+.menu-pop button[data-dp] .icon,
+.menu-pop button[data-cut] .icon {
+  color: var(--muted);
+}
+
+.menu-pop button[data-action]:hover:not(:disabled),
+.menu-pop button[data-dp]:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+/* a history run's Delete: grey like the rest until hovered, then red, as destructive actions are */
+.menu-pop button[data-cut]:hover,
+.menu-pop button[data-cut]:focus-visible,
+.menu-pop button[data-cut]:hover .icon,
+.menu-pop button[data-cut]:focus-visible .icon {
+  color: var(--danger);
+}
+
+.dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+/* the Group popover */
+.menu-pop:has(.group-card),
+.menu-pop:has(.group-empty) {
+  width: min(340px, calc(100vw - 16px));
+}
+
+.group-card {
+  padding: 8px 6px 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.group-card h4 {
+  margin: 2px 2px 4px;
+  color: var(--ink);
+}
+
+.group-members {
+  margin: 0 2px 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.group-sync {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  padding: 4px 2px;
+  cursor: pointer;
+}
+
+.group-sync input {
+  accent-color: var(--ink);
+  grid-row: span 2;
+}
+
+.group-sync small {
+  grid-column: 2;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.group-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.group-empty {
+  margin: 6px 8px 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ---- the desktop */
+
+.desktop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  isolation: isolate; /* windows stack among themselves, under the toolbar and chat */
+}
+
+body.overview-mode .desktop {
+  isolation: auto;
+  z-index: auto; /* lets windows rise above the overview's backdrop */
+}
+
+/* ---- the assistant (left column): the project's name, then the conversation */
+
+/* the left column, full height: the conversation (.assistant) over the input (.ask-box), kept apart
+   so search works while the conversation is hidden. No background or rules, so it reads as part of
+   the desk and windows' shadows reach under it; no z-index either, so windows stack over the
+   conversation while the input (480) stays above them */
+.assistant-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(336px, calc(24vw + 36px));
+  display: flex;
+  flex-direction: column;
+  pointer-events: none; /* only its parts take clicks: the welcome screen beside them stays usable */
+}
+
+.assistant-col > * {
+  pointer-events: auto;
+}
+
+/* its top (the window's or the project's name) stays put, level with the project's name top right;
+   the rest scrolls under it. The side padding lines the text up with the input's */
+.assistant {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding-top: 76px;
+}
+
+.assistant-head {
+  flex: none;
+  padding: 0 12px 0 28px;
+}
+
+/* what the window needs and the conversation: fading out under the top and into the input, the scroll
+   bar on the left, away from the windows */
+.assistant-scroll {
+  flex: 1;
+  min-height: 0;
+  padding: 24px 12px 12px 28px;
+  overflow-y: auto;
+  direction: rtl; /* puts the scroll bar on the left; its children read left to right again */
+  scrollbar-width: thin;
+  /* a mask: only its alpha counts */
+  mask-image: linear-gradient(to bottom, transparent, black 24px, black calc(100% - 12px), transparent);
+}
+
+.assistant-scroll > * {
+  direction: ltr;
+}
+
+.assistant-title {
+  margin: 8px 0 4px;
+  font-size: clamp(34px, 3.4vw, 52px);
+  line-height: 1.02;
+  overflow-wrap: anywhere;
+  cursor: text;
+  outline: none;
+}
+
+.assistant-title.untitled {
+  color: var(--muted);
+}
+
+/* naming an untitled project starts from an empty title */
+.assistant-title[contenteditable="true"]:empty::before {
+  content: "Name this project";
+  color: var(--muted);
+}
+
+.assistant-title[contenteditable="true"] {
+  color: var(--ink);
+  box-shadow: 0 1px 0 var(--line-strong);
+}
+
+/* the active window leads the column, in the project's place: its name and data stay at the top; its
+   history, books and ships scroll with the conversation */
+.assistant.showing-window .assistant-status,
+.assistant.showing-window .assistant-title {
+  display: none;
+}
+
+.window-summary {
+  display: grid;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.window-summary:empty {
+  display: none;
+}
+
+.window-summary p,
+.window-top p {
+  margin: 0;
+}
+
+.window-top {
+  display: grid;
+  gap: 6px;
+}
+
+.window-top:empty {
+  display: none;
+}
+
+.window-top .ws-title {
+  margin: 4px 0 0;
+  font-size: 34px;
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+}
+
+.window-top .ws-meta,
+.window-summary .ws-note {
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.window-summary .ws-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.window-summary .ws-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* rows with space instead of rules: the name on the left, a tick or what's left on the right */
+.window-summary .ws-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.window-summary .ws-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+}
+
+.window-summary .ws-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.window-summary .ws-name small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.window-summary .ws-tick {
+  display: inline-flex;
+  color: var(--ink);
+}
+
+.window-summary .ws-state {
+  color: var(--muted);
+  font-size: 14px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.window-summary .ws-state.busy {
+  color: var(--accent);
+}
+
+.window-summary .ws-ready {
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+/* the steps: each a row, the one on view edged in the blue of the window's history marker */
+.window-summary .ws-runs .ws-list {
+  gap: 2px;
+}
+
+.window-summary .ws-run-go {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px 4px 10px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  background: none;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.window-summary .ws-run-go:hover {
+  background: var(--hover);
+}
+
+.window-summary .ws-run.on .ws-run-go {
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.window-summary .ws-run .ws-name small {
+  font-weight: 400;
+  font-size: 12px;
+}
+
+.window-summary .ws-run .link-btn {
+  font-size: 12px;
+}
+
+.assistant-log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 6px 2px 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.assistant-intro p {
+  margin: 0 0 8px;
+}
+
+/* the column's foot: the input that asks the assistant and searches actions and windows */
+.ask-box {
+  position: relative;
+  z-index: 480;
+  margin-top: auto; /* at the bottom, also when the conversation above it is hidden */
+  padding: 8px 0 20px 20px;
+}
+
+.ask {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 8px 8px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.ask:focus-within {
+  border-color: var(--ink);
+}
+
+.ask textarea {
+  flex: 1;
+  min-height: 22px;
+  max-height: 140px;
+  border: 0;
+  outline: 0;
+  resize: none;
+  background: none;
+  font: inherit;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.ask-hits {
+  position: absolute;
+  left: 20px;
+  right: 0;
+  bottom: calc(100% - 2px);
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+}
+
+.ask-hit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ask-hit > span {
+  flex: 1;
+  display: grid;
+  min-width: 0;
+}
+
+.ask-hit small {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ask-hit.sel,
+.ask-hit:hover {
+  background: var(--surface);
+}
+
+.ask-hit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ask-hint {
+  margin: 4px 8px 2px;
+  color: var(--faint);
+  font: 10.5px var(--mono);
+}
+
+/* an expanded window stops at the column (main.ts › expandArea), so only the overview hides it */
+body.overview-mode .assistant-col {
+  display: none;
+}
+
+/* bottom right: save, open and clear the project */
+.project-bar {
+  position: absolute;
+  right: 20px;
+  bottom: 20px;
+  display: flex;
+  gap: 6px;
+}
+
+.project-bar .tb-text {
+  border: 1px solid var(--line-strong);
+  background: var(--sheet);
+}
+
+.project-bar .tb-text:hover {
+  border-color: var(--ink);
+}
+
+/* ---- welcome */
+
+.welcome {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 14px;
+  padding: 80px 16px 16px;
+  text-align: center;
+  pointer-events: none; /* its empty space must not block the notes and project buttons */
+}
+
+.welcome > * {
+  pointer-events: auto;
+}
+
+.welcome .display {
+  font-size: clamp(44px, 6vw, 72px);
+  line-height: 1;
+  margin-bottom: 14px;
+}
+
+.dropzone {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: min(460px, calc(100vw - 32px));
+  padding: 36px 24px 32px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 6px;
+  background: var(--glass-soft);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.dropzone:hover {
+  border-color: var(--ink);
+  background: var(--sheet);
+}
+
+.dropzone-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--sheet);
+}
+
+.dropzone-title {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.dropzone-sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.samples {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.sample {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px 10px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  background: var(--sheet);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sample:hover {
+  border-color: var(--ink);
+  box-shadow: var(--shadow-sm);
+}
+
+.sample > span:last-child {
+  display: grid;
+}
+
+.sample small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sample-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 3px;
+  background: var(--well);
+}
+
+/* "Tab shows every window", level with the ask box and project buttons; hidden where they'd meet it */
+.desk-hint {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+body.overview-mode .desk-hint {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .desk-hint {
+    display: none;
+  }
+}
+
+/* ---- image windows (macOS style sheets) */
+
+.win {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  background: var(--sheet);
+  box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(0.98);
+  transition: opacity 0.18s ease-out, transform 0.18s ease-out, box-shadow 0.15s;
+}
+
+.win.shown {
+  opacity: 1;
+  transform: none;
+}
+
+.win.active {
+  box-shadow: 0 0 0 1px var(--line-strong), var(--shadow-lg);
+}
+
+/* expanded: fills everything below the top bar, edge to edge */
+.win.expanded {
+  border-radius: 0;
+}
+
+.win.animate {
+  transition: left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease;
+}
+
+.win.minimized {
+  display: none;
+}
+
+.win.drop-target {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-lg);
+}
+
+.win-title {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  flex: none;
+  height: 36px;
+  padding: 0 6px 0 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: default;
+  user-select: none;
+}
+
+.win.dragging .win-title {
+  cursor: grabbing;
+}
+
+/* filename on the left, the window's buttons on the right */
+.win-left,
+.win-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.win-right {
+  justify-content: flex-end;
+  gap: 2px;
+}
+
+.win-name {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--faint);
+  pointer-events: none;
+}
+
+/* the window's number, as the assistant cites it ([2]) */
+.win-ref {
+  flex: none;
+  min-width: 16px;
+  padding: 0 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  line-height: 14px;
+  text-align: center;
+}
+
+.win.active .win-name {
+  color: var(--ink);
+}
+
+.win-title-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.win-branch {
+  color: var(--accent);
+}
+
+.win-group {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 11.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 1;
+}
+
+.win-group .dot {
+  width: 8px;
+  height: 8px;
+}
+
+.win.grouped .win-title {
+  box-shadow: inset 0 3px 0 var(--group);
+}
+
+.win-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  z-index: 1;
+}
+
+.win-icon:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.win-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.win-body {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: #1e1d1b; /* a dark surround keeps fluorescence and contrast honest */
+}
+
+.win-body canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.win-body canvas.panning {
+  cursor: grabbing;
+}
+
+.win-readout {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(30, 29, 27, 0.6);
+  color: rgba(255, 255, 255, 0.85);
+  font: 11px/1.5 var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.win-readout.hovering {
+  background: rgba(30, 29, 27, 0.82);
+  color: #fff;
+}
+
+/* resizing: thin strips along the bottom and sides (each moving only its own side), and the
+   two bottom corners; inside the border, as the window clips what's outside it */
+.win-resize {
+  position: absolute;
+  z-index: 2;
+}
+
+.win-resize[data-edge="s"] {
+  right: 16px;
+  bottom: 0;
+  left: 16px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.win-resize[data-edge="e"],
+.win-resize[data-edge="w"] {
+  top: 12px;
+  bottom: 16px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.win-resize[data-edge="e"] {
+  right: 0;
+}
+
+.win-resize[data-edge="w"] {
+  left: 0;
+}
+
+.win-resize[data-edge="se"],
+.win-resize[data-edge="sw"] {
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.win-resize[data-edge="se"] {
+  right: 0;
+  cursor: nwse-resize;
+}
+
+.win-resize[data-edge="sw"] {
+  left: 0;
+  cursor: nesw-resize;
+}
+
+/* ---- the history line along the bottom of each window */
+
+.win-history {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: none;
+  height: 52px;
+  border-top: 1px solid var(--line);
+  background: var(--sheet);
+}
+
+.win-history-bar {
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  gap: 4px;
+  padding: 0 4px 0 8px;
+}
+
+/* an inactive window: just its history */
+.win:not(.active) .tl-controls,
+.win:not(.active) .tl-actions {
+  display: none;
+}
+
+.tl-controls,
+.tl-actions {
+  display: flex;
+  gap: 1px;
+  flex: none;
+}
+
+.tl-controls {
+  padding-right: 6px;
+  border-right: 1px solid var(--line);
+}
+
+.tl-controls .icon-btn {
+  width: 28px;
+  height: 28px;
+}
+
+.tl-actions {
+  gap: 4px;
+  padding: 0 10px 0 8px;
+  border-left: 1px solid var(--line);
+}
+
+.tl-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  font: 500 10px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tl-text:hover:not(:disabled) {
+  border-color: var(--ink);
+}
+
+.tl-track {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.tl-empty {
+  margin-left: 10px;
+  color: var(--faint);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tl-node {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.tl-node:hover {
+  border-color: var(--ink);
+}
+
+.tl-source {
+  border-radius: 50%;
+  color: var(--muted);
+}
+
+.tl-step.selected {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+}
+
+.tl-step.rolled {
+  opacity: 0.35;
+  border-style: dashed;
+}
+
+.tl-step.off .icon {
+  opacity: 0.4;
+}
+
+.tl-step.off::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  top: 50%;
+  border-top: 1.5px solid var(--muted);
+  transform: rotate(-35deg);
+}
+
+.tl-step.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tl-step.drop-before {
+  box-shadow: -5px 0 0 -2px var(--accent);
+}
+
+.tl-step.drop-after {
+  box-shadow: 5px 0 0 -2px var(--accent);
+}
+
+.tl-step.dragging {
+  opacity: 0.4;
+}
+
+.tl-badge {
+  position: absolute;
+  right: -4px;
+  top: -4px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--ai);
+  color: #fff;
+}
+
+.tl-link {
+  flex: none;
+  width: 8px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* the point in history: a blue line over the track, dragged between runs */
+.tl-marker {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 16px;
+  height: 38px;
+  /* no transition: the bar redraws on every bit of progress, and a sliding marker would jitter */
+  transform: translate(calc(var(--x, 0px) - 8px), -50%);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.tl-marker::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 4px;
+  bottom: 0;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.tl-marker::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 0;
+  border: 6px solid transparent;
+  border-top: 8px solid var(--accent);
+}
+
+.tl-marker:focus-visible {
+  outline-offset: 0;
+}
+
+/* a press between runs moves the marker there */
+.tl-track:has(.tl-marker) {
+  cursor: ew-resize;
+}
+
+.tl-track .tl-node {
+  cursor: pointer;
+}
+
+/* runs after the marker are later in time */
+.tl-node.data-step.later {
+  opacity: 0.4;
+}
+
+.tl-popover {
+  position: fixed;
+  z-index: 800;
+  width: 300px;
+  padding: 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+}
+
+.tl-popover header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.tl-popover header div {
+  display: grid;
+}
+
+.tl-popover small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tl-popover .field {
+  margin-top: 10px;
+}
+
+.tl-pop-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.tl-pop-actions button {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  padding: 6px 2px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tl-pop-actions button:hover {
+  border-color: var(--ink);
+}
+
+/* ---- the Controls drawer on the right of each window */
+
+.ctl-drawer {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 252px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  border-left: 1px solid var(--line);
+  background: var(--sheet);
+  padding: 10px 14px 14px;
+  font-size: 13px;
+}
+
+.win:not(.controls-open) .ctl-drawer {
+  display: none;
+}
+
+.ctl-summary {
+  margin: 2px 0 6px;
+  font: 11px/1.5 var(--mono);
+  color: var(--muted);
+}
+
+.ctl-sec {
+  border-top: 1px solid var(--line);
+  padding: 2px 0 10px;
+}
+
+.ctl-sec.folded {
+  padding-bottom: 2px;
+}
+
+.ctl-sec header {
+  display: flex;
+  align-items: center;
+}
+
+.ctl-sec-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  background: none;
+  text-align: left;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.ctl-sec-head:hover {
+  color: var(--ink);
+}
+
+.ctl-sec-head small {
+  margin-left: auto;
+  font: 11px var(--mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--faint);
+}
+
+.chev {
+  width: 10px;
+  color: var(--faint);
+}
+
+.ctl-sec.ai .ctl-sec-head {
+  color: var(--ai);
+}
+
+.ctl-x {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.ctl-x:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.ctl-note {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--faint);
+}
+
+.ch-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ch-chip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.ch-chip.sel {
+  border-color: var(--ink);
+}
+
+.ch-chip.off .ch-name {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+
+.ch-dot {
+  width: 22px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: none;
+  cursor: pointer;
+}
+
+.ch-dot::before {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  margin: auto;
+  border-radius: 50%;
+  background: var(--ch);
+}
+
+.ch-chip.off .ch-dot::before {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--ch);
+}
+
+.ch-name {
+  padding: 0 8px;
+  height: 24px;
+  border: 0;
+  background: none;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ch-mode {
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 10px var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.stepper {
+  display: grid;
+  grid-template-columns: 40px 20px 1fr 20px 46px;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.stepper-label {
+  color: var(--muted);
+}
+
+.step-btn {
+  width: 20px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.step-btn:hover {
+  border-color: var(--ink);
+}
+
+.stepper input {
+  width: 100%;
+  accent-color: var(--ink);
+}
+
+.stepper output {
+  text-align: right;
+  font: 12px var(--mono);
+}
+
+.stepper output small {
+  color: var(--faint);
+}
+
+.hist-wrap {
+  margin-top: 2px;
+}
+
+.hist {
+  display: block;
+  width: 100%;
+  height: 64px;
+  border-radius: 3px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.hist-values {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font: 11.5px var(--mono);
+  color: var(--muted);
+}
+
+.hist-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.hist-actions .chip {
+  padding: 2px 8px;
+  font: 10px var(--mono);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.measure {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--line);
+  background: var(--line);
+}
+
+.measure div {
+  padding: 6px 8px;
+  background: var(--surface);
+}
+
+.measure dt {
+  font: 9.5px var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.measure dd {
+  margin: 1px 0 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ctl-cmd {
+  padding: 6px 0;
+}
+
+.ctl-cmd + .ctl-cmd {
+  border-top: 1px dashed var(--line);
+}
+
+.ctl-cmd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ctl-cmd-head span {
+  flex: 1;
+}
+
+.ctl-cmd .field {
+  margin-top: 6px;
+  font-size: 12px;
+}
+
+/* the ask field sits at the bottom of the drawer */
+.ctl-suggest {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  margin-top: auto;
+  padding: 2px 2px 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.ctl-drawer > :nth-last-child(2) {
+  margin-bottom: 12px;
+}
+
+.ctl-suggest:focus-within {
+  border-color: var(--ink);
+}
+
+.ctl-suggest input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.ctl-suggest input::placeholder {
+  color: var(--faint);
+}
+
+.ctl-suggest button {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ctl-suggest button:hover {
+  background: var(--hover);
+}
+
+/* minimised windows: a small stack of cards in the bottom-right corner */
+.shelf {
+  position: absolute;
+  right: 28px;
+  bottom: 80px;
+  z-index: 100000;
+  width: 132px;
+  height: 120px;
+}
+
+.shelf-card {
+  position: absolute;
+  right: calc(var(--i) * 7px);
+  bottom: calc(var(--i) * 7px);
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  width: 116px;
+  padding: 6px 6px 5px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+  transition: transform 0.18s;
+  z-index: calc(100 - var(--i));
+}
+
+.shelf:hover .shelf-card {
+  transform: translateY(calc(var(--i) * -54px)) translateX(calc(var(--i) * 7px));
+}
+
+.shelf-card canvas {
+  max-width: 100%;
+  max-height: 64px;
+  border-radius: 3px;
+}
+
+.shelf-card span {
+  max-width: 100%;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---- busy and toasts */
+
+.busy,
+.toast {
+  position: fixed;
+  z-index: 900;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  max-width: calc(100vw - 32px);
+  padding: 7px 14px;
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: var(--shadow);
+}
+
+.toast {
+  transition: opacity 0.3s;
+}
+
+.toast.out {
+  opacity: 0;
+}
+
+.busy:not([hidden]) + .toast {
+  display: none;
+}
+
+.busy {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 220px;
+}
+
+.busy .pg-bar {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.busy .pg-bar span {
+  background: var(--paper);
+}
+
+/* ---- progress: the same block for steps, the activity list and the busy line */
+
+.pg {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pg-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-phase {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.busy .pg-phase,
+.busy .pg-clock {
+  color: inherit;
+}
+
+.pg-clock {
+  margin-left: auto;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pg-bar {
+  position: relative;
+  display: block;
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.pg-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.4s;
+}
+
+/* nothing reported a fraction yet: a stripe sweeps across, so it never looks stuck */
+.pg-bar.indeterminate span {
+  position: absolute;
+  width: 35%;
+  animation: pg-sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes pg-sweep {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pg-bar.indeterminate span {
+    width: 100%;
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
+.pg-detail {
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pg-quiet {
+  color: var(--warn-text);
+  font-size: 12px;
+}
+
+.pg-overall {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.tb-text.activity {
+  gap: 6px;
+}
+
+.pg-spin {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+.activity-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.activity-row:hover {
+  background: var(--hover);
+}
+
+.log-text {
+  max-height: 55vh;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+/* ---- overview (Mission Control) */
+
+.overview {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+}
+
+.ov-scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+  backdrop-filter: blur(14px);
+  animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+body.overview-mode .win {
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s;
+  transform-origin: 0 0;
+  cursor: pointer;
+}
+
+body.overview-mode .win * {
+  pointer-events: none;
+}
+
+body.overview-mode .win.minimized {
+  display: flex;
+  opacity: 0.5;
+  filter: grayscale(0.6);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+
+body.overview-mode .win.minimized.ov-sel {
+  opacity: 0.8;
+}
+
+.ov-restore {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.ov-restore:hover {
+  border-color: var(--ink);
+}
+
+.ov-min-tag {
+  margin-top: 3px;
+  padding: 1px 7px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 999px;
+  font: 10px var(--mono) !important;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+body.overview-mode .win.ov-sel {
+  box-shadow: 0 0 0 3px var(--ink), var(--shadow-lg);
+}
+
+body.overview-mode .win.ov-dim {
+  opacity: 0.25;
+}
+
+body.overview-mode .shelf,
+body.overview-mode .assistant,
+body.overview-mode .project-bar {
+  display: none;
+}
+
+.ov-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2500;
+  pointer-events: none;
+}
+
+.ov-label {
+  position: absolute;
+  display: grid;
+  justify-items: center;
+  text-align: center;
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.ov-label strong {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 10px;
+  border-radius: 3px;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov-label.ov-sel strong {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.ov-label small {
+  color: var(--muted);
+  font: 11px var(--mono);
+  white-space: nowrap;
+}
+
+.ov-parent {
+  color: var(--accent) !important;
+}
+
+.ov-close {
+  position: absolute;
+  top: -2px;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--sheet);
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ov-label:hover .ov-close,
+.ov-label.ov-sel .ov-close {
+  opacity: 1;
+}
+
+.ov-group {
+  position: absolute;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+}
+
+.ov-empty {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 2px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.ov-empty p {
+  margin: 0;
+}
+
+.ov-top {
+  position: absolute;
+  z-index: 3000;
+  left: 50%;
+  top: 44px;
+  transform: translateX(-50%);
+  width: min(620px, calc(100vw - 32px));
+  animation: drop-in 0.2s ease-out;
+}
+
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+}
+
+.ov-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+  color: var(--muted);
+}
+
+.ov-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 17px;
+}
+
+.ov-results {
+  margin-top: 8px;
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+}
+
+.ov-results h3 {
+  margin: 10px 10px 4px;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.ov-results h3:first-child {
+  margin-top: 4px;
+}
+
+.ov-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ov-row.ov-sel {
+  background: var(--hover);
+  box-shadow: inset 2px 0 0 var(--ink);
+}
+
+.ov-row.disabled {
+  opacity: 0.5;
+}
+
+.ov-row-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.ov-row.ai .ov-row-icon {
+  border-color: rgba(106, 85, 184, 0.35);
+  color: var(--ai);
+}
+
+.ov-row-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.ov-row-text span,
+.ov-row-text small {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ov-row-text small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-warn {
+  padding: 8px 10px;
+  border-left: 2px solid var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+  font-size: 13px;
+}
+
+.msg {
+  max-width: 100%;
+  font-size: 13.5px;
+}
+
+.msg p {
+  margin: 0;
+}
+
+/* a reply's paragraphs and lists, spaced like the messages around them */
+.msg .reply {
+  display: grid;
+  gap: 8px;
+}
+
+.msg .reply ul,
+.msg .reply ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-left: 20px;
+}
+
+.msg .reply strong {
+  font-weight: 600;
+}
+
+.msg.user {
+  align-self: flex-end;
+  max-width: 85%;
+  padding: 7px 12px;
+  border-radius: 3px;
+  background: var(--ink);
+  color: var(--paper);
+  white-space: pre-wrap;
+}
+
+.msg.assistant {
+  display: grid;
+  gap: 8px;
+}
+
+/* a citation in a reply, [2] a window or [2.1] a run in its history: it brings that window forward */
+.msg .cite {
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+
+.msg .cite:hover {
+  background: var(--accent-soft);
+}
+
+.msg.note {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.msg.note.error {
+  color: var(--danger);
+}
+
+.chat-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+}
+
+/* what the assistant left in a window: what (one line), then where it waits, with a way there */
+.chat-card {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.chat-card-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.chat-card-title .icon {
+  flex: none;
+  align-self: center;
+  color: var(--ai);
+}
+
+/* a suggested chain: each run, in order, with why it's there */
+.chat-chain {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 6px;
+  padding-left: 20px;
+  font-size: 13px;
+}
+
+.chat-chain-why {
+  color: var(--muted);
+}
+
+.chat-chain-why p {
+  margin: 0;
+}
+
+.chat-card-title small,
+.chat-card-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.chat-card .btn {
+  justify-self: start;
+}
+
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--line-strong);
+  border-top-color: var(--ai);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+/* ---- drop overlay */
+
+.drop-overlay {
+  position: fixed;
+  inset: 12px;
+  z-index: 5000;
+  display: grid;
+  place-items: center;
+  border: 1.5px dashed var(--ink);
+  border-radius: 8px;
+  background: var(--glass-soft);
+  color: var(--ink);
+  pointer-events: none;
+  text-align: center;
+  font-family: var(--serif);
+  font-size: 30px;
+}
+
+.drop-overlay div {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+}
+
+.drop-overlay p {
+  margin: 0;
+}
+
+/* ---- dialogs */
+
+dialog {
+  width: min(540px, calc(100vw - 32px));
+  padding: 22px 24px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+}
+
+dialog::backdrop {
+  background: var(--backdrop);
+}
+
+dialog h2 {
+  margin: 4px 0 12px;
+  font-family: var(--serif);
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+dialog h3 {
+  margin: 12px 0 6px;
+  font-size: 14px;
+}
+
+.with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+dialog p {
+  white-space: pre-wrap;
+}
+
+dialog footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+/* a destructive footer action sits apart, on the left */
+dialog footer .quiet-danger {
+  margin-right: auto;
+}
+
+/* "Warning" over the title of a confirmation that removes or forgets something */
+.eyebrow.confirm-warn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--danger);
+}
+
+/* the assistant's token usage, in its settings: counts in columns, the cached share under the input */
+.usage {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.usage-table {
+  width: 100%;
+  margin: 6px 0 8px;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.usage-table th,
+.usage-table td {
+  padding: 4px 0;
+  text-align: right;
+  font-weight: 400;
+}
+
+.usage-table thead th {
+  width: 30%;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.usage-table tbody th {
+  text-align: left;
+}
+
+.usage-table tbody tr + tr:not(.sub) {
+  border-top: 1px solid var(--line);
+}
+
+.usage-table .sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.usage-table .sub th {
+  padding: 0 0 4px 12px;
+}
+
+.usage-table .sub td {
+  padding: 0 0 4px;
+}
+
+/* the cost sums up the rows above it */
+.usage-table tbody tr + tr.cost {
+  border-top-color: var(--line-strong);
+}
+
+.usage-table .cost th,
+.usage-table .cost td {
+  font-weight: 600;
+}
+
+/* ---- the chain: a window's history as a graph, in a wide dialog. Runs are frames carrying why they
+   ran; steps are buttons on top, wired by what each passed on (an SVG between them) */
+dialog.wide {
+  width: min(1180px, calc(100vw - 48px));
+}
+
+.cg-scroll {
+  max-height: min(64vh, 680px);
+  margin-top: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+}
+
+.cg {
+  position: relative;
+}
+
+.cg-group {
+  position: absolute;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.cg-group-title {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cg-run {
+  margin-right: 6px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* why it ran: the assistant's reason (violet sparkle), or what the book action does */
+.cg-why,
+.cg-about {
+  display: -webkit-box;
+  margin: 4px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+.cg-why .icon {
+  margin-right: 4px;
+  vertical-align: -2px;
+  color: var(--ai);
+}
+
+.cg-about {
+  color: var(--muted);
+}
+
+.cg-links {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.cg-links path {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+
+.cg-links marker path {
+  fill: var(--line-strong);
+  stroke: none;
+}
+
+/* what a link passes on, haloed so it reads over the lines */
+.cg-links text {
+  fill: var(--muted);
+  font-size: 11px;
+  paint-order: stroke;
+  stroke: var(--sheet);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+.cg-node {
+  position: absolute;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.cg-node:hover {
+  border-color: var(--accent);
+}
+
+.cg-node.status-data {
+  background: var(--sheet);
+}
+
+.cg-node.status-failed {
+  border-color: var(--danger);
+}
+
+.cg-node.status-proposed {
+  border-style: dashed;
+  border-color: var(--ai);
+}
+
+.cg-node.status-stale,
+.cg-node.status-queued,
+.cg-node.status-running {
+  border-style: dashed;
+}
+
+.cg-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.cg-node.status-done .cg-status {
+  color: var(--ok);
+}
+
+.cg-node.status-failed .cg-status {
+  color: var(--danger);
+}
+
+.cg-node.status-proposed .cg-status {
+  color: var(--ai);
+}
+
+.cg-title,
+.cg-result {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cg-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.cg-result {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cg-result strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.field {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+}
+
+.field input,
+.field select,
+.crumbs input {
+  font: inherit;
+  padding: 7px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.field input:focus,
+.field select:focus {
+  outline: none;
+  border-color: var(--ink);
+}
+
+/* a setting's name in bold over its box; the unit at the end of the box, so it reads "1.5 m/s" */
+.field-label {
+  font-weight: 600;
+}
+
+.field-box {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.field-box:focus-within {
+  border-color: var(--ink);
+}
+
+.field .field-box input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+}
+
+.field-unit {
+  flex: none;
+  margin-left: auto;
+  padding: 0 10px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+pre.code {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 320px;
+  overflow: auto;
+  border-left: 2px solid var(--ink);
+  background: var(--surface);
+  font: 13px/1.6 var(--mono);
+}
+
+ol.recipe {
+  display: grid;
+  gap: 4px;
+  padding-left: 22px;
+}
+
+ol.recipe li .icon {
+  display: inline-block;
+  vertical-align: -3px;
+}
+
+.browser {
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.crumbs {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.crumbs button {
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.crumbs input {
+  flex: 1;
+  min-width: 0;
+}
+
+.entries {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  height: 320px;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.entries button {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+
+.entries button span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.entries button:hover {
+  background: var(--hover);
+}
+
+.entries small {
+  color: var(--muted);
+}
+
+.entries .none {
+  padding: 12px;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* ---- narrow windows */
+
+@media (max-width: 1100px) {
+  .assistant {
+    display: none;
+  }
+  /* without the column, an expanded window fills the width: the input steps aside */
+  body.has-expanded .ask-box {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .brand span:last-child,
+  .tb-text span {
+    display: none;
+  }
+  .topbar {
+    padding: 0 12px;
+  }
+  .tl-text span {
+    display: none;
+  }
+}
+
+/* ---- canvas tools (shared by every window, like ImageJ's toolbar), atop each Controls drawer */
+
+.tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 0 0 8px;
+}
+
+.tool {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.tool[aria-checked="true"] {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+.win-body canvas:focus {
+  outline: none;
+}
+
+.win-body canvas[data-tool="hand"],
+body.space-pan .win-body canvas {
+  cursor: grab;
+}
+
+.win-body canvas.over-roi {
+  cursor: move;
+}
+
+/* ---- Results: a centred modal, one image at a time */
+
+dialog.results-modal {
+  width: min(1120px, calc(100vw - 48px));
+  height: min(720px, calc(100vh - 96px));
+  padding: 0;
+  overflow: hidden;
+}
+
+dialog.results-modal[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+.rs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 12px 24px;
+  border-bottom: 1px solid var(--line);
+}
+
+.rs-head h2 {
+  margin: 0;
+}
+
+.rs-main {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+}
+
+.rs-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 12px 8px;
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+
+.rs-src {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font: 13px/1.2 inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rs-src span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-src:first-child {
+  margin-bottom: 8px;
+  font: 500 10.5px/1.2 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.rs-src.closed {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.rs-src:hover {
+  background: var(--hover);
+}
+
+.rs-src[aria-pressed="true"] {
+  background: var(--accent-soft);
+}
+
+.rs-count {
+  flex: none;
+  color: var(--faint);
+  font: 11px var(--mono);
+}
+
+.rs-pane {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.rs-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px 10px 24px;
+}
+
+.rs-name {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rs-actions {
+  display: flex;
+  gap: 2px;
+}
+
+.rs-actions .tb-text {
+  height: 28px;
+  padding: 0 8px;
+}
+
+.rs-actions .tb-text:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rs-scroll {
+  flex: 1;
+  overflow: auto;
+  padding: 0 24px 24px;
+}
+
+.rs-h {
+  margin: 14px 0 6px;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.rs-table {
+  overflow-x: auto;
+  border-top: 1px solid var(--line-strong);
+}
+
+.results-modal table {
+  border-collapse: collapse;
+  font: 12px/1.3 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.results-modal th {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line-strong);
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-align: right;
+}
+
+.results-modal td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.results-modal .num {
+  color: var(--faint);
+}
+
+.results-modal td.label {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+}
+
+.results-modal tbody tr[data-row] {
+  cursor: pointer;
+}
+
+.results-modal tbody tr:hover {
+  background: var(--hover);
+}
+
+.rs-empty {
+  margin: 0;
+  padding: 48px 16px;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---- per-window Measure: the list in Controls */
+
+.ms-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ms-list li {
+  display: flex;
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+}
+
+.ms-row {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: 12px/1.2 inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ms-row:hover {
+  background: var(--hover);
+}
+
+.ms-n {
+  min-width: 14px;
+  color: var(--faint);
+  font: 11px var(--mono);
+}
+
+.ms-what {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font: 11px var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ms-shape {
+  display: grid;
+  color: var(--text);
+}
+
+.ms-val {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+  color: var(--text);
+  font: 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.ms-all {
+  margin-top: 8px;
+}
+
+/* ---- Threshold: a side dialog, so the red preview on the image stays in view */
+
+dialog.side {
+  margin: 80px 24px auto auto;
+  width: min(380px, calc(100vw - 32px));
+}
+
+dialog.side::backdrop {
+  background: transparent;
+}
+
+.thr-hist svg {
+  display: block;
+  width: 100%;
+  height: 72px;
+  margin-top: 6px;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.thr-range {
+  fill: rgba(229, 72, 77, 0.28);
+  stroke: #e5484d;
+  stroke-width: 0.6;
+}
+
+.thr-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--faint);
+  font: 10.5px/1 var(--mono);
+}
+
+.thr-row {
+  display: grid;
+  grid-template-columns: 52px 1fr 92px;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font: 500 10.5px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.thr-row input[type="range"] {
+  accent-color: #e5484d;
+}
+
+.thr-row input[type="number"] {
+  font: 12px var(--mono);
+  padding: 5px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.thr-opts {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 14px;
+}
+
+.thr-stat {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+@media (max-width: 1100px) {
+  .rs-main {
+    grid-template-columns: 150px minmax(0, 1fr);
+  }
+}
+
+/* ---- workspace panel and artifact viewers */
+.ws-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.ws-head select {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-drop.over {
+  border-color: var(--ink);
+}
+
+.ws-drop .entries button small {
+  white-space: nowrap;
+}
+
+.artifact-table {
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.artifact-table table {
+  border-collapse: collapse;
+  font: 12px/1.5 var(--mono);
+}
+
+.artifact-table th,
+.artifact-table td {
+  padding: 3px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.artifact-table th {
+  position: sticky;
+  top: 0;
+  background: var(--sheet);
+}
+
+/* ---- ships: status, jobs panel, run and storage dialogs */
+/* the Ships button only stands out when something needs attention (no Docker, low disk) */
+.sys-status[data-tone="warn"] {
+  color: var(--warn-text);
+}
+
+.jobs-btn .badge {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font: 600 11px/16px var(--mono);
+  text-align: center;
+}
+
+.jobs-mark {
+  background: var(--accent);
+}
+
+.jobs-list {
+  flex: 1;
+  overflow-y: auto;
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+}
+
+.jobs-empty {
+  padding: 16px 8px;
+  color: var(--muted);
+}
+
+.job {
+  display: grid;
+  gap: 6px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.job-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.job-state {
+  color: var(--muted);
+  font: 11px/1.6 var(--mono);
+  white-space: nowrap;
+}
+
+.job.state-failed .job-state,
+.job.state-failed .job-msg {
+  color: var(--danger);
+}
+
+.job.state-done .job-state {
+  color: var(--ok);
+}
+
+.job-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.job-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.job-msg {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.jobs-log {
+  max-height: 200px;
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ws-row .file {
+  flex: 1;
+  min-width: 0;
+}
+
+.run-tools {
+  height: auto;
+  max-height: 360px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.run-tools button > span {
+  align-items: flex-start;
+}
+
+.status-list,
+.storage-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+}
+
+.status-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+}
+
+.status-list li.warn {
+  color: var(--warn-text);
+}
+
+.storage-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.storage-row small {
+  color: var(--muted);
+}
+
+.ws-row .file {
+  width: auto;
+}
+
+.ws-row .chip,
+.ws-head .chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  width: auto;
+  white-space: nowrap;
+}
+
+.ws-row .chip {
+  border: 1px solid var(--line-strong);
+  padding: 3px 10px;
+}
+
+.run-tools button > span > span {
+  display: block;
+}
+
+.job-actions .chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---- library and plans */
+#dialog.wide {
+  width: min(860px, calc(100vw - 32px));
+}
+
+.lib-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.lib-head .chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* books and ships: cards of one shape, each at most 340px tall; past that the middle scrolls,
+   so the name, what it is and what to do with it stay in view */
+.lib-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 2px; /* room for focus rings */
+  list-style: none;
+}
+
+.lib-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 340px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.lib-card.blocked {
+  opacity: 0.6;
+}
+
+.lib-card p {
+  margin: 0;
+  white-space: normal;
+}
+
+.lib-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* the name, with its badge (fits, needs a GPU, verified) under it */
+.lib-card-name {
+  display: grid;
+  flex: 1;
+  justify-items: start;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lib-card-name h3 {
+  max-width: 100%;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.lib-card-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--well);
+  color: var(--muted);
+}
+
+.lib-badge {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lib-badge.ok {
+  color: var(--ink);
+}
+
+.lib-badge.warn {
+  color: var(--warn-text);
+}
+
+.lib-card-desc {
+  display: -webkit-box;
+  flex: none;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+
+/* a soft shadow at its foot while more scrolls below (the cover rides with the content and hides it at the end) */
+.lib-card-body {
+  display: grid;
+  flex: 1 1 auto;
+  align-content: start;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background:
+    linear-gradient(transparent, var(--surface) 70%) 0 100% / 100% 24px no-repeat local,
+    radial-gradient(farthest-side at 50% 100%, var(--line), transparent) 0 100% / 100% 8px no-repeat scroll;
+}
+
+.lib-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.lib-card-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-card-meta .converted {
+  font-style: italic;
+}
+
+.lib-card-meta.warn {
+  color: var(--warn-text);
+}
+
+/* a ship's operations: each name over its summary, one line */
+.lib-card-ops {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.lib-card-ops li {
+  display: grid;
+  min-width: 0;
+}
+
+.lib-card-ops strong {
+  font-weight: 500;
+}
+
+.lib-card-ops span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lib-card-foot {
+  display: grid;
+  flex: none;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+/* a tick once on this computer, the download arrow until then */
+.lib-card-ships {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+.lib-card-ships li,
+.lib-card-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-card-ships li.on,
+.lib-card-where.on {
+  color: var(--ink);
+}
+
+.lib-card-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.lib-empty {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.link-btn {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  color: var(--ink);
+}
+
+.book-match.tier-direct small {
+  color: var(--ok);
+}
+
+.book-match.tier-excluded small {
+  color: var(--danger);
+}
+
+.tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 8px;
+  background: var(--accent-soft);
+  font-size: 11px;
+}
+
+.chip.primary-chip {
+  border-color: var(--ink);
+}
+
+.warn-chip {
+  color: var(--warn-text);
+}
+
+.lib-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.ws-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.ws-pick [data-picked] {
+  flex: 1;
+}
+
+/* what the workspace takes on disk, then where it lives */
+.ws-usage {
+  margin: 8px 0 2px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ws-where {
+  overflow-wrap: anywhere;
+}
+
+.ws-row input[type="checkbox"] {
+  flex: none;
+}
+
+/* See more on a book or ship: everything about it, scrolling above the footer */
+.lib-more {
+  display: grid;
+  gap: 8px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.lib-more p,
+.lib-more h3 {
+  margin: 0;
+}
+
+.lib-more h3 {
+  margin-top: 8px;
+}
+
+/* each action, operation or ship: its name over what it does, then what it takes and lets you set */
+.lib-more-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.lib-more-list li {
+  display: grid;
+  gap: 2px;
+}
+
+.lib-more-list strong {
+  font-weight: 500;
+}
+
+.lib-more-list .lib-card-where {
+  font-size: 13px;
+}
+
+.lib-more-list small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.lib-more-guide > summary {
+  list-style: none;
+}
+
+.lib-more-guide > summary::-webkit-details-marker {
+  display: none;
+}
+
+/* the GUIDE.md the assistant reads, folded away; .lib-more scrolls it */
+.lib-more-guide .guide-text {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
+.issue-list,
+.issue-list ul {
+  list-style: none;
+  padding-left: 0;
+}
+
+.issue-list ul {
+  margin: 4px 0 12px 12px;
+}
+
+.issue-list .error {
+  color: var(--danger);
+}
+
+.plan-mark {
+  background: var(--ink);
+}
+
+.plan-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+}
+
+.plan-body h3 {
+  margin: 14px 0 6px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.plan-title {
+  margin: 4px 0 6px;
+}
+
+.plan-why {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ai);
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.plan-steps,
+.plan-ships,
+.plan-problems {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.plan-ships,
+.plan-problems {
+  list-style: none;
+  padding-left: 0;
+}
+
+.plan-step {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  padding: 3px 0;
+}
+
+.plan-step .job-bar {
+  grid-column: 1 / -1;
+}
+
+.plan-step.state-done .job-state {
+  color: var(--ok);
+}
+
+.plan-step.state-failed .job-state {
+  color: var(--danger);
+}
+
+.plan-problems .error {
+  color: var(--danger);
+}
+
+.plan-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+/* icons sit beside their labels in chips and plan buttons */
+.chip,
+.plan-foot button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.plan-ships li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.artifact-video {
+  display: block;
+  width: 100%;
+  max-height: 60vh;
+  background: #000;
+  border-radius: 3px;
+}
+
+/* ---- data-first start screen */
+.welcome {
+  place-content: safe center;
+  overflow-y: auto;
+  /* scrolled to the end, or to a card Tab reached, the examples clear the ask box and project buttons in the bottom corners */
+  padding-bottom: 80px;
+  scroll-padding-bottom: 80px;
+}
+
+/* the project's name, top right under the top bar, level with the left column's first line;
+   like the project buttons below it, windows can cover it */
+.project-label {
+  position: absolute;
+  top: 72px;
+  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--muted);
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: text;
+}
+
+.project-label:hover {
+  background: var(--hover);
+  color: var(--ink);
+}
+
+.project-label-input {
+  position: absolute;
+  top: 72px;
+  right: 20px;
+  width: min(260px, calc(100vw - 40px));
+  padding: 3px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--surface);
+  color: var(--ink);
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-align: right;
+}
+
+/* the stage: the drop area, with the example cards in a ring around it, or (after "See all examples",
+   and on a small screen) in a grid under it. Only its parts take clicks, so the bottom corners keep the
+   ask box and the project buttons */
+.welcome-stage {
+  position: relative;
+  width: min(920px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.welcome-centre,
+.examples > * {
+  pointer-events: auto;
+}
+
+.welcome-centre {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+}
+
+.welcome .dropzone {
+  width: min(440px, calc(100vw - 32px));
+  align-content: center;
+}
+
+.examples-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+/* the ring: everything under the top bar, a band of cards seen in perspective and a little from above.
+   examples.ts stands each card flush on the band, sees it through its own perspective from the one eye, and
+   stacks the cards by depth: a nearer card always covers a farther one, the front passes before the drop area
+   and the back behind it */
+.welcome:has(.ring-on) {
+  padding-bottom: 16px;
+  overflow: hidden;
+}
+
+/* the whole area under the top bar (the welcome's grid would size it to the drop area) */
+.welcome-stage.ring-on {
+  position: absolute;
+  inset: 64px 0 16px;
+  width: auto;
+}
+
+/* outside the ring the scene is no box at all */
+.ring-scene {
+  display: contents;
+}
+
+/* the ring's scene: a fixed size (SCENE_W wide in examples.ts, and as tall as it measures the ring), scaled
+   as a whole to fit the stage, so zooming the page makes the ring larger or smaller but never changes the
+   angle it's seen from */
+.ring-on .ring-scene {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: block;
+  width: 1500px;
+  transform: translate(-50%, -50%) scale(var(--ring-scale, 1));
+}
+
+/* the centre stands a little above the ring's middle (--centre-y, from examples.ts), lit by a soft light
+   that shines up from the floor below it and veils the cards passing behind */
+.ring-on .welcome-centre {
+  position: absolute;
+  left: 50%;
+  top: var(--centre-y, 50%);
+  width: max-content;
+  gap: 16px;
+  transform: translate(-50%, -50%);
+}
+
+.ring-on .welcome-centre::before,
+.ring-on .welcome-centre::after {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* the beam: rising from the pool of light on the floor, well below the drop area, and widening all the
+   way up from there, its light fading out softly over most of its height. It carries the veil that hides the cards behind the drop area,
+   so only the cone's own shape stands behind the text: soft sides, from a cone whose point is a little
+   below the floor, and a foot that fades into the pool */
+.ring-on .welcome-centre::before {
+  inset: -148px -300px -150px; /* down into the pool, so the cone grows out of it */
+  background:
+    linear-gradient(to top, var(--beam), var(--beam) 25%, transparent 85%),
+    linear-gradient(to top, var(--beam-halo), var(--beam-halo) 74%, transparent 94%); /* the veil, as high as the cards behind */
+  -webkit-mask-image:
+    conic-gradient(from -38.5deg at 50% calc(100% + 200px), transparent, black 14deg, black 63deg, transparent 77deg, transparent),
+    linear-gradient(to top, transparent, black 5%);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    conic-gradient(from -38.5deg at 50% calc(100% + 200px), transparent, black 14deg, black 63deg, transparent 77deg, transparent),
+    linear-gradient(to top, transparent, black 5%);
+  mask-composite: intersect;
+}
+
+/* the light on the floor it shines from: its heart and a soft glow, circles on the floor that examples.ts
+   measures through the band's own perspective (--pool-*, --glow-*), so both lie as flat as the band. Both are
+   centred --pool-mid above the light's foot */
+.ring-on .welcome-centre::after {
+  left: 50%;
+  bottom: -158px; /* FLOOR_BELOW in examples.ts */
+  width: var(--glow-w, 400px);
+  height: calc(2 * var(--pool-mid, 28px));
+  margin-left: calc(var(--glow-w, 400px) / -2);
+  background:
+    radial-gradient(calc(var(--pool-w, 224px) / 2) calc(var(--pool-h, 40px) / 2) at 50% 50%, var(--beam-core), transparent),
+    radial-gradient(calc(var(--glow-w, 400px) / 2) calc(var(--glow-h, 56px) / 2) at 50% 50%, var(--beam), transparent);
+}
+
+.ring-on .welcome-centre .display {
+  margin-bottom: 8px;
+  font-size: 56px;
+}
+
+/* in the ring the drop area is open, with no box and no ground of its own: the beam behind it keeps its text clear */
+.ring-on .dropzone,
+.ring-on .dropzone:hover {
+  width: 520px;
+  padding: 16px 32px;
+  border-color: transparent;
+  background: none;
+}
+
+.ring-on .dropzone-icon {
+  background: var(--beam-button);
+  color: var(--beam-button-ink);
+  transition: border-color 0.15s;
+}
+
+.ring-on .dropzone:hover .dropzone-icon {
+  border-color: var(--ink);
+}
+
+.ring-on .examples,
+.ring-on .example-list {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* the list spans the stage but only its cards take clicks, so the drop area and its buttons under it stay usable */
+.ring-on .example-list {
+  display: block;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.ring-on .example {
+  pointer-events: auto;
+}
+
+/* a card in the ring is its picture, its kind and its name; the question shows in the grid */
+.ring-on .example {
+  position: absolute;
+  left: 50%;
+  top: var(--ring-y, 50%);
+  width: 262px;
+  margin: calc(var(--card-h, 230px) / -2) 0 0 -131px; /* centred on its place; examples.ts measures its height */
+  overflow: visible; /* the picture clips itself, so the card can hold its edges in 3D */
+  transform-style: preserve-3d;
+  box-shadow: var(--shadow);
+}
+
+.ring-on .example-pic {
+  border-radius: 5px 5px 0 0;
+}
+
+/* the picture and the text lie just off the card's face, so in 3D they never fight it for the same plane.
+   Turned away, a card is a little see-through: its picture shows faintly through its face, mirrored */
+.ring-on .example-pic,
+.ring-on .example-text {
+  transform: translateZ(0.5px);
+}
+
+.ring-on .example.away {
+  background: color-mix(in srgb, var(--sheet) 90%, transparent);
+}
+
+.ring-on .example.away .example-pic {
+  opacity: 0.9;
+}
+
+/* a card in the ring has a little thickness: its two side edges, standing back from its face, so a card
+   turning edge-on stays a thin card rather than a jagged line */
+.example-edge {
+  display: none;
+}
+
+.ring-on .example-edge {
+  display: block;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-style: preserve-3d;
+}
+
+.ring-on .example-edge::before,
+.ring-on .example-edge::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  bottom: 4px;
+  width: 4px;
+  background: var(--line-strong);
+}
+
+.ring-on .example-edge::before {
+  left: -1px;
+  transform-origin: left;
+  transform: rotateY(90deg);
+}
+
+.ring-on .example-edge::after {
+  right: -1px;
+  transform-origin: right;
+  transform: rotateY(-90deg);
+}
+
+.ring-on .example em,
+.ring-on .beyond-ring {
+  display: none;
+}
+
+.ring-on .example-text {
+  padding: 8px 10px 10px;
+}
+
+.ring-on .example strong {
+  font-size: 14px;
+}
+
+/* the grid: every card under the drop area, with "Hide examples" at its foot (on a small screen, the grid alone) */
+.examples {
+  display: grid;
+  justify-items: center;
+  gap: 16px;
+  margin-top: 24px;
+  text-align: left;
+}
+
+.example-list {
+  justify-self: stretch;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 4px;
+}
+
+#dialog .example-list.grid {
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* the description is the hover title; the picture's alt is empty, as the card's text names it */
+.example {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.example:hover {
+  border-color: var(--ink);
+}
+
+.example-pic {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line);
+  background: var(--well);
+  color: var(--muted);
+}
+
+.example-pic img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.3s;
+}
+
+.example-pic img.loaded {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .example:hover .example-pic img {
+    transform: scale(1.03);
+  }
+}
+
+.example-text {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.example small.eyebrow {
+  margin: 0;
+}
+
+.example strong {
+  font-size: 14px;
+}
+
+.example em {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ---- data windows: a dataset, its history of processes, and the result on view */
+.data-win .win-kind {
+  display: inline-flex;
+  color: var(--muted);
+}
+
+.win-body.data-body {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+/* a result picked from Results, with the button that closes it */
+.dv-picked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: none;
+  padding: 2px 4px 2px 12px;
+  border-bottom: 1px solid var(--line);
+  border-left: 2px solid var(--accent);
+  background: var(--sheet);
+  font-size: 12px;
+}
+
+.dv-outputs {
+  display: flex;
+  gap: 6px;
+  flex: none;
+  padding: 8px 10px 0;
+}
+
+.dv-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+
+.dv-stage.has-image {
+  overflow: hidden;
+  background: #1e1d1b;
+}
+
+.dv-canvas {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.dv-canvas canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+/* what a preview of a larger image left out, at its top left (the readout is at the bottom) */
+.dv-preview-note {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  max-width: calc(100% - 16px);
+  margin: 0;
+  padding: 2px 8px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+
+.dv-sliders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  flex: none;
+  padding: 6px 10px;
+  background: var(--sheet);
+  font: 11px var(--mono);
+  color: var(--muted);
+}
+
+.dv-contrast {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.dv-sliders:empty {
+  display: none;
+}
+
+.dv-sliders label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 160px;
+}
+
+.dv-sliders input {
+  flex: 1;
+}
+
+.dv-status {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  /* light enough to see what's on view underneath while the card follows the run */
+  background: color-mix(in srgb, var(--surface) 40%, transparent);
+  z-index: 2;
+}
+
+.dv-status-card {
+  display: grid;
+  gap: 8px;
+  width: min(360px, 90%);
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+}
+
+.dv-status-card.failed span {
+  color: var(--danger);
+}
+
+.dv-status-card button {
+  justify-self: start;
+}
+
+.dv-views {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.dv-views .pg {
+  width: 100%;
+}
+
+.dv-page {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: var(--sheet);
+}
+
+.dv-loading {
+  margin: auto;
+  color: var(--muted);
+}
+
+.dv-table {
+  flex: 1;
+  max-height: none;
+  margin: 10px;
+}
+
+.dv-foot {
+  flex: none;
+  margin: 0 10px 8px;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.dv-video {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+.dv-card {
+  margin: auto;
+  width: min(520px, 92%);
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--sheet);
+}
+
+.dv-card h3 {
+  margin: 2px 0 12px;
+}
+
+.dv-card dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 14px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+
+.dv-card dt {
+  color: var(--muted);
+}
+
+.dv-card dd {
+  margin: 0;
+}
+
+.dv-card dd small {
+  color: var(--faint);
+}
+
+.dv-text {
+  flex: 1;
+  margin: 10px;
+  max-height: none;
+}
+
+/* history: the dataset, then one node per process, linked */
+.tl-link {
+  flex: none;
+  width: 14px;
+  height: 1px;
+  background: var(--line-strong);
+}
+
+/* a recipe's steps share a slim bracket underneath; the recipe's name is its tooltip */
+.tl-groupbox {
+  display: flex;
+  flex: none;
+  align-items: center;
+  padding: 0 3px 4px;
+  margin-bottom: -5px;
+  border: 1px solid var(--line-strong);
+  border-top: 0;
+  border-radius: 0 0 5px 5px;
+}
+
+/* the step's status, as a small badge on its icon */
+.tl-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  display: grid;
+  place-items: center;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.tl-badge .icon {
+  color: var(--sheet);
+  stroke-width: 3;
+}
+
+.tl-node.data-step:not(.selected) {
+  color: var(--ink);
+}
+
+.tl-node.data-step.status-done .tl-badge {
+  background: var(--ok);
+}
+
+.tl-node.data-step.status-proposed .tl-badge {
+  background: var(--ai);
+}
+
+.tl-node.data-step.status-failed .tl-badge {
+  background: var(--danger);
+}
+
+.tl-node.data-step.status-failed {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tl-node.data-step.status-proposed {
+  border-style: dashed;
+  color: var(--ai);
+}
+
+.tl-node.data-step.status-stale,
+.tl-node.data-step.status-cancelled {
+  opacity: 0.55;
+}
+
+.tl-node.data-step.status-queued,
+.tl-node.data-step.status-running {
+  color: var(--accent);
+}
+
+/* a running step fills a ring as it goes */
+.tl-node.data-step.status-running {
+  background: conic-gradient(var(--accent-soft) var(--p, 0%), var(--surface) 0);
+  animation: step-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes step-pulse {
+  50% {
+    border-color: var(--accent);
+  }
+}
+
+.tl-node.selected {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+
+.tl-text.primary-text {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+/* drawer */
+.ctl-sec-title {
+  margin: 8px 0 6px;
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.dv-why {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--ai);
+  background: var(--surface);
+  font-size: 12px;
+}
+
+.dv-approve {
+  width: 100%;
+}
+
+/* a Controls button that runs something: its label on one line (cut short if it must be), then an arrow */
+/* run buttons carry an action's title, which can be long for the drawer's width: smaller caps, wrapping onto a second line */
+.ctl-drawer .run-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  line-height: 1.3;
+  text-align: center;
+}
+
+.ctl-drawer .run-btn span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ctl-drawer .run-btn .icon {
+  flex: none;
+}
+
+/* the Controls' two tabs: the assistant's layout (Suggested), or every setting as the book lays them out */
+.ctl-tabs {
+  display: flex;
+  gap: 16px;
+  margin: 0 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.ctl-tabs [role="tab"] {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: -1px;
+  padding: 6px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--muted);
+  font: 500 10.5px/1.4 var(--mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.ctl-tabs [role="tab"]:hover {
+  color: var(--ink);
+}
+
+.ctl-tabs [role="tab"][aria-selected="true"] {
+  border-bottom-color: var(--ink);
+  color: var(--ink);
+}
+
+/* the Suggested tab: what the action does, at most two settings with a hint each, the rest folded, one button */
+.sug,
+.sug-form {
+  display: grid;
+  gap: 8px;
+}
+
+.sug p {
+  margin: 0;
+}
+
+.sug-title {
+  font-size: 14px;
+}
+
+.sug-title small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sug-summary {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.sug-field .field {
+  margin-top: 0;
+}
+
+.sug .sug-hint {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.sug-form .primary {
+  width: 100%;
+  margin-top: 4px;
+}
+
+.sug > .link-btn {
+  justify-self: start;
+}
+
+.dv-params .primary {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* what to run next from the Controls: each action folded under its title, in its book's sections, one button that names it */
+.dv-next-item > summary small {
+  color: var(--muted);
+  font: 400 12px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* the action the data came to try (an example's) leads the list */
+.dv-next-item.preferred > summary {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.dv-next-form {
+  display: grid;
+  gap: 8px;
+}
+
+.dv-next-form > p {
+  margin: 0;
+}
+
+.dv-next-sub {
+  margin: 4px 0 2px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.dv-next-sec .muted {
+  margin: 0 0 4px;
+}
+
+.dv-next-form .primary {
+  width: 100%;
+}
+
+.chip.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.link.danger {
+  color: var(--danger);
+  font-size: 12px;
+}
+
+/* Remove this run: quiet and centred at the foot of the Controls, red only when you point at it (it asks first) */
+.ctl-remove-sec {
+  display: flex;
+  justify-content: center;
+}
+
+.ctl-remove {
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.ctl-remove:hover,
+.ctl-remove:focus-visible {
+  color: var(--danger);
+}
+
+.shelf-glyph {
+  display: grid;
+  place-items: center;
+  width: 120px;
+  height: 80px;
+  color: var(--muted);
+}
+
+.menu-pop button[data-dp] small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.dv-stage.has-model {
+  overflow: hidden;
+  background: #1e1d1b;
+}
+
+.dv-model {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.dv-model canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+/* ---- the CAD editor: an expanded window's body for a STEP part (cad-editor.ts) */
+
+/* on a result made from a part (a stress map): back to the part, in the editor; Results, when open, covers it */
+.dv-edit-part {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+}
+
+/* the tools along the top, the part's faces down the left, the part in 3D, and the tool's settings floating over it */
+.cad-ed {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.cad-tools {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sheet);
+}
+
+.cad-tool {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cad-tool:hover {
+  border-color: var(--line-strong);
+}
+
+.cad-tool.on {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--sheet);
+}
+
+.cad-tree {
+  overflow-y: auto;
+  padding: 12px;
+  border-right: 1px solid var(--line);
+  background: var(--sheet);
+  font-size: 13px;
+}
+
+.cad-size {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-size small,
+.cad-row small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-tree .eyebrow {
+  margin: 12px 0 4px;
+}
+
+.cad-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* a face or hole: the one picked edged in the accent, as the part shows it */
+.cad-row {
+  display: grid;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  background: none;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cad-row:hover,
+.cad-row.hover {
+  background: var(--hover);
+}
+
+.cad-row.on {
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.cad-view {
+  position: relative;
+  min-height: 0;
+}
+
+.cad-view canvas {
+  position: absolute;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.cad-panel {
+  position: absolute;
+  left: 236px;
+  bottom: 16px;
+  width: 264px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+  padding: 12px;
+  border-radius: 6px;
+  background: var(--sheet);
+  box-shadow: var(--shadow);
+  font-size: 13px;
+}
+
+.cad-panel:empty {
+  display: none;
+}
+
+.cad-panel p {
+  margin: 0 0 8px;
+}
+
+.cad-panel-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cad-picked {
+  font-variant-numeric: tabular-nums;
+}
+
+.cad-need {
+  color: var(--warn-text);
+}
+
+.cad-offers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.cad-form .field:first-child {
+  margin-top: 0;
+}
+
+/* its button as the Controls' run buttons: the edit's name, then an arrow, on one line */
+.cad-form .primary {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+.dv-hint {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  margin: 0;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: rgba(30, 29, 27, 0.6);
+  color: rgba(255, 255, 255, 0.8);
+  font: 11px/1.5 var(--mono);
+  pointer-events: none;
+}
+
+/* ---- data windows: folded sections in the Controls (More settings, Results) and View log */
+.dv-results > summary,
+.dv-more > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.dv-results > summary::-webkit-details-marker,
+.dv-more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dv-results > summary .icon,
+.dv-more > summary .icon {
+  transition: transform 0.12s;
+}
+
+.dv-results[open] > summary .icon,
+.dv-more[open] > summary .icon {
+  transform: rotate(90deg);
+}
+
+.dv-results > summary:hover,
+.dv-more > summary:hover {
+  color: var(--ink);
+}
+
+/* the step's place in its run, and its full record behind View log */
+.dv-head .ctl-summary {
+  margin-bottom: 2px;
+}
+
+.dv-results > summary small {
+  margin-left: auto;
+  font: 11px var(--mono);
+  letter-spacing: 0;
+  color: var(--muted);
+}
+
+.dv-grid-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+/* Results: a list floating over the window's lower right, opened from the button at the history bar's right end */
+.dv-results-pop {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: min(240px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  padding: 6px 6px 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+}
+
+.dv-results-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0 0 4px;
+}
+
+.tl-text small {
+  margin-left: 2px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* the run's results as titles: the one on view in the blue of the history marker */
+.dv-result-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dv-result {
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: 0 3px 3px 0;
+  background: none;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dv-result:hover {
+  background: var(--hover);
+}
+
+.dv-result.on {
+  border-left-color: var(--accent);
+  font-weight: 500;
+}
+
+.dv-result small {
+  margin-left: 4px;
+  color: var(--muted);
+  font: 11px var(--mono);
+}
+
+.win-icon[aria-pressed="true"] {
+  color: var(--ink);
+  background: var(--hover);
+}

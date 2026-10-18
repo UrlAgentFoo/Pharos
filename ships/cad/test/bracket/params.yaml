@@ -1,0 +1,4 @@
+# a bracket with ribs, from settings alone (no part to keep the size of)
+thickness: 5
+rib: 3
+fillet: 4

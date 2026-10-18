@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: render
+version: 0.1.0
+image: pharos/render:0.1.0    # built from this folder's Dockerfile
+summary: Makes videos and 3D models - images over time, tracks, segmented objects as surfaces, and fluid simulations.
+license: MIT
+tags: [visualization, video, 3d, tracking, cfd]
+requires: { memory_gb: 2, network: none }
+operations:
+  video:
+    summary: Makes an MP4 of an image over time, max-projected along z.
+    command: python /opt/pharos/pharos_render.py video --image {in.image} --out /out/video.mp4 --fps {fps} --channel {channel}
+    inputs: [{ name: image, kind: volume, formats: [ome-zarr] }]
+    parameters:
+      - { name: fps, type: number, default: 4, min: 0.5, max: 60, description: Frames per second. }
+      - { name: channel, type: integer, default: 0, min: 0, description: Channel to show. }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }
+  tracks-video:
+    summary: Makes an MP4 of an image over time with each tracked cell's recent path drawn in its own colour.
+    command: python /opt/pharos/pharos_render.py tracks-video --image {in.image} --tracks {in.tracks} --out /out/video.mp4 --fps {fps} --channel {channel} --tail {tail}
+    inputs:
+      - { name: image, kind: volume, formats: [ome-zarr] }
+      - { name: tracks, kind: tracks, formats: [csv] }
+    parameters:
+      - { name: fps, type: number, default: 4, min: 0.5, max: 60, description: Frames per second. }
+      - { name: channel, type: integer, default: 0, min: 0, description: Channel to show. }
+      - { name: tail, type: integer, default: 10, min: 0, max: 1000, description: How many earlier time points of each path to draw. }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }
+  flow-video:
+    summary: Makes an MP4 of a solved OpenFOAM case - vorticity (shows vortices) or speed in the x-y plane, one frame per saved time.
+    command: python /opt/pharos/pharos_render.py flow-video --case {in.case} --out /out/video.mp4 --field {field} --fps {fps}
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case], needs: [solved] }]
+    parameters:
+      - { name: field, type: enum, options: [vorticity, speed], default: vorticity, description: "vorticity shows swirling (vortices); speed shows how fast the fluid moves." }
+      - { name: fps, type: number, default: 12, min: 0.5, max: 60, description: Frames per second. }
+    outputs: [{ name: video, kind: video, format: mp4, path: /out/video.mp4 }]
+    cache: { deterministic: true }
+  case-model:
+    summary: Makes a 3D model of an OpenFOAM case's surfaces (obstacles, walls, inlet), coloured by speed once it has been solved.
+    command: python /opt/pharos/pharos_render.py case-model --case {in.case} --out /out/model.ply
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    outputs: [{ name: model, kind: mesh, format: ply, path: /out/model.ply }]
+    cache: { deterministic: true }
+  labels-surface:
+    summary: Makes a 3D model of segmented objects - each one's surface in its own colour - from a label image (one time point).
+    command: python /opt/pharos/pharos_render.py labels-surface --labels {in.labels} --out /out/model.ply --frame {frame}
+    inputs: [{ name: labels, kind: labels, formats: [ome-zarr] }]
+    parameters:
+      - { name: frame, type: integer, default: 0, min: 0, description: "Which time point, for labels over time (counting from 0)." }
+    outputs: [{ name: model, kind: mesh, format: ply, path: /out/model.ply }]
+    cache: { deterministic: true }

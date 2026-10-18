@@ -1,0 +1,4 @@
+window,from_t,to_t,combined,edge_jaccard,true_positives,false_positives,false_negatives,recall,tracked_cells,true_cells
+first part,0,5,1.0,1.0,30,0,0,1.0,60,36
+second part,6,11,1.0,1.0,30,0,0,1.0,60,36
+whole movie,0,11,1.0,1.0,66,0,0,1.0,120,72

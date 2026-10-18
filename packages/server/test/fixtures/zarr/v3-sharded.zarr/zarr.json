@@ -1,0 +1,32 @@
+{
+  "attributes": {
+    "ome": {
+      "version": "0.5",
+      "multiscales": [
+        {
+          "axes": [
+            {
+              "name": "t",
+              "type": "time"
+            },
+            {
+              "name": "y",
+              "type": "space"
+            },
+            {
+              "name": "x",
+              "type": "space"
+            }
+          ],
+          "datasets": [
+            {
+              "path": "0"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "zarr_format": 3,
+  "node_type": "group"
+}

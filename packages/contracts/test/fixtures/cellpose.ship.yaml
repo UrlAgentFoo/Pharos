@@ -1,0 +1,15 @@
+id: cellpose
+version: 0.1.0
+image: pharos/cellpose@sha256:0000000000000000000000000000000000000000000000000000000000000000
+citation: https://doi.org/10.1038/s41592-020-01018-x
+requires: { gpu: { vendor: nvidia, optional: true }, memory_gb: 16, network: none }
+operations:
+  segment:
+    summary: Segment cells or nuclei in 2D/3D fluorescence images.
+    command: cellpose-run --in /in/image --out /out --model {model} --diameter {diameter}
+    inputs: [{ name: image, kind: volume, formats: [ome-zarr, tiff] }]
+    parameters:
+      - { name: model, type: enum, options: [cyto3, nuclei], default: cyto3 }
+      - { name: diameter, type: number, unit: px, default: 30 }
+    outputs: [{ name: masks, kind: labels, format: ome-zarr, path: /out/masks.zarr }]
+    cache: { deterministic: true }

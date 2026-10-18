@@ -1,0 +1,388 @@
+{
+  "additionalProperties": false,
+  "$id": "ship.schema.json",
+  "title": "Pharos ship",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "image",
+    "operations"
+  ],
+  "properties": {
+    "id": {
+      "pattern": "^[a-z0-9][a-z0-9-]*$",
+      "type": "string"
+    },
+    "version": {
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+      "type": "string"
+    },
+    "image": {
+      "minLength": 1,
+      "description": "Container image, pinned by digest (name@sha256:…) for verified ships.",
+      "type": "string"
+    },
+    "mode": {
+      "description": "cli (default): a fresh container per operation. warm: one container per workspace stays up between operations, so they start at once; inputs still appear at /in, outputs go to /out.",
+      "anyOf": [
+        {
+          "const": "cli",
+          "type": "string"
+        },
+        {
+          "const": "warm",
+          "type": "string"
+        }
+      ]
+    },
+    "warm": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "start": {
+          "description": "Runs when the warm container starts and keeps running, e.g. a server that loads a model once; operations can talk to it inside the container.",
+          "type": "string"
+        },
+        "idle_minutes": {
+          "exclusiveMinimum": 0,
+          "description": "Stop the container after this long without operations (default 10).",
+          "type": "number"
+        }
+      }
+    },
+    "summary": {
+      "type": "string"
+    },
+    "citation": {
+      "type": "string"
+    },
+    "license": {
+      "description": "SPDX licence id of the tool, e.g. GPL-3.0-only.",
+      "type": "string"
+    },
+    "homepage": {
+      "type": "string"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "requires": {
+      "additionalProperties": false,
+      "type": "object",
+      "properties": {
+        "gpu": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "vendor",
+            "optional"
+          ],
+          "properties": {
+            "vendor": {
+              "const": "nvidia",
+              "type": "string"
+            },
+            "optional": {
+              "description": "true: runs on CPU too, only slower.",
+              "type": "boolean"
+            }
+          }
+        },
+        "memory_gb": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "disk_gb": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        "network": {
+          "description": "none (default): no network while running.",
+          "anyOf": [
+            {
+              "const": "none",
+              "type": "string"
+            },
+            {
+              "const": "download",
+              "type": "string"
+            }
+          ]
+        }
+      }
+    },
+    "formats": {
+      "description": "File formats this ship brings that Pharos doesn't know yet: how to recognise them and what kind of data they hold.",
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z0-9][a-z0-9-]*$": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "pattern": "^[a-z][a-z0-9-]*$",
+              "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
+              "type": "string"
+            },
+            "title": {
+              "description": "As people know it, e.g. \"OME-Zarr\".",
+              "type": "string"
+            },
+            "extensions": {
+              "minItems": 1,
+              "description": "Lowercase, with the dot; longest wins, e.g. .ome.tif before .tif.",
+              "type": "array",
+              "items": {
+                "pattern": "^(\\.[a-z0-9]+)+$",
+                "type": "string"
+              }
+            },
+            "folder": {
+              "description": "The data is a folder (a .zarr store, an OpenFOAM case).",
+              "type": "boolean"
+            },
+            "contains": {
+              "minItems": 1,
+              "description": "For folders: entries that identify the format whatever the folder is called.",
+              "type": "array",
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "edam": {
+              "pattern": "^format_\\d+$",
+              "description": "EDAM format term.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "operations": {
+      "minProperties": 1,
+      "additionalProperties": false,
+      "type": "object",
+      "patternProperties": {
+        "^[a-z][a-z0-9-]*$": {
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "summary",
+            "command",
+            "outputs"
+          ],
+          "properties": {
+            "summary": {
+              "minLength": 1,
+              "description": "One sentence: what the operation does. Searched and shown to the assistant.",
+              "type": "string"
+            },
+            "command": {
+              "minLength": 1,
+              "description": "Command template. `{param}` is replaced by a parameter's value; inputs are mounted at /in/<name>.",
+              "type": "string"
+            },
+            "inputs": {
+              "description": "Empty for operations that start from parameters alone.",
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "kind",
+                  "formats"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
+                    "type": "string"
+                  },
+                  "formats": {
+                    "minItems": 1,
+                    "description": "Formats the operation reads directly.",
+                    "type": "array",
+                    "items": {
+                      "pattern": "^[a-z0-9][a-z0-9-]*$",
+                      "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
+                      "type": "string"
+                    }
+                  },
+                  "optional": {
+                    "type": "boolean"
+                  },
+                  "needs": {
+                    "minItems": 1,
+                    "description": "What the data must already be, beyond its kind: solved = a simulation case that has been run (has results).",
+                    "type": "array",
+                    "items": {
+                      "const": "solved",
+                      "type": "string"
+                    }
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "parameters": {
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "type"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "type": {
+                    "anyOf": [
+                      {
+                        "const": "number",
+                        "type": "string"
+                      },
+                      {
+                        "const": "integer",
+                        "type": "string"
+                      },
+                      {
+                        "const": "string",
+                        "type": "string"
+                      },
+                      {
+                        "const": "boolean",
+                        "type": "string"
+                      },
+                      {
+                        "const": "enum",
+                        "type": "string"
+                      }
+                    ]
+                  },
+                  "label": {
+                    "description": "Dialog label; defaults to the name.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "One sentence for the dialog tooltip and the assistant.",
+                    "type": "string"
+                  },
+                  "default": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "boolean"
+                      }
+                    ]
+                  },
+                  "options": {
+                    "minItems": 1,
+                    "description": "Allowed values (enum only).",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "unit": {
+                    "description": "e.g. px, µm, s, m/s",
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "outputs": {
+              "minItems": 1,
+              "type": "array",
+              "items": {
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "name",
+                  "kind",
+                  "format",
+                  "path"
+                ],
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]*$",
+                    "type": "string"
+                  },
+                  "kind": {
+                    "pattern": "^[a-z][a-z0-9-]*$",
+                    "description": "What the data is, e.g. volume, labels, tracks, table, mesh, splat, sim-case, video, report.",
+                    "type": "string"
+                  },
+                  "format": {
+                    "pattern": "^[a-z0-9][a-z0-9-]*$",
+                    "description": "How the data is stored, e.g. ome-zarr, ome-tiff, tiff, czi, nd2, lif, csv, parquet, json, ply, vtk, mp4, openfoam-case, geff, html.",
+                    "type": "string"
+                  },
+                  "path": {
+                    "pattern": "^/out/",
+                    "description": "Where the operation writes this output, under /out.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "cache": {
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "deterministic"
+              ],
+              "properties": {
+                "deterministic": {
+                  "description": "Same inputs and parameters always give the same outputs, so results can be cached.",
+                  "type": "boolean"
+                }
+              }
+            },
+            "edam": {
+              "pattern": "^operation_\\d+$",
+              "description": "EDAM operation term.",
+              "type": "string"
+            },
+            "view": {
+              "description": "Shows data rather than changing it: one input, and one output Pharos can display (an image, table, video, 3D model or web page). Windows offer it for data Pharos can't show itself; it doesn't enter the history.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    }
+  }
+}

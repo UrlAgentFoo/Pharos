@@ -1,0 +1,8 @@
+# Per action, for Test book on the small example data.
+measure:
+  diameter: 24
+track:
+  diameter: 24
+  max_distance: 15
+score:
+  split: 0

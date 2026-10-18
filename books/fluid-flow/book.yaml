@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/book.schema.json
+id: fluid-flow
+version: 0.2.0
+title: Fluid flow
+summary: Runs OpenFOAM cases (such as air or water flowing past an obstacle) at the speed you choose and shows the result as a video of the vortices and a 3D model coloured by speed; can also show a case's geometry without running it.
+how_to_use: Open an OpenFOAM case. Look at its geometry in 3D, or simulate it at the speed you choose and watch the vortices form.
+tags: [cfd, simulation, fluid-dynamics, openfoam, vortices, flow, mesh, geometry, 3d]
+authors: [Pharos]
+ships: { openfoam: ^0.1, render: ^0.1 }
+# a case opens as its 3D model (quick, so it runs on its own), with Simulate the flow next in Controls
+opens_with: geometry
+actions:
+  simulate:
+    title: Simulate the flow
+    summary: Runs the case at the inlet speed you choose, then makes a video of the vortices (or speed) and a 3D model coloured by speed.
+    inputs:
+      - name: case
+        description: An OpenFOAM case folder (system/, constant/, 0/), with its inflow patch named "inlet".
+        accepts: { kind: sim-case, formats: [openfoam-case] }
+    parameters:
+      - { name: speed, label: Inlet speed, type: number, unit: m/s, default: 1, min: 0, max: 100, description: "How fast the fluid enters; with the example case, Reynolds number = 100 × speed.", sets: solve.speed }
+      - { name: end_time, label: Simulated time, type: number, unit: s, default: 30, min: 0.01, max: 100000, description: "How long to simulate; vortices take about 20-30 s to develop in the example.", sets: solve.end_time }
+      - { name: field, label: Show, type: enum, options: [vorticity, speed], default: vorticity, description: "vorticity shows the swirling vortices; speed shows how fast the fluid moves.", sets: render.field }
+    controls:
+      - { title: Flow, note: "Faster flow and a longer simulated time make more vortices, and take longer to run.", params: [speed, end_time] }
+      - { title: Picture, note: "Changes only the video; the simulation is reused.", params: [field] }
+    steps:
+      - { id: solve, run: openfoam.solve, in: { case: $case } }
+      - { id: render, run: render.flow-video, in: { case: solve.case } }
+      - { id: model, run: render.case-model, in: { case: solve.case } }
+    outputs: { case: solve.case, video: render.video, model: model.model }
+  geometry:
+    title: See the case in 3D
+    summary: Builds the case's mesh without running it and shows the domain, obstacles and walls as a 3D model, in a few seconds.
+    inputs:
+      - name: case
+        description: An OpenFOAM case folder (system/, constant/, 0/).
+        accepts: { kind: sim-case, formats: [openfoam-case] }
+    controls:
+      - { title: Geometry, note: "Nothing to set: this builds the case's mesh and shows it." }
+    steps:
+      - { id: mesh, run: openfoam.mesh, in: { case: $case } }
+      - { id: model, run: render.case-model, in: { case: mesh.case } }
+    outputs: { case: mesh.case, model: model.model }
+    quick: true
+    next: [simulate]

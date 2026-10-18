@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: cad
+version: 0.1.0
+image: pharos/cad:0.1.0    # built from this folder's Dockerfile (Debian bookworm: Gmsh 4.11 with OpenCASCADE 7.6)
+summary: Draws parts to size with Gmsh's OpenCASCADE kernel, as STEP solids to test or open in any CAD program and 3D models to look at; it draws shelf brackets, and keeps an old bracket's size when you redesign it.
+citation: "Geuzaine & Remacle, Gmsh: a 3-D finite element mesh generator with built-in pre- and post-processing facilities, IJNME 79(11), 2009. https://gmsh.info"
+license: GPL-2.0-or-later
+homepage: https://gmsh.info
+tags: [cad, design, step, parametric, brackets, 3d-printing, engineering]
+requires: { memory_gb: 1, network: none }
+formats:
+  step: { kind: cad, title: STEP model, extensions: [.step, .stp] }
+operations:
+  bracket:
+    summary: Draws a shelf bracket (a wall plate and an arm with a rounded inside corner, a triangular rib down each side if you want them, and screw holes) as a STEP solid and a 3D model, in mm with x out from the wall and z up. Sizes left at 0 come from the part you give it, so a redesign fits where the old bracket did.
+    command: python3 /opt/pharos/pharos_cad.py bracket --out /out --depth {depth} --height {height} --width {width} --thickness {thickness} --rib {rib} --fillet {fillet} --holes {holes} --hole-diameter {hole_diameter}
+    # read from /in/like when given (an optional input can't be named in the command)
+    inputs: [{ name: like, kind: cad, formats: [step], optional: true }]
+    parameters:
+      - { name: depth, label: Depth, type: number, unit: mm, default: 0, min: 0, max: 400, description: "How far the arm reaches out from the wall; 0 keeps the old part's, or 120 without one." }
+      - { name: height, label: Height, type: number, unit: mm, default: 0, min: 0, max: 400, description: "How far the wall plate reaches down; 0 keeps the old part's, or 120 without one." }
+      - { name: width, label: Width, type: number, unit: mm, default: 0, min: 0, max: 200, description: "How wide the bracket is; 0 keeps the old part's, or 25 without one." }
+      - { name: thickness, label: Thickness, type: number, unit: mm, default: 4, min: 1, max: 30, description: "How thick the wall plate and the arm are." }
+      - { name: rib, label: Ribs, type: number, unit: mm, default: 0, min: 0, max: 40, description: "How thick the triangular rib down each side is; 0 leaves them off. Ribs stiffen a bracket far more than a thicker plate does." }
+      - { name: fillet, label: Inside corner, type: number, unit: mm, default: 2, min: 0, max: 50, description: "The radius that rounds the inside corner, where the stress gathers." }
+      - { name: holes, label: Screw holes, type: integer, default: 2, min: 0, max: 6, description: "How many screw holes go down the wall plate." }
+      - { name: hole_diameter, label: Hole size, type: number, unit: mm, default: 4.5, min: 1, max: 20, description: "The screw holes' diameter." }
+    outputs:
+      - { name: solid, kind: cad, format: step, path: /out/bracket.step }
+      - { name: model, kind: mesh, format: ply, path: /out/bracket.ply }
+    cache: { deterministic: true }
+  view:
+    summary: Shows a STEP part as a 3D model.
+    command: python3 /opt/pharos/pharos_cad.py view --in {in.part} --out /out/part.ply
+    view: true
+    inputs: [{ name: part, kind: cad, formats: [step] }]
+    outputs: [{ name: model, kind: mesh, format: ply, path: /out/part.ply }]
+    cache: { deterministic: true }

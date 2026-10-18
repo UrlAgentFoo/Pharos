@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: yolo
+version: 0.2.0
+image: pharos/yolo:0.2.0    # built from this folder's Dockerfile (CPU; see it for the GPU build)
+summary: Finds and outlines objects in images and videos with Ultralytics YOLO, each as its own label (or drawn on the video), with a table of what it found; it knows the 80 everyday COCO classes (people, animals, vehicles), or what your own trained weights know.
+citation: https://docs.ultralytics.com/models/yolo11/
+license: AGPL-3.0-only
+homepage: https://github.com/ultralytics/ultralytics
+tags: [segmentation, instance-segmentation, detection, object-detection, deep-learning, yolo, labels, photos, video, microscopy]
+requires: { gpu: { vendor: nvidia, optional: true }, memory_gb: 4, network: none }
+operations:
+  segment:
+    summary: Finds the objects in each 2D plane of an image (every z slice of every time point) and outlines each as its own label, with a table of each object's class, confidence, box and area.
+    command: python /opt/pharos/pharos_yolo.py segment --in {in.image} --out /out --model {model} --weights {weights} --confidence {confidence} --classes {classes} --size {size} --channel {channel}
+    inputs: [{ name: image, kind: volume, formats: [ome-zarr, tiff, ome-tiff] }]
+    parameters:
+      - { name: model, label: Model, type: enum, options: [nano, small, medium], default: nano, description: "The COCO model: nano is fastest, medium finds the most. Not used when you name your own weights." }
+      - { name: weights, label: Your weights, type: string, default: "", description: "The file name of YOLO segmentation weights you trained (a .pt file in Pharos's weights folder, ~/Pharos/weights); empty uses the model above." }
+      - { name: confidence, label: Confidence, type: number, default: 0.25, min: 0.01, max: 1, description: "How sure it must be to keep an object: lower finds more, with more mistakes." }
+      - { name: classes, label: Classes, type: string, default: "", description: "The classes to keep, separated by commas (person, dog); empty keeps every class." }
+      - { name: size, label: Image size, type: integer, unit: px, default: 640, min: 160, max: 1920, description: "The size each plane is scaled to for the model (rounded to a multiple of 32): larger finds smaller objects, more slowly." }
+      - { name: channel, label: Channel, type: integer, default: -1, min: -1, max: 16, description: "The channel to look at, counting from 0; -1 uses the first three as colour, or the only one." }
+    outputs:
+      - { name: masks, kind: labels, format: ome-zarr, path: /out/masks.zarr }
+      - { name: objects, kind: table, format: csv, path: /out/objects.csv }
+    cache: { deterministic: true }
+  segment-video:
+    summary: Finds the objects in each frame of a video (or a few frames a second) and makes an MP4 with each one outlined and named, with a table of each object's frame, time, class, confidence, box and area.
+    command: python /opt/pharos/pharos_yolo.py segment-video --video {in.video} --out-video /out/video.mp4 --table /out/objects.csv --model {model} --weights {weights} --confidence {confidence} --classes {classes} --size {size} --fps {fps} --max-size {max_size}
+    inputs: [{ name: video, kind: video, formats: [mp4, mov] }]
+    parameters:
+      - { name: model, label: Model, type: enum, options: [nano, small, medium], default: nano, description: "The COCO model: nano is fastest, medium finds the most. Not used when you name your own weights." }
+      - { name: weights, label: Your weights, type: string, default: "", description: "The file name of YOLO segmentation weights you trained (a .pt file in Pharos's weights folder, ~/Pharos/weights); empty uses the model above." }
+      - { name: confidence, label: Confidence, type: number, default: 0.25, min: 0.01, max: 1, description: "How sure it must be to keep an object: lower finds more, with more mistakes." }
+      - { name: classes, label: Classes, type: string, default: "", description: "The classes to keep, separated by commas (person, car); empty keeps every class." }
+      - { name: size, label: Image size, type: integer, unit: px, default: 640, min: 160, max: 1920, description: "The size each frame is scaled to for the model (rounded to a multiple of 32): larger finds smaller objects, more slowly." }
+      - { name: fps, label: Frames per second, type: number, default: 0, min: 0, max: 120, description: "How many frames a second to look at, and the new video's frame rate; 0 looks at every frame. Fewer is faster." }
+      - { name: max_size, label: Largest frame side, type: integer, unit: px, default: 1280, min: 160, max: 4096, description: "Frames with a longer side than this are scaled down first, in the new video too." }
+    outputs:
+      - { name: video, kind: video, format: mp4, path: /out/video.mp4 }
+      - { name: objects, kind: table, format: csv, path: /out/objects.csv }
+    cache: { deterministic: true }

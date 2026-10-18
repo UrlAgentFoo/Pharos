@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+# A tiny ship for checking the orchestrator end to end: it needs no build,
+# downloads in seconds, reports progress and can run long enough to cancel.
+id: hello
+version: 0.1.0
+image: busybox@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e
+summary: Test ship. Counts the rows of a table, reporting progress as it goes.
+license: GPL-2.0-only
+tags: [test]
+requires: { memory_gb: 0.25, network: none }
+operations:
+  count:
+    summary: Counts the data rows of a CSV table, taking `seconds` to do it.
+    command: >-
+      sh -c 'n=$1; i=0;
+      while [ $i -lt $n ]; do i=$((i+1)); echo "{\"progress\": $(( i * 100 / (n + 1) ))e-2, \"message\": \"step $i of $n\"}"; sleep 1; done;
+      echo "counting $0";
+      printf "rows\n%s\n" $(( $(wc -l < "$0") - 1 )) > /out/count.csv'
+      {in.table} {seconds}
+    inputs: [{ name: table, kind: table, formats: [csv] }]
+    parameters:
+      - { name: seconds, type: integer, default: 1, min: 0, max: 600, description: "How long to take, to try progress and Cancel." }
+    outputs: [{ name: count, kind: table, format: csv, path: /out/count.csv }]
+    cache: { deterministic: true }

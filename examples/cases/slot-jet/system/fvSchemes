@@ -1,0 +1,11 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+  A jet through a slot in a wall: a small 2D case for Pharos (Re = 100 at 1 m/s upstream).
+\*---------------------------------------------------------------------------*/
+FoamFile { version 2.0; format ascii; class dictionary; object fvSchemes; }
+
+ddtSchemes      { default backward; }
+gradSchemes     { default Gauss linear; }
+divSchemes      { default none; div(phi,U) Gauss linearUpwind grad(U); div((nuEff*dev2(T(grad(U))))) Gauss linear; }
+laplacianSchemes { default Gauss linear corrected; }
+interpolationSchemes { default linear; }
+snGradSchemes   { default corrected; }

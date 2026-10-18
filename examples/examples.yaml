@@ -1,0 +1,131 @@
+# Example data for the start screen. Each loads its files into the workspace, as if
+# they'd been dropped in, and suggests a problem statement for the assistant.
+# `run` says how to run it quickly: a book action with parameters small enough to
+# finish in seconds (a short simulated time); `pharos warm` runs them all once, so
+# opening an example later comes straight from the cache. It's also the example's
+# preferred action: its window's Controls list it first, in bold, with these
+# parameters, and the Suggested tab lays it out. `image` is the card's
+# picture (480 × 300; make_images.py draws them).
+# Paths are relative to this folder.
+- id: shelf-bracket
+  title: A shelf bracket
+  kind: 3D-printable part
+  description: A plain 3D-printable shelf bracket as a STEP file, 120 mm each way with a 4 mm plate. Load-test it, make it stronger, and get it ready to print.
+  files: [{ path: ../books/printed-parts/example/part.step, name: bracket.step }]
+  image: images/shelf-bracket.webp
+  prompt: Will this bracket hold a 15 kg shelf printed in PLA? If not, make it stronger and tell me how long it takes to print.
+  # what its window opens with (half of 15 kg on each of two brackets): a few seconds, then straight from the cache
+  run: { book: printed-parts, action: test, params: { load: 74 } }
+- id: mounting-plate
+  title: A plate to edit
+  kind: CAD part (STEP)
+  description: An 80 × 30 mm plate, 8 mm thick, with two 6 mm screw holes, a round boss and rounded corners, as a STEP file. Expand its window to edit it with FreeCAD.
+  files: [{ path: data/mounting-plate.step, name: plate.step }]
+  image: images/mounting-plate.webp
+  prompt: Make the plate 100 mm long and its screw holes 8 mm.
+- id: nuclei-timelapse
+  title: Cells moving over time
+  kind: Microscopy time-lapse
+  description: A 3D fluorescence time-lapse of 14 nuclei drifting over 10 frames (synthetic, 96 × 96 × 12 voxels).
+  files: [{ path: data/nuclei-timelapse.tif }]
+  image: images/nuclei-timelapse.webp
+  prompt: Track the nuclei over time and make a video of how they move.
+  run: { book: cell-imaging, action: track, params: { diameter: 24, max_distance: 15 } }
+- id: nuclei-stack
+  title: Nuclei in a 3D stack
+  kind: Microscopy z-stack
+  description: A 3D fluorescence stack of 10 nuclei (synthetic, 64 × 64 × 12 voxels, 0.5 µm pixels).
+  files: [{ path: data/nuclei-stack.tif }]
+  image: images/nuclei-stack.webp
+  prompt: Count the nuclei and measure their volume.
+  run: { book: cell-imaging, action: measure, params: { diameter: 24 } }
+- id: cylinder-flow
+  title: Flow past an obstacle
+  kind: OpenFOAM case
+  description: A 2D OpenFOAM case of fluid flowing past a square obstacle; it sheds a vortex street.
+  files: [{ path: ../books/fluid-flow/example/case, name: cylinder-flow }]
+  image: images/cylinder-flow.webp
+  prompt: Simulate the flow at 1.5 m/s and show the vortices.
+  run: { book: fluid-flow, action: simulate, params: { speed: 1.5, end_time: 20 } }
+- id: crowded-nuclei
+  title: A crowded field of nuclei
+  kind: Microscopy image (2D)
+  description: One 2D image of 48 nuclei of mixed sizes, some touching, lit unevenly (synthetic, 256 × 256 pixels, 0.65 µm).
+  files: [{ path: data/crowded-nuclei.tif }]
+  image: images/crowded-nuclei.webp
+  prompt: Count the nuclei and measure their area and brightness.
+  run: { book: cell-imaging, action: measure, params: { diameter: 30 } }
+- id: crawling-cells
+  title: Cells crawling in 2D
+  kind: Microscopy time-lapse (2D)
+  description: A 2D time-lapse of 16 nuclei wandering over 30 frames, one per minute (synthetic, 160 × 160 pixels).
+  files: [{ path: data/crawling-cells.tif }]
+  image: images/crawling-cells.webp
+  prompt: Track each nucleus and make a video of the tracks.
+  run: { book: cell-imaging, action: track, params: { diameter: 24, max_distance: 10 } }
+- id: organoid
+  title: An organoid in 3D
+  kind: Microscopy z-stack
+  description: A hollow ball of 60 nuclei, like an organoid or early embryo (synthetic, 128 × 128 × 32 voxels).
+  files: [{ path: data/organoid.tif }]
+  image: images/organoid.webp
+  prompt: Segment the nuclei, show them in 3D and measure their volume.
+  run: { book: cell-imaging, action: measure, params: { diameter: 22 } }
+- id: nuclei-zarr
+  title: Nuclei saved as OME-Zarr
+  kind: OME-Zarr stack
+  description: A 3D stack of 18 nuclei in the OME-Zarr format used by big-image tools (synthetic, 96 × 96 × 16 voxels).
+  files: [{ path: data/nuclei.zarr }]
+  image: images/nuclei-zarr.webp
+  prompt: Count the nuclei and measure their volume.
+  run: { book: cell-imaging, action: measure, params: { diameter: 24 } }
+- id: backward-step
+  title: Flow over a step
+  kind: OpenFOAM case
+  description: A 2D channel that suddenly widens; the flow separates at the step and reattaches further down.
+  files: [{ path: cases/backward-step, name: backward-step }]
+  image: images/backward-step.webp
+  prompt: Simulate the flow at 1 m/s and show where it recirculates behind the step.
+  run: { book: fluid-flow, action: simulate, params: { speed: 1, end_time: 10 } }
+- id: tandem-blocks
+  title: Two blocks in a row
+  kind: OpenFOAM case
+  description: A 2D case with two square obstacles one behind the other; the first one's vortices hit the second.
+  files: [{ path: cases/tandem-blocks, name: tandem-blocks }]
+  image: images/tandem-blocks.webp
+  prompt: Simulate the flow at 1 m/s and show the vortices between the blocks.
+  run: { book: fluid-flow, action: simulate, params: { speed: 1, end_time: 20 } }
+- id: slot-jet
+  title: A jet through a slot
+  kind: OpenFOAM case
+  description: A 2D wall with a narrow opening; the fluid squeezes through as a fast jet.
+  files: [{ path: cases/slot-jet, name: slot-jet }]
+  image: images/slot-jet.webp
+  prompt: Show me the geometry in 3D, then simulate the jet at 1 m/s.
+  run: { book: fluid-flow, action: geometry }
+- id: orbit-scene
+  title: Walking around a still scene
+  kind: Video
+  description: A 6-second video circling a patterned ball, a box and a pebble on a patterned floor, as a phone filmed walking around them would (synthetic, 640 × 480).
+  files: [{ path: ../books/3d-capture/example/orbit.mp4, name: orbit.mp4 }]
+  image: images/orbit-scene.webp
+  prompt: Make a 3D model of this video that I can turn around.
+  # small enough to finish in about 15-20 s on a laptop's CPU (a soft splat); the book's defaults make a sharper one in a few minutes
+  run: { book: 3d-capture, action: splat_video, params: { frames: 24, max_size: 400, iterations: 500, downscale: 4, sh_degree: 1 } }
+- id: street-photo
+  title: A busy street
+  kind: Photo
+  description: A shopping street in Porlamar, Venezuela, with people walking, parked cars, motorbikes and market umbrellas (a real photo by Wilfredor, CC0, 1024 × 594).
+  files: [{ path: ../books/object-detection/example/image.tif, name: street.tif }]
+  image: images/street-photo.webp
+  prompt: Find the people and vehicles in this photo and count them.
+  run: { book: object-detection, action: find_in_image }
+- id: street-crossing
+  title: People crossing a street
+  kind: Video
+  description: Six seconds of the scramble crossing at Yonge and Dundas in Toronto, with people walking every way and cars turning through (a real video by Raysonho, CC0, 640 × 360).
+  files: [{ path: ../books/object-detection/example/video.mp4, name: crossing.mp4 }]
+  image: images/street-crossing.webp
+  prompt: Outline the people and cars in this video.
+  # six frames a second: 36 frames, about half a minute on a laptop's CPU with the nano model
+  run: { book: object-detection, action: find_in_video, params: { fps: 6, classes: "person, car" } }

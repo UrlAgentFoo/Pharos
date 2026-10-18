@@ -1,0 +1,348 @@
+{
+  "additionalProperties": false,
+  "$id": "plan.schema.json",
+  "title": "Pharos plan",
+  "type": "object",
+  "required": [
+    "id",
+    "workspace",
+    "source",
+    "title",
+    "inputs",
+    "parameters",
+    "steps",
+    "ships",
+    "problems",
+    "status",
+    "createdAt"
+  ],
+  "properties": {
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "workspace": {
+      "description": "Where the inputs come from and the outputs go.",
+      "type": "string"
+    },
+    "source": {
+      "anyOf": [
+        {
+          "const": "book",
+          "type": "string"
+        },
+        {
+          "const": "improvised",
+          "type": "string"
+        }
+      ]
+    },
+    "book": {
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "action"
+      ],
+      "properties": {
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9-]*$",
+          "type": "string"
+        },
+        "version": {
+          "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+          "type": "string"
+        },
+        "action": {
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Which of the book's actions.",
+          "type": "string"
+        }
+      }
+    },
+    "title": {
+      "type": "string"
+    },
+    "rationale": {
+      "description": "The assistant's short explanation of its choice.",
+      "type": "string"
+    },
+    "inputs": {
+      "description": "Action input name → artifact id.",
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "string"
+        }
+      }
+    },
+    "parameters": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "boolean"
+            }
+          ]
+        }
+      }
+    },
+    "steps": {
+      "minItems": 1,
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "run"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "run": {
+            "pattern": "^[a-z0-9][a-z0-9-]*\\.[a-z][a-z0-9-]*$",
+            "description": "<ship>.<operation>",
+            "type": "string"
+          },
+          "in": {
+            "additionalProperties": false,
+            "type": "object",
+            "patternProperties": {
+              "^[a-z][a-z0-9_]*$": {
+                "pattern": "^(\\$[a-z][a-z0-9_]*|[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*)$",
+                "type": "string"
+              }
+            }
+          },
+          "with": {
+            "additionalProperties": false,
+            "type": "object",
+            "patternProperties": {
+              "^[a-z][a-z0-9_]*$": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "boolean"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "links": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "steps"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "book": {
+            "additionalProperties": false,
+            "type": "object",
+            "required": [
+              "id",
+              "version",
+              "action"
+            ],
+            "properties": {
+              "id": {
+                "pattern": "^[a-z0-9][a-z0-9-]*$",
+                "type": "string"
+              },
+              "version": {
+                "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+                "type": "string"
+              },
+              "action": {
+                "pattern": "^[a-z][a-z0-9_]*$",
+                "type": "string"
+              }
+            }
+          },
+          "run": {
+            "description": "<ship>.<operation>, for a link that runs one operation.",
+            "type": "string"
+          },
+          "why": {
+            "description": "The assistant's reason for this link, for the user.",
+            "type": "string"
+          },
+          "steps": {
+            "minItems": 1,
+            "description": "The ids of the plan's steps this link became, in order.",
+            "type": "array",
+            "items": {
+              "pattern": "^[a-z][a-z0-9_]*$",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "ships": {
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "image",
+          "downloaded",
+          "gpu"
+        ],
+        "properties": {
+          "id": {
+            "pattern": "^[a-z0-9][a-z0-9-]*$",
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$",
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "downloaded": {
+            "type": "boolean"
+          },
+          "sizeBytes": {
+            "minimum": 0,
+            "description": "Download size; unknown until the registry is asked.",
+            "type": "integer"
+          },
+          "gpu": {
+            "anyOf": [
+              {
+                "const": "required",
+                "type": "string"
+              },
+              {
+                "const": "optional",
+                "type": "string"
+              },
+              {
+                "const": "none",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "problems": {
+      "description": "Validation results; a plan with errors cannot be approved.",
+      "type": "array",
+      "items": {
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "path",
+          "message",
+          "severity"
+        ],
+        "properties": {
+          "path": {
+            "description": "Where the problem is, e.g. steps/2/in/labels.",
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "severity": {
+            "anyOf": [
+              {
+                "const": "error",
+                "type": "string"
+              },
+              {
+                "const": "warning",
+                "type": "string"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "status": {
+      "anyOf": [
+        {
+          "const": "proposed",
+          "type": "string"
+        },
+        {
+          "const": "approved",
+          "type": "string"
+        },
+        {
+          "const": "running",
+          "type": "string"
+        },
+        {
+          "const": "done",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "type": "string"
+        },
+        {
+          "const": "cancelled",
+          "type": "string"
+        }
+      ]
+    },
+    "jobs": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "string"
+        }
+      }
+    },
+    "outputs": {
+      "type": "object",
+      "patternProperties": {
+        "^(.*)$": {
+          "type": "string"
+        }
+      }
+    },
+    "error": {
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "type": "string"
+    }
+  }
+}

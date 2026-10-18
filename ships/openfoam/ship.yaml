@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: openfoam
+version: 0.1.0
+image: pharos/openfoam:0.1.0    # built from this folder's Dockerfile, on opencfd/openfoam-default:2512
+summary: Computational fluid dynamics with OpenFOAM - runs a case (mesh, solver, settings) and writes the flow fields over time.
+citation: https://www.openfoam.com
+license: GPL-3.0-or-later
+homepage: https://www.openfoam.com
+tags: [cfd, simulation, fluid-dynamics]
+requires: { memory_gb: 4, network: none }
+operations:
+  mesh:
+    summary: Builds the case's mesh (blockMesh) without running it, so its geometry can be looked at.
+    command: /opt/pharos/pharos_foam.sh mesh {in.case}
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    outputs: [{ name: case, kind: sim-case, format: openfoam-case, path: /out/case }]
+    cache: { deterministic: true }
+  solve:
+    summary: Runs an OpenFOAM case folder with the given inlet speed and end time, meshing it with blockMesh if it has no mesh yet.
+    command: /opt/pharos/pharos_foam.sh solve {in.case} {speed} {end_time}
+    inputs: [{ name: case, kind: sim-case, formats: [openfoam-case] }]
+    parameters:
+      - { name: speed, type: number, unit: m/s, default: 1, min: 0, max: 100, description: "Inlet speed, set on the case's 'inlet' patch." }
+      - { name: end_time, type: number, unit: s, default: 60, min: 0.01, max: 100000, description: Simulated time to run for. }
+    outputs: [{ name: case, kind: sim-case, format: openfoam-case, path: /out/case }]
+    cache: { deterministic: true }

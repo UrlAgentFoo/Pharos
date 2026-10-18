@@ -1,0 +1,3 @@
+# Per action, for Test book on the example bracket; the defaults already run in seconds.
+test:
+  load: 74

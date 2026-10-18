@@ -1,0 +1,21 @@
+# yaml-language-server: $schema=../../packages/contracts/schemas/ship.schema.json
+id: cellpose
+version: 0.1.0
+image: pharos/cellpose:0.1.0    # built from this folder's Dockerfile (CPU; see it for the GPU build)
+summary: Deep-learning segmentation of cells and nuclei in 2D and 3D fluorescence images (Cellpose 3).
+citation: https://doi.org/10.1038/s41592-020-01018-x
+license: BSD-3-Clause
+homepage: https://github.com/MouseLand/cellpose
+tags: [microscopy, segmentation, deep-learning]
+requires: { gpu: { vendor: nvidia, optional: true }, memory_gb: 8, network: none }
+operations:
+  segment:
+    summary: Segments every cell or nucleus in a 2D or 3D image (each time point separately), giving one label per object.
+    command: python /opt/pharos/pharos_cellpose.py --in {in.image} --out /out/masks.zarr --model {model} --diameter {diameter} --channel {channel}
+    inputs: [{ name: image, kind: volume, formats: [ome-zarr] }]
+    parameters:
+      - { name: model, type: enum, options: [nuclei, cyto3], default: nuclei, description: "nuclei for nuclear stains (DAPI, Hoechst, H2B); cyto3 for whole cells." }
+      - { name: diameter, type: number, unit: px, default: 30, min: 0, max: 500, description: "Typical object diameter in x/y pixels; 0 estimates it from the image." }
+      - { name: channel, type: integer, default: 0, min: 0, max: 16, description: "Which channel to segment, when the image has several (counting from 0)." }
+    outputs: [{ name: masks, kind: labels, format: ome-zarr, path: /out/masks.zarr }]
+    cache: { deterministic: true }
