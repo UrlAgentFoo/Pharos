@@ -902,6 +902,22 @@ body.overview-mode .assistant-col {
   border-color: var(--ink);
 }
 
+/* "‹ Page 2 of 3 ›", first in the project bar, while Layout › Grid has more windows than one page holds */
+.pager {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--sheet);
+}
+
+.pager-text {
+  padding: 0 4px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 /* ---- welcome */
 
 .welcome {
@@ -1069,7 +1085,8 @@ body.overview-mode .desk-hint {
   transition: left 0.22s ease, top 0.22s ease, width 0.22s ease, height 0.22s ease;
 }
 
-.win.minimized {
+.win.minimized,
+.win.off-page {
   display: none;
 }
 

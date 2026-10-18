@@ -62,8 +62,8 @@ export interface DataDoc {
   suggestion?: { book: { id: string; title: string }; action: string; title?: string; values: Params; rationale?: string; request?: string };
   /** The book action the data came to try (an example's `run`): first in the Controls, in bold, with these settings. */
   prefer?: { book: string; action?: string; values?: Params };
-  /** Side panel open, history line full or slim, the Controls' results section open, and which Controls tab shows. */
-  ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested" };
+  /** Side panel open, history line full or slim, the Controls' results section open, which Controls tab shows, and its page of Layout › Grid (with more windows than one page holds). */
+  ui: { controls: boolean; history: "full" | "slim"; results?: boolean; controlsTab?: "manual" | "suggested"; page?: number };
 }
 
 let nextDoc = 0;
