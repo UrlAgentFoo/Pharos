@@ -1,4 +1,6 @@
 import { fileURLToPath } from "node:url";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { getPlane } from "@pharos/core";
@@ -59,7 +61,9 @@ describe("Zarr previews, as other tools write it", () => {
   });
 
   it("shows small images whole, with nothing to say", async () => {
-    expect((await preview("v3-zstd.zarr")).note).toBeUndefined();
+    const small = await preview("v3-zstd.zarr");
+    expect(small.note).toBeUndefined();
+    expect(small.sampling).toEqual({ x: 1, y: 1, z: 1, t: 1, c: 1 });
   });
 
   it("previews what fits of a larger image, and says what it left out", async () => {
@@ -68,17 +72,20 @@ describe("Zarr previews, as other tools write it", () => {
     expect(level.image.shape).toMatchObject({ width: X / 2, height: Y / 2, frames: T });
     expect(Array.from(getPlane(level.image, 0, 0, 1)).slice(0, 3)).toEqual([pixel(1, 0, 0), pixel(1, 0, 2), pixel(1, 0, 4)]);
     expect(level.note).toBe("A preview: level 2 of 2 of its pyramid");
+    expect(level.sampling).toMatchObject({ x: 2, y: 2, t: 1 });
     // no pyramid: every n-th pixel
     const thin = await preview("v3-zstd.zarr", { maxSide: 8 });
     expect(thin.image.shape).toMatchObject({ width: 8, height: 7, frames: T });
     expect(getPlane(thin.image, 0, 0, 2)[1 * 8 + 1]).toBe(pixel(2, 3, 3));
     expect(thin.image.calibration.pixelWidth).toBe(3);
     expect(thin.note).toBe("A preview: every 3rd pixel");
+    expect(thin.sampling).toMatchObject({ x: 3, y: 3, t: 1 });
     // more frames than fit: every n-th, the frame interval to match
     const frames = await preview("v3-sharded.zarr", { maxBytes: Y * X * 2 * 2 });
     expect(frames.image.shape).toMatchObject({ width: X, frames: 2 });
     expect(Array.from(getPlane(frames.image, 0, 0, 1)).slice(0, 2)).toEqual([pixel(2, 0, 0), pixel(2, 0, 1)]);
     expect(frames.note).toBe("A preview: 1 in 2 frames");
+    expect(frames.sampling).toMatchObject({ x: 1, t: 2 });
   });
 
   it("keeps a stack's slices, at lower resolution, rather than skip slices", async () => {
@@ -91,5 +98,22 @@ describe("Zarr previews, as other tools write it", () => {
     const skipped = await preview("plain-bare.zarr", { ...room, minSide: 20 });
     expect(skipped.image.shape).toMatchObject({ width: X, slices: 2 });
     expect(skipped.note).toBe("A preview: 1 in 2 slices");
+    expect(skipped.sampling).toMatchObject({ x: 1, z: 2 });
+  });
+  it("maps a pyramid level that halves z back to the full stack's slices", async () => {
+    // a 2-level OME pyramid of z, y, x = 4, 8, 8, the second level half in every axis, stored uncompressed
+    const dir = mkdtempSync(join(tmpdir(), "pharos-zpyramid-"));
+    const levels = [{ shape: [4, 8, 8], scale: [2, 1, 1] }, { shape: [2, 4, 4], scale: [4, 2, 2] }];
+    const axes = ["z", "y", "x"].map((name) => ({ name, type: "space" }));
+    writeFileSync(join(dir, ".zgroup"), JSON.stringify({ zarr_format: 2 }));
+    writeFileSync(join(dir, ".zattrs"), JSON.stringify({ multiscales: [{ axes, datasets: levels.map((l, i) => ({ path: String(i), coordinateTransformations: [{ type: "scale", scale: l.scale }] })) }] }));
+    levels.forEach((l, i) => {
+      mkdirSync(join(dir, String(i)));
+      writeFileSync(join(dir, String(i), ".zarray"), JSON.stringify({ zarr_format: 2, shape: l.shape, chunks: l.shape, dtype: "<u2", compressor: null, fill_value: 0, order: "C", filters: null }));
+      writeFileSync(join(dir, String(i), "0.0.0"), new Uint8Array(l.shape.reduce((a, b) => a * b) * 2));
+    });
+    const small = await readZarrImage(dir, "zpyramid.zarr", { maxSide: 4 });
+    expect(small.image.shape).toMatchObject({ width: 4, slices: 2 });
+    expect(small.sampling).toMatchObject({ x: 2, y: 2, z: 2 });
   });
 });

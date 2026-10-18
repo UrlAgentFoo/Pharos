@@ -24,6 +24,10 @@ export function weight(entry: Loaded): number {
   switch (entry.type) {
     case "image":
       return entry.image.planes.reduce((n, p) => n + p.byteLength, 0);
+    case "tracks":
+      // the movie, unless it's the window's own data's, held already, and the tracks (a few numbers a point,
+      // held twice: by frame and by track)
+      return (entry.shared ? 0 : entry.image.planes.reduce((n, p) => n + p.byteLength, 0)) + entry.total * 2 * 64;
     case "model":
     case "splat":
       return entry.ply.byteLength;

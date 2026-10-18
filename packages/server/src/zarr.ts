@@ -256,6 +256,19 @@ export const PREVIEW_BUDGET: PreviewBudget = { maxBytes: 512 * 1024 ** 2, maxSid
 const every = (n: number, step: number) => Array.from({ length: Math.ceil(n / step) }, (_, i) => i * step);
 
 /**
+ * How a preview samples its image, per axis: how many of the full-resolution image's pixels (along x, y),
+ * slices, frames or channels one step of the preview covers. Preview index i is full-resolution index
+ * i × the step, so things measured on the full image (tracks, say) can be drawn on the preview.
+ */
+export interface PreviewSampling {
+  x: number;
+  y: number;
+  z: number;
+  t: number;
+  c: number;
+}
+
+/**
  * The steps that fit a frame's planes (t × z × c) into `room`: frames first,
  * since a frame's whole stack shows more of 3D data than every frame with a
  * few of its slices; then slices; channels only when even one of each
@@ -274,9 +287,9 @@ function thin(T: number, Z: number, C: number, room: number): { t: number; z: nu
  * A preview of the image in a Zarr store, within `budget`: a pyramid level
  * no wider than `maxSide` (else every n-th pixel of the smallest), and, when
  * its planes don't all fit, every n-th frame and slice. Only the chunks those
- * planes touch are decoded. `note` says what was left out, for the window.
+ * planes touch are decoded. `note` says what was left out, for the window; `sampling`, exactly how.
  */
-export async function readZarrImage(dir: string, name?: string, limits: Partial<PreviewBudget> = {}): Promise<{ image: Image; note?: string }> {
+export async function readZarrImage(dir: string, name?: string, limits: Partial<PreviewBudget> = {}): Promise<{ image: Image; note?: string; sampling: PreviewSampling }> {
   const budget = { ...PREVIEW_BUDGET, ...limits };
   const found = await find(dir);
   const axes = found.axes;
@@ -439,5 +452,10 @@ export async function readZarrImage(dir: string, name?: string, limits: Partial<
     steps.z > 1 ? `1 in ${steps.z} slices` : "",
     steps.c > 1 ? `1 in ${steps.c} channels` : "",
   ].filter(Boolean);
-  return { image, ...(left.length ? { note: `A preview: ${left.join(", ")}` } : {}) };
+  // a pyramid level's pixels against level 0's (its scale over level 0's; where none is given, 2 a level in x and y,
+  // and none in z, which anisotropic pyramids often keep)
+  const base = found.levels[0].scale ?? [];
+  const shrink = (a: string, fallback: number) => (scale.length && base[axes.indexOf(a)] ? step(a) / base[axes.indexOf(a)] : fallback);
+  const sampling = { x: shrink("x", 2 ** level) * px, y: shrink("y", 2 ** level) * px, z: shrink("z", 1) * steps.z, t: steps.t, c: steps.c };
+  return { image, sampling, ...(left.length ? { note: `A preview: ${left.join(", ")}` } : {}) };
 }

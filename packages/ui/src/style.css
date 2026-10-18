@@ -4689,6 +4689,54 @@ dialog.side::backdrop {
   font-size: 12px;
 }
 
+/* tracks over a movie: how many, and on the slice or in 3D */
+.dv-tracks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+/* what the tracks' tails and colours mean, at the picture's bottom right (the readout is at its left) */
+.trk-legend {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(60% - 16px);
+  padding: 6px 10px 6px 6px;
+  border-radius: 6px;
+  background: var(--glass);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.4;
+  pointer-events: none;
+}
+
+.trk-legend p {
+  margin: 0;
+}
+
+.dv-canvas .trk-wheel {
+  position: static;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  cursor: default;
+}
+
+.trk-3d {
+  position: absolute;
+  inset: 0;
+}
+
+.trk-3d canvas {
+  cursor: grab;
+}
+
 .dv-sliders:empty {
   display: none;
 }

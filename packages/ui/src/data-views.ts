@@ -8,17 +8,27 @@
  */
 import type { Artifact, CaseSummary } from "@pharos/contracts";
 import { type Image, readTiff } from "@pharos/core";
-import type { LocalServer } from "./api.js";
+import type { LocalServer, PreviewSampling } from "./api.js";
 import { parseCsv } from "./csv.js";
 import { escapeHtml, formatSize } from "./dialogs.js";
 import { ModelView } from "./model-view.js";
 import { SplatView, isSplatPly } from "./splat-view.js";
-import { type ViewState, Viewer, newViewState, scaledCopy, setRanges } from "./viewer.js";
+import { TAIL, type TrackScene, TracksIn3D, drawTracksOnSlice, drawWheel, isDeep, nearText, trackScene } from "./track-views.js";
+import { parseTracks } from "./tracks.js";
+import { type ViewState, Viewer, newViewState, resetRanges, scaledCopy, setRanges } from "./viewer.js";
 
 /** What a viewer needs for one artifact, fetched once and kept while its window is open. */
 export type Loaded =
-  /** `note`: what a preview of a larger image left out ("A preview: every 2nd pixel, 1 in 3 frames"). */
-  | { type: "image"; image: Image; view: ViewState; note?: string }
+  /**
+   * `note`: what a preview of a larger image left out ("A preview: every 2nd pixel, 1 in 3 frames");
+   * `sampling`, exactly how (for drawing what was measured on the full image over it).
+   */
+  | { type: "image"; image: Image; view: ViewState; note?: string; sampling?: PreviewSampling }
+  /**
+   * Cell tracks over the movie they came from, on the slice on view or in 3D (`mode`), following its
+   * sliders. `shared`: the movie is the window's own data's, already held (so it isn't counted twice).
+   */
+  | { type: "tracks"; image: Image; view: ViewState; note?: string; scene: TrackScene; total: number; mode: "slice" | "3d"; shared: boolean }
   | { type: "table"; rows: string[][]; total: number }
   /** A media link the video streams from: nothing of it is held in the page. */
   | { type: "video"; url: string }
@@ -38,10 +48,32 @@ export interface Mounted {
   snapshot?(max: number): HTMLCanvasElement | null;
 }
 
+/**
+ * Tracks with the movie they were made from, to draw them over it: `movie`'s preview, or the one the window
+ * already holds (`held`, its own data on view earlier).
+ */
+export async function loadTracksView(s: LocalServer, workspace: string, tracks: Artifact, movie: Artifact, held?: Extract<Loaded, { type: "image" }>): Promise<Loaded> {
+  try {
+    const [text, shown] = await Promise.all([
+      s.content(workspace, tracks.id).then((b) => new TextDecoder().decode(b)),
+      held ?? s.artifactImage(workspace, movie.id).then(async (tiff) => ({ image: await readTiff(tiff.data, movie.name), note: tiff.note, sampling: tiff.sampling })),
+    ]);
+    const { image, note, sampling } = shown;
+    const view = newViewState(image);
+    view.pos.z = Math.floor(image.shape.slices / 2);
+    resetRanges(view, image); // the contrast of the slice it opens on, not the first (often empty) one
+    const all = parseCsv(text);
+    const scene = trackScene(image, sampling ?? { x: 1, y: 1, z: 1, t: 1, c: 1 }, parseTracks(all));
+    return { type: "tracks", image, view, ...(note ? { note } : {}), scene, total: all.length - 1, mode: "slice", shared: !!held };
+  } catch (e) {
+    return { type: "error", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 export async function loadView(s: LocalServer, workspace: string, a: Artifact): Promise<Loaded> {
   try {
     if (a.kind === "volume" || a.kind === "labels") {
-      let tiff: { data: ArrayBuffer; note?: string };
+      let tiff: { data: ArrayBuffer; note?: string; sampling?: PreviewSampling };
       try {
         tiff = await s.artifactImage(workspace, a.id);
       } catch (e) {
@@ -52,9 +84,11 @@ export async function loadView(s: LocalServer, workspace: string, a: Artifact): 
       const image = await readTiff(tiff.data, a.name);
       const view = newViewState(image);
       view.labels = a.kind === "labels";
-      // open stacks in the middle, where the objects usually are, not on the (often empty) first slice
+      // open stacks in the middle, where the objects usually are, not on the (often empty) first slice,
+      // with that slice's contrast
       view.pos.z = Math.floor(image.shape.slices / 2);
-      return { type: "image", image, view, ...(tiff.note ? { note: tiff.note } : {}) };
+      if (!view.labels) resetRanges(view, image);
+      return { type: "image", image, view, ...(tiff.note ? { note: tiff.note } : {}), ...(tiff.sampling ? { sampling: tiff.sampling } : {}) };
     }
     if (a.format === "csv") {
       const text = new TextDecoder().decode(await s.content(workspace, a.id));
@@ -93,39 +127,12 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
   host.classList.remove("has-image", "has-model");
   const none = { destroy() {} };
   switch (entry.type) {
-    case "image": {
-      const { slices, frames, channels } = entry.image.shape;
-      // a tile has its own view, opened on the middle slice where objects usually are
-      const view = compact ? { ...entry.view, pos: { ...entry.view.pos, z: Math.floor(slices / 2) }, placed: false } : entry.view;
-      host.classList.add("has-image");
-      host.innerHTML = `<div class="dv-canvas"><canvas tabindex="0"></canvas><div class="win-readout"></div>${entry.note && !compact ? `<p class="dv-preview-note" title="The window shows less than the whole image; ships run on all of it">${escapeHtml(entry.note)}</p>` : ""}</div>
-        <div class="dv-sliders">${[["z", slices, "Slice"], ["t", frames, "Frame"], ["c", channels, "Channel"]]
-          .filter(([, n]) => (n as number) > 1)
-          .map(([axis, n, label]) => `<label>${label}<input type="range" min="0" max="${(n as number) - 1}" value="${view.pos[axis as "z" | "t" | "c"]}" data-axis="${axis}"/><output>${view.pos[axis as "z" | "t" | "c"] + 1}/${n}</output></label>`)
-          .join("")}${compact || entry.view.labels ? "" : `<span class="dv-contrast" title="Changes only the display, not the data">Contrast <button class="chip" data-range="auto">Auto</button><button class="chip" data-range="full">Full range</button></span>`}</div>`;
-      const readout = host.querySelector<HTMLElement>(".win-readout")!;
-      const viewer: Viewer = new Viewer(host.querySelector("canvas")!, (info) => (readout.textContent = info || `${a.kind === "labels" ? "labels" : a.format} · ${viewer.zoomPercent}%`));
-      viewer.show(entry.image, view);
-      host.querySelectorAll<HTMLInputElement>("input[data-axis]").forEach((input) =>
-        input.addEventListener("input", () => {
-          const axis = input.dataset.axis as "z" | "t" | "c";
-          view.pos[axis] = Number(input.value);
-          input.nextElementSibling!.textContent = `${Number(input.value) + 1}/${Number(input.max) + 1}`;
-          viewer.render();
-        }),
-      );
-      host.querySelectorAll<HTMLButtonElement>("[data-range]").forEach((b) =>
-        b.addEventListener("click", () => {
-          setRanges(view, entry.image, b.dataset.range as "auto" | "full");
-          viewer.render();
-        }),
-      );
-      return { viewer, destroy() {} };
-    }
+    case "image":
+      return mountImage(host, entry, a, compact);
+    case "tracks":
+      return mountTracks(host, entry, a, compact);
     case "table":
-      host.innerHTML = `<div class="dv-table artifact-table"><table><thead><tr>${(entry.rows[0] ?? []).map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
-        <tbody>${entry.rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
-        ${compact ? "" : `<p class="dv-foot">${entry.total} rows${entry.total > 500 ? " · first 500 shown" : ""} · ${formatSize(a.sizeBytes ?? 0)}</p>`}`;
+      mountTable(host, entry.rows, entry.total, a, compact);
       return none;
     case "video": {
       host.innerHTML = `<video class="dv-video" src="${entry.url}" ${compact ? "" : "controls"} autoplay loop muted playsinline></video>`;
@@ -179,6 +186,110 @@ export function mountView(host: HTMLElement, entry: Loaded, a: Artifact, compact
         <p class="muted">Pharos can't show this kind of data inside a window yet. It's stored at:</p><pre class="code">${escapeHtml(a.uri)}</pre></div>`;
       return none;
   }
+}
+
+/**
+ * An image in its zoomable canvas, with its slice, frame and channel sliders and the contrast buttons;
+ * `changed` hears when they move the view.
+ */
+function mountImage(host: HTMLElement, entry: { image: Image; view: ViewState; note?: string }, a: Artifact, compact: boolean, changed = () => {}): Mounted & { viewer: Viewer } {
+  const { slices, frames, channels } = entry.image.shape;
+  // a tile has its own view, opened on the middle slice where objects usually are
+  const view = compact ? { ...entry.view, pos: { ...entry.view.pos, z: Math.floor(slices / 2) }, placed: false } : entry.view;
+  host.classList.add("has-image");
+  host.innerHTML = `<div class="dv-canvas"><canvas tabindex="0"></canvas><div class="win-readout"></div>${entry.note && !compact ? `<p class="dv-preview-note" title="The window shows less than the whole image; ships run on all of it">${escapeHtml(entry.note)}</p>` : ""}</div>
+    <div class="dv-sliders">${[["z", slices, "Slice"], ["t", frames, "Frame"], ["c", channels, "Channel"]]
+      .filter(([, n]) => (n as number) > 1)
+      .map(([axis, n, label]) => `<label>${label}<input type="range" min="0" max="${(n as number) - 1}" value="${view.pos[axis as "z" | "t" | "c"]}" data-axis="${axis}"/><output>${view.pos[axis as "z" | "t" | "c"] + 1}/${n}</output></label>`)
+      .join("")}${compact || entry.view.labels ? "" : `<span class="dv-contrast" title="Changes only the display, not the data">Contrast <button class="chip" data-range="auto">Auto</button><button class="chip" data-range="full">Full range</button></span>`}</div>`;
+  const readout = host.querySelector<HTMLElement>(".win-readout")!;
+  const viewer: Viewer = new Viewer(host.querySelector("canvas")!, (info) => (readout.textContent = info || `${a.kind === "labels" ? "labels" : a.format} · ${viewer.zoomPercent}%`));
+  viewer.show(entry.image, view);
+  host.querySelectorAll<HTMLInputElement>("input[data-axis]").forEach((input) =>
+    input.addEventListener("input", () => {
+      const axis = input.dataset.axis as "z" | "t" | "c";
+      view.pos[axis] = Number(input.value);
+      input.nextElementSibling!.textContent = `${Number(input.value) + 1}/${Number(input.max) + 1}`;
+      viewer.render();
+      changed();
+    }),
+  );
+  host.querySelectorAll<HTMLButtonElement>("[data-range]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setRanges(view, entry.image, b.dataset.range as "auto" | "full");
+      viewer.render();
+      changed();
+    }),
+  );
+  return { viewer, destroy() {} };
+}
+
+function mountTable(host: HTMLElement, rows: string[][], total: number, a: Artifact, compact: boolean) {
+  host.innerHTML = `<div class="dv-table artifact-table"><table><thead><tr>${(rows[0] ?? []).map((h) => `<th>${escapeHtml(h)}</th>`).join("")}</tr></thead>
+    <tbody>${rows.slice(1).map((r) => `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+    ${compact ? "" : `<p class="dv-foot">${total} rows${total > 500 ? " · first 500 shown" : ""} · ${formatSize(a.sizeBytes ?? 0)}</p>`}`;
+}
+
+/**
+ * Tracks over their movie: on the slice on view (the image viewer's overlay) or, for a 3D movie, in 3D, with
+ * the legend on the picture and the choice between the two beside the sliders. Tiles show the slice only.
+ */
+function mountTracks(host: HTMLElement, entry: Extract<Loaded, { type: "tracks" }>, a: Artifact, compact: boolean): Mounted {
+  const { scene } = entry;
+  let space: TracksIn3D | null = null;
+  const { viewer } = mountImage(host, entry, a, compact, () => space?.update());
+  viewer.overlay = (ctx, view, zoom) => drawTracksOnSlice(ctx, scene, view, zoom);
+  viewer.render();
+  const flat = host.querySelector<HTMLCanvasElement>("canvas")!;
+  const snap = (max: number) => space?.snapshot(max) ?? scaledCopy(flat, flat.width, flat.height, max);
+  if (compact) return { destroy() {}, snapshot: snap };
+
+  const stage = host.querySelector<HTMLElement>(".dv-canvas")!;
+  const deep = isDeep(scene);
+  stage.insertAdjacentHTML(
+    "beforeend",
+    `<div class="trk-legend"><canvas class="trk-wheel" width="56" height="56" aria-hidden="true"></canvas>
+      <p>Each tail: a cell's last ${TAIL} frames<br>Colour: its direction · grey: still<span class="trk-near"></span></p></div>`,
+  );
+  drawWheel(stage.querySelector<HTMLCanvasElement>(".trk-wheel")!);
+  const n = scene.tracks.byId.size;
+  host.querySelector(".dv-sliders")!.insertAdjacentHTML(
+    "beforeend",
+    `<span class="dv-tracks" role="group" aria-label="Tracks"><span>${n} track${n === 1 ? "" : "s"}</span>${
+      deep ? `<button class="chip" data-mode="slice">On the slice</button><button class="chip" data-mode="3d">In 3D</button>` : ""
+    }</span>`,
+  );
+  const readout = host.querySelector<HTMLElement>(".win-readout")!;
+  const show = () => {
+    const in3d = entry.mode === "3d";
+    for (const b of host.querySelectorAll<HTMLButtonElement>("[data-mode]")) {
+      b.classList.toggle("on", b.dataset.mode === entry.mode);
+      b.setAttribute("aria-pressed", String(b.dataset.mode === entry.mode));
+    }
+    const near = nearText(scene, entry.mode);
+    stage.querySelector(".trk-near")!.innerHTML = near ? `<br>${escapeHtml(near)}` : "";
+    flat.hidden = in3d;
+    if (in3d && !space) {
+      const box = Object.assign(document.createElement("div"), { className: "trk-3d" });
+      stage.prepend(box);
+      space = new TracksIn3D(box, scene, entry.view);
+      readout.textContent = "Drag to turn · scroll to zoom · right-drag to move";
+    } else if (!in3d && space) {
+      space.destroy();
+      stage.querySelector(".trk-3d")?.remove();
+      space = null;
+      readout.textContent = "";
+      viewer.render();
+    }
+  };
+  host.querySelectorAll<HTMLButtonElement>("[data-mode]").forEach((b) =>
+    b.addEventListener("click", () => {
+      entry.mode = b.dataset.mode as "slice" | "3d";
+      show();
+    }),
+  );
+  show();
+  return { destroy: () => space?.destroy(), snapshot: snap };
 }
 
 const card = (title: string, html: string) => `<div class="dv-card"><p class="eyebrow">${escapeHtml(title)}</p><p>${html}</p></div>`;

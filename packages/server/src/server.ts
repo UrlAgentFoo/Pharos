@@ -498,9 +498,11 @@ export async function startServer(opts: ServerOptions): Promise<RunningServer> {
       return sendJson(res, 200, { url: `/api/media/${link}` });
     }
     if (req.method === "GET" && id && m[3] === "/image") {
-      const { tiff, note } = await imagePreview(await workspaces.get(name, id));
-      // a preview of something larger says what it left out, for the window to show
+      const { tiff, note, sampling } = await imagePreview(await workspaces.get(name, id));
+      // a preview of something larger says what it left out, for the window to show, and exactly how it
+      // samples the image, for drawing what was measured on the full image (tracks) over it
       if (note) res.setHeader("X-Pharos-Preview", encodeURIComponent(note));
+      if (sampling) res.setHeader("X-Pharos-Preview-Sampling", JSON.stringify(sampling));
       return sendBytes(res, Buffer.from(tiff.buffer, tiff.byteOffset, tiff.byteLength), "image/tiff");
     }
     if (req.method === "GET" && id && m[3] === "/case") return sendJson(res, 200, await caseSummary(await workspaces.get(name, id)));
